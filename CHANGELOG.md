@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.0...micelio-v0.3.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* **windows:** hide console windows spawned by git child processes ([e929069](https://github.com/patrick-mns/micelio-code/commit/e929069ec979220a9b0f9ce2b1115a3b3b2225c4))
+
 ## [0.3.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.2.1...micelio-v0.3.0) (2026-06-29)
 
 
