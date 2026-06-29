@@ -1,23 +1,7 @@
-use crate::backend::{config, llm};
+use crate::backend::{cmd::no_window_cmd, config, llm};
 use crate::AppState;
 use serde::Serialize;
 use tauri::State;
-
-/// Windows-hide flag so child processes (git) don't pop a terminal window.
-#[cfg(windows)]
-const NO_WINDOW: u32 = 0x08000000; // CREATE_NO_WINDOW
-
-/// Cross-platform helper that hides the child's console window on Windows.
-fn no_window_cmd(prog: &str) -> std::process::Command {
-    #[allow(unused_mut)]
-    let mut cmd = std::process::Command::new(prog);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(NO_WINDOW);
-    }
-    cmd
-}
 
 #[derive(Serialize)]
 pub struct Settings {

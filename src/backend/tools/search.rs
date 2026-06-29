@@ -1,5 +1,5 @@
 use super::{ToolContext, ToolResult};
-use std::process::Command;
+use crate::backend::cmd::no_window_cmd;
 
 pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String> {
     // The schema advertises `pattern`; accept `query` too for robustness.
@@ -7,7 +7,7 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
         .or_else(|| super::get_string_field(arguments, "query"))
         .ok_or_else(|| "tool call missing `pattern`".to_string())?;
 
-    let output = Command::new("rg")
+    let output = no_window_cmd("rg")
         .arg("--line-number")
         .arg("--hidden")
         .arg("--glob")

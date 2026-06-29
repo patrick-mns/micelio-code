@@ -1,6 +1,7 @@
 use super::{ToolContext, ToolResult};
+use crate::backend::cmd::no_window_cmd;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
 /// Foreground commands that don't finish within this are assumed to be
@@ -69,19 +70,13 @@ fn spawn_detached(command: &str, context: &ToolContext) -> Result<(Child, PathBu
         .try_clone()
         .map_err(|e| format!("failed to clone log handle: {e}"))?;
 
-    let mut cmd = Command::new("sh");
+    let mut cmd = no_window_cmd("sh");
     cmd.arg("-lc")
         .arg(command)
         .current_dir(&context.workspace_root)
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_err));
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
 
     #[cfg(unix)]
     {

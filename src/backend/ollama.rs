@@ -4,12 +4,12 @@
 
 #![allow(dead_code)]
 
+use crate::backend::cmd::no_window_cmd;
 use crate::backend::error::{BackendError, BackendResult};
 use crate::backend::llm::{AssistantResponse, Message, ModelChoice, StreamEvent, ToolCall};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
@@ -267,7 +267,7 @@ impl ChatStream {
 }
 
 pub fn list_models() -> BackendResult<Vec<ModelChoice>> {
-    let output = Command::new("ollama").arg("list").output()?;
+    let output = no_window_cmd("ollama").arg("list").output()?;
     if !output.status.success() {
         return Err(BackendError::Provider(format!(
             "`ollama list` failed: {}",
@@ -308,7 +308,7 @@ pub fn model_supports_thinking(model: &str) -> bool {
     }
     // `ollama show` lists a "Capabilities" section; "thinking" appears there
     // only for models that support reasoning.
-    let supports = Command::new("ollama")
+    let supports = no_window_cmd("ollama")
         .args(["show", model])
         .output()
         .ok()
@@ -342,7 +342,7 @@ pub fn model_context_length(model: &str) -> usize {
 }
 
 fn fetch_model_context_length(model: &str) -> BackendResult<usize> {
-    let output = Command::new("ollama").args(["show", model]).output()?;
+    let output = no_window_cmd("ollama").args(["show", model]).output()?;
     if !output.status.success() {
         return Err(BackendError::Provider(format!(
             "`ollama show {model}` failed: {}",

@@ -173,7 +173,8 @@ fn terminate(pid: u32) -> bool {
     }
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("taskkill")
+        use crate::backend::cmd::no_window_cmd;
+        let _ = no_window_cmd("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .output();
     }
