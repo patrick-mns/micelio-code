@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.1...micelio-v0.3.2) (2026-06-29)
+
+
+### Bug Fixes
+
+* **windows:** import CommandExt trait for creation_flags method ([8be1e11](https://github.com/patrick-mns/micelio-code/commit/8be1e117edd7a0ef07f5e9ca68e6d7ef60e652cf))
+
 ## [0.3.1](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.0...micelio-v0.3.1) (2026-06-29)
 
 
