@@ -504,6 +504,27 @@ export const scanOverlayStyles: Record<string, CSSProperties> = {
     fontFamily: 'ui-monospace, SFMono-Regular, monospace',
     letterSpacing: 0.3,
   },
+  cancelBtn: {
+    marginTop: 16,
+    padding: '8px 24px',
+    fontSize: 11.5,
+    fontFamily: 'inherit',
+    background: theme.card,
+    color: theme.textStrong,
+    border: `1px solid ${theme.border}`,
+    borderRadius: 6,
+    cursor: 'pointer',
+    opacity: 0.85,
+    transition: 'opacity 0.15s',
+    userSelect: 'none',
+  },
+  hint: {
+    color: theme.faint,
+    fontSize: 10,
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+    letterSpacing: 0.3,
+    marginTop: 2,
+  },
 };
 
 // ── Sidebar.tsx ──────────────────────────────────────────────────────────

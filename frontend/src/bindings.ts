@@ -24,6 +24,7 @@ export const commands = {
   // Graph commands
   getGraph: () => invoke<any[]>('get_graph'),
   scanWorkspace: () => invoke<void>('scan_workspace'),
+  cancelWorkspaceScan: () => invoke<void>('cancel_workspace_scan'),
   summarizeNode: (args: { nodeId: number }) => invoke<string>('summarize_node', args),
   summarizeAll: (args: { concurrency?: number }) => invoke<void>('summarize_all', args),
   stopSummarize: () => invoke<void>('stop_summarize'),

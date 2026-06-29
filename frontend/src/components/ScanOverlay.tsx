@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useRef, type CSSProperties } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { scanOverlayStyles } from '@/utils/theme-styles';
 import { theme } from '@/theme';
+import { ipc } from '@/ipc';
 
 // An animated force-directed knowledge graph shown while indexing: nodes float
 // under gravity + repulsion, edges act as springs, and everything gently
@@ -36,6 +37,21 @@ export default function ScanOverlay() {
   const { nodes, edges } = useMemo(buildGraph, []);
   const nodeRefs = useRef<(SVGCircleElement | null)[]>([]);
   const edgeRefs = useRef<(SVGLineElement | null)[]>([]);
+
+  const handleCancel = useCallback(async () => {
+    try {
+      await ipc.cancelWorkspaceScan();
+    } catch { /* Tauri not available in dev */ }
+  }, []);
+
+  // Escape key cancels
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleCancel();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleCancel]);
 
   useEffect(() => {
     let raf = 0;
@@ -94,8 +110,8 @@ export default function ScanOverlay() {
   }, [nodes, edges]);
 
   return (
-    <div style={scanOverlayStyles.backdrop}>
-      <div style={scanOverlayStyles.stack}>
+    <div style={scanOverlayStyles.backdrop} onClick={handleCancel}>
+      <div style={scanOverlayStyles.stack} onClick={(e) => e.stopPropagation()}>
         <svg viewBox={`0 0 ${W} ${H}`} width="230" height="153">
           {edges.map(([a, b], i) => (
             <line
@@ -117,6 +133,7 @@ export default function ScanOverlay() {
           ))}
         </svg>
         <div style={scanOverlayStyles.label}>Indexing workspace…</div>
+        <div style={scanOverlayStyles.hint}>(esc) to cancel</div>
       </div>
     </div>
   );

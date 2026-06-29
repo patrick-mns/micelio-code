@@ -32,6 +32,7 @@ export const ipc = {
 
   getGraph: () => invoke<TreemapNode[]>('get_graph'),
   scanWorkspace: () => invoke<void>('scan_workspace'),
+  cancelWorkspaceScan: () => invoke<void>('cancel_workspace_scan'),
   summarizeNode: (nodeId: number) => invoke<string>('summarize_node', { nodeId }),
   // concurrency optional — omit (or pass undefined) to use the backend default.
   summarizeAll: (concurrency?: number) => invoke<void>('summarize_all', { concurrency }),

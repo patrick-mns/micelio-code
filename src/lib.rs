@@ -32,6 +32,7 @@ pub struct AppState {
     pub sessions: Mutex<SessionStore>,
     pub current_session: Mutex<String>,
     pub summarize_cancel: Arc<AtomicBool>,
+    pub scan_cancel: Arc<AtomicBool>,
     /// Per-session in-memory LLM history (replaces the old global ChatHistory state).
     pub session_histories: Mutex<HashMap<String, Vec<backend::llm::Message>>>,
     /// Per-session cancel flags so stopping one stream doesn't affect others.
@@ -183,6 +184,7 @@ pub fn run() {
             sessions: Mutex::new(sessions),
             current_session: Mutex::new(current_session),
             summarize_cancel: Arc::new(AtomicBool::new(false)),
+            scan_cancel: Arc::new(AtomicBool::new(false)),
             session_histories: Mutex::new(initial_histories),
             session_cancels: Mutex::new(HashMap::new()),
             session_pending: Mutex::new(None),
@@ -204,6 +206,7 @@ pub fn run() {
             commands::chat::compact_chat,
             commands::graph::get_graph,
             commands::graph::scan_workspace,
+            commands::graph::cancel_workspace_scan,
             commands::graph::summarize_node,
             commands::graph::summarize_all,
             commands::graph::stop_summarize,

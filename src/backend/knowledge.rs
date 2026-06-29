@@ -402,18 +402,22 @@ impl KnowledgeGraph {
     }
 
     pub fn scan_workspace(&mut self, root: &Path) -> BackendResult<usize> {
-        self.scan_workspace_progress(root, &mut |_| {})
+        use std::sync::atomic::AtomicBool;
+        self.scan_workspace_progress(root, &AtomicBool::new(false), &mut |_| {})
             .map(|r| r.added)
     }
 
     /// Scans the workspace, calling `progress(entries_walked)`
-    /// periodically. Designed to run on a background thread on a clone
+    /// periodically. `cancel` is checked every iteration so the caller
+    /// can abort mid-scan via [`cancel_workspace_scan`].
+    /// Designed to run on a background thread on a clone
     /// of the graph: lookups use local indices (the per-entry linear
     /// scans made large repos take minutes) and the node count is
     /// capped so massive repos can't hang the force layout afterwards.
     pub fn scan_workspace_progress(
         &mut self,
         root: &Path,
+        cancel: &std::sync::atomic::AtomicBool,
         progress: &mut dyn FnMut(usize),
     ) -> BackendResult<ScanReport> {
         /// Ceiling on nodes added per scan: beyond this the graph view
@@ -473,6 +477,10 @@ impl KnowledgeGraph {
             .filter_map(|e| e.ok())
         {
             if count >= MAX_SCAN_NODES {
+                truncated = true;
+                break;
+            }
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
                 truncated = true;
                 break;
             }

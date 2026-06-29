@@ -74,9 +74,12 @@ pub async fn get_graph(state: State<'_, AppState>) -> Result<Vec<TreemapNode>, S
 pub async fn scan_workspace(app: AppHandle, state: State<'_, AppState>) -> Result<usize, String> {
     let root = state.workspace_root.lock().unwrap().clone();
 
+    // Reset cancel flag at the start of every scan
+    state.scan_cancel.store(false, std::sync::atomic::Ordering::SeqCst);
+
     let added = {
         let mut graph = state.graph.lock().unwrap();
-        graph.scan_workspace(&root)?
+        graph.scan_workspace_progress(&root, &state.scan_cancel, &mut |_| {})?
     };
 
     // Persist
@@ -86,10 +89,17 @@ pub async fn scan_workspace(app: AppHandle, state: State<'_, AppState>) -> Resul
         let _ = graph.save(&path);
     }
 
-    app.emit("graph_updated", added)
+    app.emit("graph_updated", added.added)
         .map_err(|e| e.to_string())?;
 
-    Ok(added)
+    Ok(added.added)
+}
+
+/// Signal the workspace scan to stop.
+#[tauri::command]
+pub async fn cancel_workspace_scan(state: State<'_, AppState>) -> Result<(), String> {
+    state.scan_cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
 }
 
 /// Code backing a node: the function/class span, or the whole file. Returned
