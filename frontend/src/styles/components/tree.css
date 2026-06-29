@@ -1,0 +1,32 @@
+/* ── Tool rows: hover highlight (inline styles can't do :hover) ────────── */
+.tool-row { transition: background 0.1s; }
+.tool-row:hover { background: rgba(var(--overlay), 0.035); }
+
+/* ── Tree connectors ────────────────────────────────────────────────────── */
+.tool-tree { position: relative; }
+.tool-tree-item { position: relative; padding-left: 18px; }
+.tool-tree-item::before {
+  content: '';
+  position: absolute;
+  left: 7px; top: 0;
+  width: 9px; height: 15px;
+  border-left: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  border-bottom-left-radius: 8px;
+}
+.tool-tree-item:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 7px; top: 15px; bottom: 0;
+  border-left: 1px solid var(--color-border);
+}
+/* Detail body under a single tool */
+.tool-detail { position: relative; padding-left: 15px; margin-left: 4px; }
+.tool-detail::before {
+  content: '';
+  position: absolute;
+  left: 1px; top: 3px; bottom: 5px;
+  width: 1.5px;
+  background: var(--color-border);
+  border-radius: 2px;
+}

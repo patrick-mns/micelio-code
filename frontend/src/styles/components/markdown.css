@@ -1,0 +1,37 @@
+/* ── Thinking block ──────────────────────────────────────────────────────── */
+.md-thinking { font-size: 12.5px; line-height: 1.55; color: var(--color-dim); }
+.md-thinking p { margin-bottom: 7px; }
+.md-thinking p:last-child { margin-bottom: 0; }
+.md-thinking code {
+  font-family: monospace; font-size: 11.5px; padding: 1px 4px; border-radius: 3px;
+  background: var(--color-bg-deep);
+  color: var(--color-text);
+}
+.md-thinking ul, .md-thinking ol { padding-left: 20px; margin-bottom: 7px; }
+.md-thinking ul { list-style: disc; }
+.md-thinking ol { list-style: decimal; }
+
+/* ── Assistant markdown ──────────────────────────────────────────────────── */
+.md { font-size: 14px; line-height: 1.65; color: var(--color-text); }
+.md p { margin-bottom: 10px; }
+.md p:last-child { margin-bottom: 0; }
+.md ul, .md ol { padding-left: 22px; margin-bottom: 10px; }
+.md ul { list-style: disc; }
+.md ol { list-style: decimal; }
+.md li { margin-bottom: 4px; }
+.md h1, .md h2, .md h3 { margin: 14px 0 8px; color: var(--color-text); font-weight: 600; }
+.md h1 { font-size: 19px; }
+.md h2 { font-size: 16px; }
+.md h3 { font-size: 14px; }
+.md strong { color: var(--color-text-strong); font-weight: 600; }
+.md a { color: var(--accent); text-decoration: none; }
+.md a:hover { text-decoration: underline; }
+.md blockquote { border-left: 2px solid var(--color-card-active); padding-left: 12px; color: var(--color-dim); margin-bottom: 10px; }
+.md table { border-collapse: collapse; margin-bottom: 10px; }
+.md th, .md td { border: 1px solid var(--color-border); padding: 5px 10px; font-size: 13px; }
+.md th { background: var(--color-card); }
+.md code {
+  background: var(--color-bg-deep);
+  color: var(--color-text);
+  padding: 1px 4px; border-radius: 3px; font-size: 12.5px;
+}

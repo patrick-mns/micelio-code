@@ -1,0 +1,835 @@
+//! The agentic chat loop: drives one user turn end-to-end, streaming model
+//! output, executing tool calls, and re-prompting until the model answers
+//! without a tool. Lives in the commands layer because it's tightly coupled to
+//! Tauri (event emission + `AppState`); `commands::chat` keeps only the thin
+//! `#[tauri::command]` entry points and persistence helpers.
+
+use crate::backend::llm::{self, Message, StreamEvent};
+use crate::backend::prompt;
+use crate::backend::tools;
+use crate::AppState;
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Emitter, Manager};
+
+/// Runaway guard, not a feature: the loop's real stop condition is the model
+/// emitting no tool call. This only bounds a pathological model that never
+/// stops calling tools. Set high enough that legitimate multi-step tasks never
+/// hit it.
+const MAX_TOOL_ROUNDS: usize = 50;
+/// Consecutive tool failures that force the loop to stop and report.
+const MAX_CONSECUTIVE_ERRORS: u32 = 3;
+/// Consecutive failures after which a Reflexion nudge is injected (before the
+/// hard stop) to make the model rethink instead of repeating the same call.
+const REFLEXION_AFTER_ERRORS: u32 = 2;
+/// Identical consecutive tool calls (same name + args) that count as a stuck
+/// loop. Cheaper and more reliable than a low round cap for catching the model
+/// repeating itself.
+const MAX_IDENTICAL_CALLS: u32 = 3;
+/// Max characters of a single tool result fed back into context. Large reads /
+/// command output are truncated (head + tail) so one call can't blow the
+/// window. Tuned for small local models.
+const TOOL_RESULT_MAX_CHARS: usize = 8_000;
+/// When the estimated history size exceeds this token budget, the content of
+/// older tool results is elided (messages are kept so tool_call pairing stays
+/// intact) to claw back context room.
+const CONTEXT_TOKEN_BUDGET: usize = 24_000;
+/// Most recent tool results to keep verbatim during compaction.
+const KEEP_RECENT_TOOL_RESULTS: usize = 6;
+
+/// Drive the whole agent turn on a worker thread. `history` already has the
+/// system prompt prepended and the user turn appended.
+#[allow(clippy::too_many_arguments)]
+pub fn run_agent_loop(
+    app: AppHandle,
+    provider: &'static dyn llm::Provider,
+    model: String,
+    workspace_root: std::path::PathBuf,
+    graph_json: String,
+    session_id: String,
+    mut history: Vec<Message>,
+    cancel: Arc<AtomicBool>,
+    needs_tool: bool,
+) {
+    let mut did_any_tool = false;
+    let mut retried_for_tool = false;
+    let mut consecutive_errors: u32 = 0;
+    // Stagnation guard: signature of the previous tool call and how many times
+    // it has repeated back-to-back.
+    let mut last_call_sig: Option<String> = None;
+    let mut identical_calls: u32 = 0;
+    // Accumulated across the whole turn for the persisted transcript.
+    let mut thinking_acc = String::new();
+    let mut tool_summaries: Vec<String> = Vec::new();
+    let started = std::time::Instant::now();
+    // Token usage + cost summed across every model turn in this loop. Shared so
+    // the (move) `finish` closure can read the final total without threading it
+    // through every call site.
+    let usage_acc = Arc::new(Mutex::new(llm::Usage::default()));
+    let usage_for_finish = usage_acc.clone();
+    // Raw network request/response of the final model call this turn (a tool
+    // loop re-streams, so we keep the latest of each for the Turn detail view).
+    let req_body_acc = Arc::new(Mutex::new(String::new()));
+    let resp_raw_acc = Arc::new(Mutex::new(String::new()));
+    let req_body_for_finish = req_body_acc.clone();
+    let resp_raw_for_finish = resp_raw_acc.clone();
+
+    // Files written/edited during this turn, coalesced. Drives end-of-turn
+    // auto-summarization (one summary per file, only if its content changed).
+    let dirty: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+    let dirty_for_finish = dirty.clone();
+    let ws_for_finish = workspace_root.clone();
+    let model_for_finish = model.clone();
+    let session_id_ref = session_id.clone();
+
+    // Persist the model context + the UI transcript for this turn, then tell
+    // the frontend we're done. Finally, kick off background auto-summary of any
+    // files this turn touched (non-blocking; emits node_summarized per file).
+    let finish = move |app: &AppHandle,
+                       history: &[Message],
+                       thinking: &str,
+                       tools: &[String],
+                       content: &str| {
+        let state = app.state::<AppState>();
+        // Always update this session's per-session history (regardless of which
+        // session the user is currently viewing).
+        state
+            .session_histories
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), history[1..].to_vec());
+
+        let store = state.sessions.lock().unwrap();
+        if !thinking.trim().is_empty() {
+            let secs = started.elapsed().as_secs().max(1).to_string();
+            let _ = store.append_event(&session_id, "thinking", Some(&secs), thinking.trim());
+        }
+        for t in tools {
+            let _ = store.append_event(&session_id, "tool", None, t);
+        }
+        // Usage/cost (if the provider reported any) is stashed in the assistant
+        // event's `title` as JSON so it survives reload, and emitted live.
+        let mut usage = usage_for_finish.lock().unwrap().clone();
+        usage.model = Some(model_for_finish.clone());
+        let usage_json = serde_json::to_string(&usage).unwrap_or_default();
+        if !content.trim().is_empty() {
+            let _ = store.append_event(&session_id, "assistant", Some(&usage_json), content.trim());
+            // Rich ledger row: latency + request/response previews, durable even
+            // if the chat transcript is later cleared. The request is the last
+            // user message that drove this turn.
+            let request = history
+                .iter()
+                .rev()
+                .find(|m| m.role == "user")
+                .map(|m| m.content.as_str())
+                .unwrap_or("");
+            // Raw views: the exact request body sent to the provider and the
+            // raw response stream it returned, both at the network level.
+            let request_raw = req_body_for_finish.lock().unwrap().clone();
+            let response_raw = resp_raw_for_finish.lock().unwrap().clone();
+            // Cost split, only when the provider actually reports it. We don't
+            // fabricate it by token share — input/output prices differ, so an
+            // apportioned guess would be misleading.
+            let (prompt_cost, completion_cost) = (usage.prompt_cost, usage.completion_cost);
+            store.log_usage(
+                &session_id,
+                &model_for_finish,
+                usage.prompt_tokens,
+                usage.completion_tokens,
+                usage.cost,
+                started.elapsed().as_millis() as u64,
+                request,
+                content.trim(),
+                prompt_cost,
+                completion_cost,
+                &request_raw,
+                &response_raw,
+            );
+        }
+        let history_json = serde_json::to_string(&history[1..]).unwrap_or_else(|_| "[]".into());
+        let _ = store.save_history(&session_id, &history_json, "[]");
+        drop(store);
+
+        if !usage.is_empty() {
+            let _ = app.emit(
+                "stream_usage",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "cost": usage.cost,
+                }),
+            );
+        }
+        let _ = app.emit(
+            "stream_done",
+            serde_json::json!({ "session_id": session_id }),
+        );
+
+        let touched: Vec<String> = dirty_for_finish.lock().unwrap().drain().collect();
+        spawn_auto_summary(app, ws_for_finish.clone(), touched);
+
+        // Generate a smart title after the first turn (event_count == 2: one
+        // user + one assistant event). Runs on its own thread so it never
+        // blocks the response; emits `session_title` when done.
+        {
+            let state = app.state::<AppState>();
+            let count = state.sessions.lock().unwrap().event_count(&session_id);
+            if count == 2 {
+                spawn_title_generation(app, session_id.clone());
+            }
+        }
+    };
+
+    for _ in 0..MAX_TOOL_ROUNDS {
+        // User hit Stop between rounds — persist what we have and bail.
+        if cancel.load(Ordering::SeqCst) {
+            finish(&app, &history, &thinking_acc, &tool_summaries, "");
+            return;
+        }
+        // Keep the working context within budget before the next model turn.
+        compact_history(&mut history);
+        // ---- stream one model turn ----
+        let mut stream = match provider.start_stream(&model, &history) {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = app.emit(
+                    "stream_error",
+                    serde_json::json!({ "session_id": session_id_ref, "error": e }),
+                );
+                return;
+            }
+        };
+        let mut content_acc = String::new();
+        let mut tool_calls: Vec<llm::ToolCall> = Vec::new();
+        let mut turn_done = false;
+        let stream_start = std::time::Instant::now();
+        let mut last_event = stream_start;
+        while !turn_done {
+            if cancel.load(Ordering::SeqCst) {
+                history.push(Message::assistant(content_acc.clone()));
+                finish(&app, &history, &thinking_acc, &tool_summaries, &content_acc);
+                return;
+            }
+
+            if stream_start.elapsed() > std::time::Duration::from_secs(300) {
+                let _ = app.emit("stream_error", serde_json::json!({ "session_id": session_id_ref, "error": "Model timed out — no response after 5 minutes" }));
+                return;
+            }
+
+            match stream.poll() {
+                Ok(events) => {
+                    if events.is_empty() {
+                        if last_event.elapsed() > std::time::Duration::from_secs(120) {
+                            let _ = app.emit("stream_error", serde_json::json!({ "session_id": session_id_ref, "error": "Stream timed out — no data from model for 2 minutes" }));
+                            return;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(16));
+                        continue;
+                    }
+                    last_event = std::time::Instant::now();
+                    for ev in events {
+                        match ev {
+                            StreamEvent::Content(s) => {
+                                content_acc.push_str(&s);
+                                let _ = app.emit(
+                                    "stream_content",
+                                    serde_json::json!({ "session_id": session_id_ref, "delta": s }),
+                                );
+                            }
+                            StreamEvent::Thinking(s) => {
+                                thinking_acc.push_str(&s);
+                                let _ = app.emit(
+                                    "stream_thinking",
+                                    serde_json::json!({ "session_id": session_id_ref, "delta": s }),
+                                );
+                            }
+                            StreamEvent::ToolCall(call) => tool_calls.push(call),
+                            StreamEvent::Usage(u) => {
+                                let mut acc = usage_acc.lock().unwrap();
+                                acc.prompt_tokens += u.prompt_tokens;
+                                acc.completion_tokens += u.completion_tokens;
+                                acc.cost += u.cost;
+                                // Carry the breakdown/raw payload through; on a
+                                // multi-step turn keep the latest non-empty one.
+                                if u.prompt_cost.is_some() {
+                                    acc.prompt_cost = u.prompt_cost;
+                                }
+                                if u.completion_cost.is_some() {
+                                    acc.completion_cost = u.completion_cost;
+                                }
+                                if u.raw.is_some() {
+                                    acc.raw = u.raw;
+                                }
+                            }
+                            StreamEvent::RequestBody(b) => {
+                                *req_body_acc.lock().unwrap() = b;
+                            }
+                            StreamEvent::ResponseRaw(r) => {
+                                *resp_raw_acc.lock().unwrap() = r;
+                            }
+                            StreamEvent::Done => turn_done = true,
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = app.emit(
+                        "stream_error",
+                        serde_json::json!({ "session_id": session_id_ref, "error": e }),
+                    );
+                    return;
+                }
+            }
+        }
+
+        // ---- model called one or more tools: execute all, then re-prompt ----
+        if !tool_calls.is_empty() {
+            // Stagnation guard: a model stuck re-issuing the exact same call(s)
+            // makes no progress. Detect it before executing so we don't spin.
+            let sig = tool_calls
+                .iter()
+                .map(|c| format!("{}\u{1f}{}", c.name, c.arguments))
+                .collect::<Vec<_>>()
+                .join("\u{1e}");
+            if last_call_sig.as_deref() == Some(sig.as_str()) {
+                identical_calls += 1;
+            } else {
+                identical_calls = 1;
+                last_call_sig = Some(sig);
+            }
+            if identical_calls >= MAX_IDENTICAL_CALLS {
+                history.push(Message::assistant(content_acc));
+                let summary =
+                    force_stop_summary(&app, provider, &model, &mut history, &session_id_ref);
+                finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
+                return;
+            }
+
+            let (summaries, any_error) = run_tool_calls(
+                &app,
+                provider,
+                &mut history,
+                content_acc,
+                tool_calls,
+                &workspace_root,
+                &model,
+                &graph_json,
+                &dirty,
+                &session_id_ref,
+            );
+            tool_summaries.extend(summaries);
+            if any_error {
+                consecutive_errors += 1;
+            } else {
+                consecutive_errors = 0;
+            }
+            did_any_tool = true;
+
+            // Too many consecutive errors: force the model to tell the user
+            // what went wrong and stop the agentic loop.
+            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                let summary =
+                    force_stop_summary(&app, provider, &model, &mut history, &session_id_ref);
+                finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
+                return;
+            }
+
+            // Repeated (but not yet fatal) failures: nudge the model to reflect
+            // on the root cause and change approach before its next attempt.
+            if consecutive_errors >= REFLEXION_AFTER_ERRORS {
+                history.push(Message::system(prompt::REFLEXION));
+            }
+
+            continue;
+        }
+
+        // ---- no tool call ----
+        let content = content_acc.trim().to_string();
+
+        // Retry-for-tool: the user asked for a file/workspace change but the
+        // model answered with nothing — nudge it to use a tool, once.
+        if needs_tool && !retried_for_tool && content.is_empty() {
+            history.push(Message::system(prompt::NEEDS_TOOL));
+            retried_for_tool = true;
+            continue;
+        }
+
+        history.push(Message::assistant(content_acc.clone()));
+
+        // No tool call this turn → the model considers itself done. We trust
+        // that signal instead of nagging it to find more work (the old
+        // self-eval auto-continue caused scope creep and wasted round-trips).
+
+        // If tools ran but the model produced no text summary, request one so
+        // the user always gets a meaningful response.
+        let final_content = if did_any_tool && content.is_empty() {
+            request_summary(&app, provider, &model, &mut history, &session_id_ref)
+        } else {
+            content
+        };
+
+        finish(
+            &app,
+            &history,
+            &thinking_acc,
+            &tool_summaries,
+            &final_content,
+        );
+        return;
+    }
+
+    // Safety valve: too many rounds — ask model for a summary so the user
+    // always gets a final response, then finish.
+    let summary_content = request_summary(&app, provider, &model, &mut history, &session_id_ref);
+    finish(
+        &app,
+        &history,
+        &thinking_acc,
+        &tool_summaries,
+        &summary_content,
+    );
+}
+
+/// Pop a trailing system message if present (used to remove an injected nudge
+/// after a one-shot `chat` call).
+fn pop_trailing_system(history: &mut Vec<Message>) {
+    if history.last().map(|m| m.role == "system").unwrap_or(false) {
+        history.pop();
+    }
+}
+
+/// Inject the failure-stop nudge, get a final report from the model, and clean
+/// up the nudge. Returns the (already emitted) summary text.
+fn force_stop_summary(
+    app: &AppHandle,
+    provider: &dyn llm::Provider,
+    model: &str,
+    history: &mut Vec<Message>,
+    session_id: &str,
+) -> String {
+    pop_trailing_system(history);
+    history.push(Message::system(prompt::TOOL_FAILURE_STOP));
+    match provider.chat(model, history, false) {
+        Ok(resp) => {
+            history.pop();
+            let _ = app.emit(
+                "stream_content",
+                serde_json::json!({ "session_id": session_id, "delta": resp.content }),
+            );
+            resp.content
+        }
+        Err(_) => {
+            history.pop();
+            String::new()
+        }
+    }
+}
+
+/// Inject the summary request, get a concise wrap-up from the model, and clean
+/// up the nudge. Returns the (already emitted) summary text.
+fn request_summary(
+    app: &AppHandle,
+    provider: &dyn llm::Provider,
+    model: &str,
+    history: &mut Vec<Message>,
+    session_id: &str,
+) -> String {
+    history.push(Message::system(prompt::SUMMARY_REQUEST));
+    match provider.chat(model, history, false) {
+        Ok(resp) => {
+            history.pop();
+            if !resp.content.trim().is_empty() {
+                let _ = app.emit(
+                    "stream_content",
+                    serde_json::json!({ "session_id": session_id, "delta": resp.content }),
+                );
+            }
+            resp.content
+        }
+        Err(_) => {
+            history.pop();
+            String::new()
+        }
+    }
+}
+
+/// Records ONE assistant turn carrying all of `calls` (parallel tool calls),
+/// then executes each in order, appending a `tool` result message per call so
+/// the wire-format pairing (OpenAI `tool_call_id`, Ollama FIFO) stays valid.
+/// Returns each call's UI summary plus whether any of them errored.
+// Orchestration entry point: each argument is a distinct piece of turn
+// context (history, provider, workspace, dirty-set, …) with its own lifetime,
+// so bundling them into a struct would only add indirection here.
+#[allow(clippy::too_many_arguments)]
+pub fn run_tool_calls(
+    app: &AppHandle,
+    provider: &dyn llm::Provider,
+    history: &mut Vec<Message>,
+    assistant_content: String,
+    calls: Vec<llm::ToolCall>,
+    workspace_root: &std::path::Path,
+    model: &str,
+    graph_json: &str,
+    dirty: &Arc<Mutex<HashSet<String>>>,
+    session_id: &str,
+) -> (Vec<String>, bool) {
+    history.push(Message::assistant_with_tool_call(
+        assistant_content,
+        provider.tool_calls_history_json(&calls),
+    ));
+
+    let mut summaries = Vec::with_capacity(calls.len());
+    let mut any_error = false;
+    for call in calls {
+        // Note write/edit targets BEFORE the call consumes it, so the turn-end
+        // auto-summary can refresh them. (Reads and other tools don't dirty.)
+        let touched = if call.name == "file" {
+            let action =
+                tools::get_string_field(&call.arguments, "action").unwrap_or_else(|| "read".into());
+            if action == "write" || action == "edit" {
+                tools::get_string_field(&call.arguments, "path")
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let (summary, is_error) = execute_tool_call(
+            app,
+            history,
+            call,
+            workspace_root,
+            model,
+            graph_json,
+            session_id,
+        );
+
+        // Only mark dirty when the edit actually succeeded.
+        if let (Some(path), false) = (touched, is_error) {
+            dirty.lock().unwrap().insert(path);
+        }
+        any_error |= is_error;
+        summaries.push(summary);
+    }
+    (summaries, any_error)
+}
+
+/// Executes a single tool call and appends its `tool` result message. The
+/// assistant message carrying the call(s) must already be in `history` (see
+/// [`run_tool_calls`]). Returns `(summary, is_error)`.
+fn execute_tool_call(
+    app: &AppHandle,
+    history: &mut Vec<Message>,
+    call: llm::ToolCall,
+    workspace_root: &std::path::Path,
+    model: &str,
+    graph_json: &str,
+    session_id: &str,
+) -> (String, bool) {
+    // `ask_user` is interactive: hand the questions to the UI and block this
+    // worker thread until the user answers (or cancels / stops the stream).
+    if call.name == "ask_user" {
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        {
+            let st = app.state::<AppState>();
+            *st.session_pending.lock().unwrap() = Some((session_id.to_string(), tx));
+        }
+        let _ = app.emit(
+            "ask_user",
+            serde_json::json!({ "session_id": session_id, "args": &call.arguments }),
+        );
+
+        let cancel = {
+            let st = app.state::<AppState>();
+            let c = st.session_cancels.lock().unwrap().get(session_id).cloned();
+            c
+        };
+        let answer = loop {
+            let canceled = cancel
+                .as_ref()
+                .map(|c| c.load(Ordering::SeqCst))
+                .unwrap_or(false);
+            if canceled {
+                break "(canceled)".to_string();
+            }
+            match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                Ok(a) => break a,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    break "(no answer)".to_string()
+                }
+            }
+        };
+        {
+            let st = app.state::<AppState>();
+            *st.session_pending.lock().unwrap() = None;
+        }
+
+        let summary = format!("ask_user completed\n{answer}");
+        let _ = app.emit(
+            "stream_tool",
+            serde_json::json!({ "session_id": session_id, "summary": summary }),
+        );
+        history.push(Message::tool("ask_user", &answer));
+        return (summary, false);
+    }
+
+    let ctx = tools::ToolContext {
+        workspace_root: workspace_root.to_path_buf(),
+        model_name: model.to_string(),
+        vision_model: app.state::<AppState>().session_vision_model(session_id),
+        history_len: history.len(),
+        show_tools: true,
+        debug: false,
+        graph_json: graph_json.to_string(),
+    };
+    let (is_error, result) = match tools::run(&call.name, &call.arguments, &ctx) {
+        Ok(r) => (false, truncate_for_context(&r.content)),
+        Err(e) => (true, format!("error: {e}")),
+    };
+    let summary = format!("{} completed\n{}", call.name, result);
+    let _ = app.emit(
+        "stream_tool",
+        serde_json::json!({ "session_id": session_id, "summary": summary }),
+    );
+    history.push(Message::tool(&call.name, &result));
+    (summary, is_error)
+}
+
+/// Generates a short session title using the summarize model and emits
+/// `session_title` so the sidebar can update without a full refresh.
+fn spawn_title_generation(app: &AppHandle, session_id: String) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let (summarize_model, first_user, first_assistant) = {
+            let state = app.state::<AppState>();
+            let summarize_model = state.session_summarize_model(&session_id);
+            let store = state.sessions.lock().unwrap();
+            let events = store.load_events(&session_id).unwrap_or_default();
+            let user = events
+                .iter()
+                .find(|e| e.kind == "user")
+                .map(|e| e.content.clone())
+                .unwrap_or_default();
+            let asst = events
+                .iter()
+                .find(|e| e.kind == "assistant")
+                .map(|e| e.content.clone())
+                .unwrap_or_default();
+            (summarize_model, user, asst)
+        };
+
+        if first_user.is_empty() {
+            return;
+        }
+
+        let provider = llm::provider_for_model(&summarize_model);
+        let prompt = format!(
+            "Generate a short title (3-6 words, no quotes, no period) for this conversation.\n\
+             User: {}\nAssistant: {}",
+            first_user.chars().take(300).collect::<String>(),
+            first_assistant.chars().take(300).collect::<String>(),
+        );
+        let Ok(title) = provider.chat_simple(
+            &summarize_model,
+            "You generate concise chat titles. Reply with only the title, nothing else.",
+            &prompt,
+            false,
+        ) else {
+            return;
+        };
+
+        let title = title
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'')
+            .to_string();
+        if title.is_empty() {
+            return;
+        }
+
+        {
+            let state = app.state::<AppState>();
+            let store = state.sessions.lock().unwrap();
+            let _ = store.set_title(&session_id, &title);
+        }
+        let _ = app.emit(
+            "session_title",
+            serde_json::json!({
+                "session_id": session_id,
+                "title": title,
+            }),
+        );
+    });
+}
+
+/// Background, gradual auto-summarization of files touched during a turn.
+/// Runs on its own thread (never blocks the chat), processing one file at a
+/// time so summaries trickle in. Skips files whose content hash is unchanged,
+/// creates a graph node for newly-written files, and emits `node_summarized` +
+/// `graph_updated` per file so the UI updates live. Gated by the
+/// `auto_summarize` setting (default on).
+fn spawn_auto_summary(app: &AppHandle, workspace_root: std::path::PathBuf, files: Vec<String>) {
+    if files.is_empty() || !crate::backend::config::auto_summarize() {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        use crate::backend::knowledge::{content_hash, extract_span, NodeKind};
+
+        let summarize_model = app.state::<AppState>().summarize_model();
+        let provider = llm::provider_for_model(&summarize_model);
+
+        for path in files {
+            let full = workspace_root.join(&path);
+            let Ok(file_text) = std::fs::read_to_string(&full) else {
+                continue;
+            };
+
+            // Resolve the node + its span up front, deciding whether work is
+            // even needed, all under a single short-lived graph lock.
+            let plan = {
+                let st = app.state::<AppState>();
+                let mut graph = st.graph.lock().unwrap();
+                let existing = graph
+                    .nodes()
+                    .iter()
+                    .find(|n| {
+                        n.attachment
+                            .as_ref()
+                            .map(|a| a.path == path)
+                            .unwrap_or(false)
+                    })
+                    .map(|n| {
+                        (
+                            n.id,
+                            n.content_hash,
+                            n.attachment.as_ref().and_then(|a| a.span),
+                        )
+                    });
+
+                match existing {
+                    Some((id, stored, span)) => {
+                        let content = extract_span(&file_text, span);
+                        let hash = content_hash(&content);
+                        if stored == Some(hash) {
+                            None // unchanged since last summary — skip
+                        } else {
+                            Some((id, content, hash))
+                        }
+                    }
+                    None => {
+                        // Newly-written file not in the graph yet: add a File node.
+                        let id = graph.add(&path, NodeKind::File);
+                        graph.set_attachment(id, &path, None, file_text.len());
+                        let hash = content_hash(&file_text);
+                        Some((id, file_text.clone(), hash))
+                    }
+                }
+            };
+            let Some((node_id, content, hash)) = plan else {
+                continue;
+            };
+            if content.trim().is_empty() {
+                continue;
+            }
+
+            // The slow part — the LLM call — runs WITHOUT holding the lock.
+            let prompt = format!("Summarize this code in 1-2 sentences:\n\n```\n{content}\n```");
+            let Ok(summary) = provider.chat_simple(
+                &summarize_model,
+                "You are a code summarizer.",
+                &prompt,
+                false,
+            ) else {
+                continue;
+            };
+
+            // Store, persist, and notify the UI.
+            {
+                let st = app.state::<AppState>();
+                let mut graph = st.graph.lock().unwrap();
+                graph.set_summary(node_id, summary.trim(), Some(hash));
+                let root = st.workspace_root.lock().unwrap().clone();
+                let _ = graph.save(&root.join(".micelio/graph.json"));
+            }
+            let _ = app.emit("node_summarized", (node_id, summary.trim().to_string()));
+            let _ = app.emit("graph_updated", ());
+        }
+    });
+}
+
+/// Cap a single tool result for context: keep the head and tail with a clear
+/// elision marker in between, so neither a huge file read nor a chatty command
+/// can blow the window. Char-based on UTF-8 boundaries.
+fn truncate_for_context(s: &str) -> String {
+    if s.len() <= TOOL_RESULT_MAX_CHARS {
+        return s.to_string();
+    }
+    let head_len = TOOL_RESULT_MAX_CHARS * 3 / 4;
+    let tail_len = TOOL_RESULT_MAX_CHARS - head_len;
+    let head_end = floor_char_boundary(s, head_len);
+    let tail_start = ceil_char_boundary(s, s.len() - tail_len);
+    let elided = s.len() - head_end - (s.len() - tail_start);
+    format!(
+        "{}\n\n[... {} chars elided to save context ...]\n\n{}",
+        &s[..head_end],
+        elided,
+        &s[tail_start..],
+    )
+}
+
+/// Shrink `history` in place when it exceeds the token budget by eliding the
+/// content of older tool results. Messages are preserved (so OpenAI-style
+/// tool_call/result pairing stays intact) — only the bulky `content` of
+/// tool-role messages beyond the most recent few is replaced with a marker.
+fn compact_history(history: &mut [Message]) {
+    let total: usize = history
+        .iter()
+        .map(|m| crate::backend::tokens::count_tokens(&m.content))
+        .sum();
+    if total <= CONTEXT_TOKEN_BUDGET {
+        return;
+    }
+    let tool_indices: Vec<usize> = history
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.role == "tool")
+        .map(|(i, _)| i)
+        .collect();
+    if tool_indices.len() <= KEEP_RECENT_TOOL_RESULTS {
+        return;
+    }
+    let elide_until = tool_indices.len() - KEEP_RECENT_TOOL_RESULTS;
+    for &idx in &tool_indices[..elide_until] {
+        let m = &mut history[idx];
+        if m.content.starts_with("[elided") {
+            continue;
+        }
+        m.content = format!("[elided: {} chars of earlier tool output]", m.content.len());
+    }
+}
+
+/// `str::floor_char_boundary` is unstable; inline a stable version.
+fn floor_char_boundary(s: &str, mut i: usize) -> usize {
+    if i >= s.len() {
+        return s.len();
+    }
+    while !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// `str::ceil_char_boundary` is unstable; inline a stable version.
+fn ceil_char_boundary(s: &str, mut i: usize) -> usize {
+    if i >= s.len() {
+        return s.len();
+    }
+    while !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}

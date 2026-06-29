@@ -1,0 +1,166 @@
+/* ── Button system ──────────────────────────────────────────────────────────
+   Standard sizing (compact scale) × variants. Compose one size + one variant:
+   <button className="btn btn-md btn-solid">. Keeps padding/height consistent
+   everywhere; positioning/one-off color still go inline. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.btn:disabled { opacity: 0.4; cursor: default; pointer-events: none; }
+
+/* sizes */
+.btn-sm { height: 24px; padding: 0 10px; font-size: 11.5px; border-radius: var(--radius-sm); gap: 5px; }
+.btn-md { height: 28px; padding: 0 12px; font-size: 12.5px; }
+.btn-lg { height: 34px; padding: 0 14px; font-size: 13px; gap: 8px; }
+.btn-icon-sm { height: 24px; width: 24px; padding: 0; border-radius: var(--radius-sm); gap: 0; }
+.btn-icon { height: 28px; width: 28px; padding: 0; gap: 0; }
+
+/* variants */
+.btn-solid {
+  background: var(--color-card);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+.btn-solid:hover:not(:disabled) { background: var(--color-card-active); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-dim);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(var(--overlay), 0.06);
+  color: var(--color-text);
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--color-text-soft);
+  border-color: var(--color-border);
+}
+.btn-outline:hover:not(:disabled) {
+  background: rgba(var(--overlay), 0.05);
+  color: var(--color-text);
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: transparent;
+}
+.btn-primary:hover:not(:disabled) { background: var(--color-accent-hover); }
+
+/* ── Icon buttons (square, transparent, ghost hover) ─────────────────────────
+   For icon-only controls (toggles, close, zoom, trash). Color is dim at rest,
+   text on hover, with a subtle overlay film. */
+.icon-btn, .icon-btn-sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-dim);
+  flex-shrink: 0;
+  transition: background-color 0.15s, color 0.15s;
+}
+.icon-btn { width: 30px; height: 30px; border-radius: var(--radius-md); }
+.icon-btn-sm { width: 24px; height: 24px; border-radius: var(--radius-sm); }
+.icon-btn:hover:not(:disabled),
+.icon-btn-sm:hover:not(:disabled) {
+  background: rgba(var(--overlay), 0.06);
+  color: var(--color-text);
+}
+
+/* ── Segmented / pill toggles ────────────────────────────────────────────────
+   A track holding mutually-exclusive options (tabs, range filters, request/
+   response). The active option gets `.is-active`; never set the background
+   inline, or `:hover` can't paint over it. */
+.seg-track {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--color-bg-deep);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-dim);
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.12s, color 0.12s;
+}
+.seg-btn:hover:not(:disabled):not(.is-active) {
+  color: var(--color-text);
+  background: rgba(var(--overlay), 0.04);
+}
+.seg-btn.is-active { background: var(--color-card); color: var(--color-text); }
+.seg-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Menu / dropdown items ───────────────────────────────────────────────────
+   Full-width left-aligned rows inside popovers/menus. */
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-text-soft);
+  font-family: inherit;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.12s, color 0.12s;
+}
+.menu-item:hover:not(:disabled) {
+  background: rgba(var(--overlay), 0.06);
+  color: var(--color-text);
+}
+.menu-item.is-active { background: var(--color-card); color: var(--color-text); }
+
+/* ── Filter chip (standalone, bordered, scrollable rows) ─────────────────────
+   Like seg-btn but carries its own border so it reads as a chip outside a
+   track (e.g. model filters). Toggle `.is-active`. */
+.chip {
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-dim);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 11px;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s;
+}
+.chip:hover:not(:disabled):not(.is-active) {
+  color: var(--color-text);
+  background: rgba(var(--overlay), 0.04);
+}
+.chip.is-active { background: var(--color-card); color: var(--color-text); border-color: var(--color-dim); }
+.chip:disabled { opacity: 0.4; cursor: default; }

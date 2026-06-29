@@ -1,0 +1,82 @@
+/* ── Utility keyframes ────────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse-star { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+
+/* ── Scan overlay ──────────────────────────────────────────────────────── */
+.scan-node {
+  fill: #1c2620;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: scan-node 1.5s ease-in-out infinite;
+}
+@keyframes scan-node {
+  0%, 100% { fill: #1c2620; transform: scale(0.6); }
+  45%      { fill: var(--accent); transform: scale(1.15); filter: drop-shadow(0 0 4px rgba(255,180,84,0.7)); }
+}
+.scan-edge {
+  stroke: #2a3d30;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 5;
+  animation: scan-edge 1s linear infinite;
+}
+@keyframes scan-edge {
+  0%   { stroke: #2a3d30; stroke-dashoffset: 0; }
+  50%  { stroke: var(--accent); }
+  100% { stroke: #2a3d30; stroke-dashoffset: -18; }
+}
+
+/* ── Background-task chip (equalizer) ──────────────────────────────────── */
+.bg-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 11px;
+}
+.bg-bars i {
+  width: 2.5px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--accent);
+  transform-origin: bottom;
+  animation: bg-eq 0.9s ease-in-out infinite;
+}
+.bg-bars i:nth-child(2) { animation-delay: 0.18s; }
+.bg-bars i:nth-child(3) { animation-delay: 0.36s; }
+@keyframes bg-eq {
+  0%, 100% { transform: scaleY(0.35); }
+  50%      { transform: scaleY(1); }
+}
+
+/* ── Animated trailing dots (thinking indicator) ────────────────────────── */
+.think-dots-inline::after {
+  content: '';
+  animation: dots 1.4s steps(4, end) infinite;
+}
+@keyframes dots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+}
+
+/* ── Context window compact squares ────────────────────────────────────── */
+.cmp-btn--running .cmp-sq { animation: cmp-orbit 2s ease-in-out infinite; }
+.cmp-btn--running .cmp-sq:nth-child(2) { animation-delay: -0.5s; }
+.cmp-btn--running .cmp-sq:nth-child(3) { animation-delay: -1s; }
+.cmp-btn--running .cmp-sq:nth-child(4) { animation-delay: -1.5s; }
+@keyframes cmp-orbit {
+  0%   { transform: translate(0, 0)       scale(1);    background: #3fb950; }
+  25%  { transform: translate(11px, 0)    scale(0.82); background: #5f9fc9; }
+  50%  { transform: translate(11px, 11px) scale(1);    background: #c97fc9; }
+  75%  { transform: translate(0, 11px)    scale(0.82); background: #5dcaa5; }
+  100% { transform: translate(0, 0)       scale(1);    background: #3fb950; }
+}
+
+/* ── Summarize progress banner (heatmap) ────────────────────────────────── */
+.sm-cell--live { animation: sm-heat 2.4s ease-in-out infinite; }
+@keyframes sm-heat {
+  0%, 100% { background-color: color-mix(in srgb, var(--accent) 55%, var(--color-bg)); transform: scale(0.9); }
+  35%      { background-color: var(--accent); transform: scale(1.08); }
+  60%      { background-color: color-mix(in srgb, var(--accent) 80%, #ffffff); transform: scale(1.14); }
+  80%      { background-color: color-mix(in srgb, var(--accent) 78%, var(--color-bg)); transform: scale(1.0); }
+}

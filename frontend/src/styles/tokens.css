@@ -1,0 +1,68 @@
+/* ── Design tokens ──────────────────────────────────────────────────────────
+   Single source of truth for color. `theme.ts` references these vars,
+   so theming is just swapping `data-theme` on <html>.
+   :root is the dark theme (the original Ayu-style warm dark). */
+:root {
+  --color-bg-deep: #141413;     /* input wells, deep surfaces */
+  --color-bg: #1a1a19;          /* main window/panel */
+  --color-card: #262624;        /* cards, bubbles, buttons */
+  --color-card-active: #30302d; /* hover/active surface */
+  --color-border: #3a3a37;
+
+  --color-text-strong: #ffffff; /* emphasized text */
+  --color-text: #e0ded8;        /* primary */
+  --color-text-soft: #b2b0a8;   /* secondary */
+  --color-dim: #8c8a82;         /* metadata, hints */
+  --color-faint: #62605a;       /* disabled, decorations */
+
+  --color-accent: #3fb950;
+  --color-accent-hover: #56d364;
+  --color-success: #98c379;
+  --color-error: #e06c75;
+  --color-warn: #de8a3c;
+
+  /* Code/JSON surface — intentionally stays dark in both themes so syntax
+     coloring keeps its contrast (a deliberate "terminal" surface). */
+  --color-code-bg: #141413;
+
+  /* Hover film: the RGB triplet overlaid at low alpha for subtle hovers.
+     White over dark; flips to black over light. */
+  --overlay: 255, 255, 255;
+
+  /* Spacing & sizing tokens */
+  --radius-xs: 4px;    /* tight corners: switches, small indicators */
+  --radius-sm: 6px;    /* small buttons, close buttons, badges */
+  --radius-md: 8px;    /* standard: buttons, inputs, modals */
+  --radius-lg: 10px;   /* large: cards, panels */
+  --radius-xl: 14px;   /* extra large: main modals */
+  --radius-full: 9999px; /* pills, circles */
+
+  /* Back-compat aliases used by older CSS animations. */
+  --accent: var(--color-accent);
+  --accent-hover: var(--color-accent-hover);
+  --success: var(--color-success);
+  --error: var(--color-error);
+}
+
+/* Light theme — warm cream (Ayu-light family) keeping the same green accent. */
+:root[data-theme='light'] {
+  --color-bg-deep: #ece8df;
+  --color-bg: #f7f4ee;
+  --color-card: #fffdf8;
+  --color-card-active: #efebe1;
+  --color-border: #dcd6c9;
+
+  --color-text-strong: #1a1916;
+  --color-text: #2b2926;
+  --color-text-soft: #5b574f;
+  --color-dim: #8a857b;
+  --color-faint: #b4afa3;
+
+  --color-accent: #2da44e;
+  --color-accent-hover: #2c974b;
+  --color-success: #4a9e3f;
+  --color-error: #cf222e;
+  --color-warn: #bc6c1e;
+
+  --overlay: 0, 0, 0;
+}

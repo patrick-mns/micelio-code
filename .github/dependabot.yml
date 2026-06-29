@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Maintain dependencies for the Rust backend
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+
+  # Maintain dependencies for the React/Vite frontend
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10

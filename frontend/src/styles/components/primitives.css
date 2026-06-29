@@ -1,0 +1,191 @@
+/* ── Panel resize handle (sidebar + background-tasks drawer) ─────────────── */
+.panel-resizer {
+  flex-shrink: 0;
+  width: 6px;
+  cursor: ew-resize;
+  align-self: stretch;
+  position: relative;
+}
+.panel-resizer::after {
+  content: '';
+  position: absolute;
+  top: 12px; bottom: 12px; left: 50%;
+  width: 2px; margin-left: -1px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.panel-resizer:hover::after { background: var(--color-border); }
+.panel-resizer:active::after { background: var(--color-accent); }
+
+/* ── Ghost button ────────────────────────────────────────────────────────── */
+.ghost-btn {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--color-dim);
+  transition: background 0.15s, color 0.15s;
+}
+.ghost-btn:hover {
+  background: rgba(var(--overlay), 0.06);
+  color: var(--color-text);
+}
+
+/* ── Close button ────────────────────────────────────────────────────────── */
+.close-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 24px; width: 24px; padding: 0;
+  border: none; border-radius: var(--radius-sm);
+  background: transparent; color: var(--color-dim); cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.close-btn:hover {
+  background: rgba(var(--overlay), 0.1);
+  color: var(--color-text-strong);
+}
+
+/* ── Open-in button (compound: main label + caret) ──────────────────────── */
+.open-in-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 28px; font-size: 12px; white-space: nowrap;
+  background: var(--color-card); color: var(--color-text-soft); border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); cursor: pointer;
+  font-family: inherit; font-weight: 500;
+  transition: background-color 0.15s, color 0.15s;
+}
+.open-in-btn:hover:not(:disabled) {
+  background: var(--color-card-active);
+  color: var(--color-text);
+}
+/* menu items use the unified .menu-item class (buttons.css). */
+
+/* ── Transcript / raw views ─────────────────────────────────────────────── */
+.tr-head {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; text-align: left; padding: 0;
+  background: none; border: none; cursor: pointer;
+  font-family: inherit; font-size: 13px; color: var(--color-text-soft);
+  transition: color 0.15s;
+}
+.tr-head:hover { color: var(--color-text); }
+.tr-pre {
+  background: var(--color-bg-deep);
+  padding: 10px; border-radius: var(--radius-sm); font-size: 12px;
+  line-height: 1.45; overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+}
+.raw-pre {
+  background: var(--color-bg-deep);
+  padding: 10px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.4;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+.raw-header {
+  font-size: 11px; font-weight: 600; color: var(--color-dim);
+  margin-bottom: 4px;
+}
+
+/* ── Context window status trigger (ring + %) ───────────────────────────── */
+.ctx-trigger { border-radius: var(--radius-sm); transition: background-color 0.15s; }
+.ctx-trigger:hover { background: rgba(var(--overlay), 0.06); }
+
+/* ── Context window (compact button + squares) ──────────────────────────── */
+.cmp-btn { transition: border-color 0.15s, background 0.15s; }
+.cmp-btn:hover { border-color: var(--color-border); background: var(--color-card-active); }
+.cmp-btn:active { transform: translateY(0.5px); }
+.cmp-squares { position: relative; width: 18px; height: 18px; flex-shrink: 0; }
+.cmp-sq { position: absolute; top: 0; left: 0; width: 7px; height: 7px; border-radius: 2.5px; }
+.cmp-sq:nth-child(1) { transform: translate(0, 0);       background: #3fb950; }
+.cmp-sq:nth-child(2) { transform: translate(11px, 0);    background: #5f9fc9; }
+.cmp-sq:nth-child(3) { transform: translate(11px, 11px); background: #c97fc9; }
+.cmp-sq:nth-child(4) { transform: translate(0, 11px);    background: #5dcaa5; }
+
+/* ── Summarize progress banner (heatmap) ────────────────────────────────── */
+.sm-cell {
+  aspect-ratio: 1; border-radius: 1.5px;
+  background: transparent; transform-origin: center;
+  transition: background-color 0.5s ease, opacity 0.6s ease;
+}
+.sm-stop { transition: background 0.15s, border-color 0.15s, color 0.15s; }
+.sm-stop:hover {
+  background: rgba(224, 108, 117, 0.12);
+  border-color: rgba(224, 108, 117, 0.5);
+  color: var(--color-error);
+}
+
+/* ── Ledger ──────────────────────────────────────────────────────────────── */
+.ledger-drawer { position: fixed; top: 0; bottom: 0; right: 0; z-index: 100; overflow-y: auto; }
+/* A clickable table row — keep the native table-row display so the cells stay
+   aligned with the <th> columns (do NOT set display:flex here). */
+.ledger-row { cursor: pointer; transition: background-color 0.1s; }
+.ledger-row:hover:not(.is-active) { background: rgba(var(--overlay), 0.035); }
+.ledger-row.is-active { background: var(--color-card); }
+
+/* ── Copy button (message + ledger) ────────────────────────────────────── */
+.copy-btn {
+  transition: background-color 0.15s, opacity 0.1s;
+}
+.copy-btn:hover {
+  background-color: var(--color-card-active);
+}
+
+/* ── Raw copy button (ledger) ──────────────────────────────────────────── */
+.raw-copy {
+  transition: background 0.15s, color 0.15s;
+}
+.raw-copy:hover {
+  background: rgba(var(--overlay), 0.08);
+  color: var(--color-text);
+}
+
+/* icon-btn / icon-btn-sm live in buttons.css (unified button system). */
+
+/* ── Composer send/stop button ───────────────────────────────────────────────
+   Background is set inline (dynamic ready/idle state), so a CSS :hover bg would
+   be blocked by inline specificity. Use an inset overlay film instead — same
+   convention as other hovers (darkens in light theme, lightens in dark) and
+   not affected by the inline background. */
+.send-btn { transition: box-shadow 0.15s; }
+.send-btn:not(:disabled):hover { box-shadow: inset 0 0 0 999px rgba(var(--overlay), 0.07); }
+
+/* ── Command palette rows (keyboard select = is-active; mouse = hover) ───── */
+.cmd-row { background: transparent; transition: background-color 0.1s; }
+.cmd-row:hover { background: rgba(var(--overlay), 0.05); }
+.cmd-row.is-active { background: var(--color-card-active); }
+
+/* ── Git context workspace switcher ─────────────────────────────────────── */
+.repo-btn {
+  background: transparent; color: var(--color-text-soft);
+  transition: background-color 0.12s, color 0.12s;
+}
+.repo-btn:hover { background: var(--color-bg-deep); color: var(--color-text); }
+
+/* ── Question card: skip toggle + selectable options ────────────────────── */
+.skip-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--color-bg-deep); border: 1px solid var(--color-border);
+  color: var(--color-dim); font-size: 11.5px; font-family: inherit; cursor: pointer;
+  transition: background-color 0.1s, color 0.1s, border-color 0.1s;
+}
+.skip-btn:hover:not(.is-active) { color: var(--color-text-soft); border-color: var(--color-dim); }
+.skip-btn.is-active { background: var(--color-card-active); color: var(--color-text-soft); border-color: var(--color-dim); }
+
+.q-option {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  padding: 8px 11px; border-radius: var(--radius-md);
+  background: var(--color-bg-deep); border: 1px solid var(--color-border);
+  color: var(--color-text-soft); font-size: 13px; font-family: inherit; cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+.q-option:hover:not(.is-active) { background: var(--color-card-active); border-color: var(--color-dim); }
+.q-option.is-active { background: var(--color-card-active); border-color: var(--color-dim); color: var(--color-text); }
+
+/* ── Model role selector rows (layout stays inline; hover/active here) ───── */
+.role-head { transition: background-color 0.12s; }
+.role-head:hover { background: rgba(var(--overlay), 0.04); }
+.role-item {
+  background: transparent; color: var(--color-text-soft);
+  transition: background-color 0.12s, color 0.12s;
+}
+.role-item:hover:not(.is-active) { background: var(--color-card-active); color: var(--color-text); }
+.role-item.is-active { background: var(--color-card); color: var(--color-text); }
+
+/* ── Pull to refresh indicator ──────────────────────────────────────────── */
+.ptr { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px; color: var(--color-dim); font-size: 12px; }

@@ -1,0 +1,24 @@
+# ── Rust ──────────────────────────────────────────────────────────────────────
+target/
+
+# ── Node ──────────────────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+
+# Root-level package files are strays from early experiments; the real
+# frontend lives in frontend/.
+/package.json
+/package-lock.json
+
+# ── Tauri / macOS packaging ────────────────────────────────────────────────────
+/dist/
+# Tauri-generated schemas/bindings.
+/gen/
+
+# ── Runtime data (per-workspace) ──────────────────────────────────────────────
+.micelio/
+.mycelium/
+
+# ── Tooling ───────────────────────────────────────────────────────────────────
+.claude/
+.DS_Store

@@ -1,0 +1,36 @@
+[package]
+name = "micelio"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "micelio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+tiktoken-rs = "0.12"
+tauri-plugin-dialog = "2"
+tauri-build = { version = "2", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+ignore = "0.4"
+tree-sitter = "0.26.9"
+tree-sitter-rust = "0.24.2"
+tree-sitter-python = "0.25.0"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-typescript = "0.23.2"
+tree-sitter-go = "0.25.0"
+tree-sitter-html = "0.23.2"
+tree-sitter-css = "0.25.0"
+tree-sitter-c = "0.24.2"
+tree-sitter-cpp = "0.23.4"
+rusqlite = { version = "0.32", features = ["bundled"] }
+ureq = { version = "2", features = ["json"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["full"] }
+base64 = "0.22"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

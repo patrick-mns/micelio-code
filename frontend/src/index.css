@@ -1,0 +1,32 @@
+/* ── Modular style imports ─────────────────────────────────────────────────
+   Each file has a single responsibility. @import must precede all other
+   statements (CSS spec). Reset runs first to establish baseline.
+   ========================================================================= */
+@import './styles/reset.css';
+@import './styles/tokens.css';
+@import './styles/base.css';
+@import './styles/buttons.css';
+@import './styles/animations.css';
+@import './styles/components/primitives.css';
+@import './styles/components/tree.css';
+@import './styles/components/markdown.css';
+
+
+html, body {
+  height: 100%;
+}
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+#root { width: 100%; height: 100%; }
+
+/* ── prefers-reduced-motion ──────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

@@ -1,0 +1,15 @@
+# Arquivos de dados/runtime que o próprio app escreve ao iniciar.
+# Sem isto, o watcher do `tauri dev` reinicia o app em loop (abre/fecha sozinho).
+.micelio/
+*.log
+*.db
+*.db-shm
+*.db-wal
+
+# O frontend é servido pelo vite (devUrl) com HMR próprio — o watcher do Rust
+# não deve reconstruir o app a cada edição de JSX/CSS. Sem isto, salvar um
+# arquivo do frontend dispara um rebuild do binário em paralelo ao HMR.
+frontend/node_modules/
+frontend/dist/
+target/
+dist/

@@ -1,0 +1,30 @@
+/* ── CSS Reset (replaces Tailwind preflight) ────────────────────────────────
+   Minimal reset: box-sizing, zero margins/padding on block elements, inherit
+   font on buttons. Paired with @import in index.css to run first. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body,
+h1, h2, h3, h4, h5, h6,
+p, hr, pre,
+figure, blockquote, dl, dd {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: inherit;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+}
