@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.2.1...micelio-v0.3.0) (2026-06-29)
+
+
+### Features
+
+* add cancel button and Escape key to workspace indexing overlay ([8d26ad6](https://github.com/patrick-mns/micelio-code/commit/8d26ad62720fdc4674e55d446b88f452324bfabd))
+
 ## [0.2.1](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.2.0...micelio-v0.2.1) (2026-06-29)
 
 
