@@ -72,15 +72,16 @@ fn spawn_detached(command: &str, context: &ToolContext) -> Result<(Child, PathBu
     let mut cmd = Command::new("sh");
     cmd.arg("-lc")
         .arg(command)
-        // Run in the workspace root, not the process cwd (often `/`, which is
-        // read-only — caused `mkdir foo` to fail with read-only fs).
         .current_dir(&context.workspace_root)
-        // Fully detach: no stdin (so the process can't block on input), output
-        // to the log file, own session so it doesn't share the app's process
-        // group / controlling terminal.
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_err));
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
 
     #[cfg(unix)]
     {
