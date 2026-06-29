@@ -12,7 +12,10 @@ fn no_window_cmd(prog: &str) -> std::process::Command {
     #[allow(unused_mut)]
     let mut cmd = std::process::Command::new(prog);
     #[cfg(windows)]
-    cmd.creation_flags(NO_WINDOW);
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(NO_WINDOW);
+    }
     cmd
 }
 
