@@ -3,6 +3,19 @@ use crate::AppState;
 use serde::Serialize;
 use tauri::State;
 
+/// Windows-hide flag so child processes (git) don't pop a terminal window.
+#[cfg(windows)]
+const NO_WINDOW: u32 = 0x08000000; // CREATE_NO_WINDOW
+
+/// Cross-platform helper that hides the child's console window on Windows.
+fn no_window_cmd(prog: &str) -> std::process::Command {
+    #[allow(unused_mut)]
+    let mut cmd = std::process::Command::new(prog);
+    #[cfg(windows)]
+    cmd.creation_flags(NO_WINDOW);
+    cmd
+}
+
 #[derive(Serialize)]
 pub struct Settings {
     pub model: String,
@@ -282,7 +295,7 @@ pub async fn get_git_context(state: State<'_, AppState>) -> Result<GitContext, S
     let root = state.workspace_root.lock().unwrap();
 
     // Get branch name
-    let branch = std::process::Command::new("git")
+    let branch = no_window_cmd("git")
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(&*root)
         .output()
@@ -297,7 +310,7 @@ pub async fn get_git_context(state: State<'_, AppState>) -> Result<GitContext, S
         .unwrap_or_else(|| "no git".to_string());
 
     // Get diff stats (--cached for staged, without for unstaged)
-    let diff_output = std::process::Command::new("git")
+    let diff_output = no_window_cmd("git")
         .args(["diff", "--numstat"])
         .current_dir(&*root)
         .output()
