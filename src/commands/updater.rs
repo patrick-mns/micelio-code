@@ -25,12 +25,11 @@ pub async fn check_for_updates(
 
     let res = tokio::task::spawn_blocking(move || match Updater::check(&handle, &updater_state) {
         Ok(has_update) => {
-            let status = updater_state.status.lock().unwrap().clone();
             if !has_update {
                 *updater_state.status.lock().unwrap() = UpdateStatus::Idle;
                 let _ = handle.emit("update_status", UpdateStatus::Idle);
             }
-            status
+            updater_state.status.lock().unwrap().clone()
         }
         Err(e) => {
             *updater_state.status.lock().unwrap() = UpdateStatus::Error(e.clone());
