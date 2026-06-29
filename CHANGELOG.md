@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.2...micelio-v0.3.3) (2026-06-29)
+
+
+### Bug Fixes
+
+* **windows:** suppress console windows spawned by LLM terminal tool ([20c5248](https://github.com/patrick-mns/micelio-code/commit/20c5248e6e47a9b46f9b5b08cf9d18d787527d1d))
+
 ## [0.3.2](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.1...micelio-v0.3.2) (2026-06-29)
 
 
