@@ -212,7 +212,7 @@ impl Updater {
         std::fs::create_dir_all(&temp_dir)
             .map_err(|e| format!("Failed to create temp dir: {e}"))?;
         let filename = status_label(&status); // safe fallback name
-        let temp_path = temp_dir.join(&filename);
+        let temp_path = temp_dir.join(filename);
         let mut file = std::fs::File::create(&temp_path)
             .map_err(|e| format!("Failed to create temp file: {e}"))?;
 
