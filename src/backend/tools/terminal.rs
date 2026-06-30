@@ -70,8 +70,11 @@ fn spawn_detached(command: &str, context: &ToolContext) -> Result<(Child, PathBu
         .try_clone()
         .map_err(|e| format!("failed to clone log handle: {e}"))?;
 
-    let mut cmd = no_window_cmd("sh");
-    cmd.arg("-lc")
+    let shell = if cfg!(windows) { "cmd.exe" } else { "sh" };
+    let shell_arg = if cfg!(windows) { "/C" } else { "-lc" };
+
+    let mut cmd = no_window_cmd(shell);
+    cmd.arg(shell_arg)
         .arg(command)
         .current_dir(&context.workspace_root)
         .stdin(Stdio::null())
