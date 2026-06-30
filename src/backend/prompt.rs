@@ -74,9 +74,29 @@ pub fn default_system_prompt() -> String {
     }
     env_line.push('.');
 
+    let is_windows = cfg!(windows);
+    let os_hints = if is_windows {
+        "\n\n## Windows-specific notes\n\
+- This machine runs Windows. Unix commands (grep, which, rg, make, touch, curl, ps, kill, chmod, diff, wget) \
+do NOT exist here natively — adapt them:\n  \
+  • `grep` → `findstr` (or use the `search` tool)\n  \
+  • `which` → `where.exe`\n  \
+  • `rg` → use the `search` tool instead\n  \
+  • `curl` → `curl.exe` (may be available on modern Windows) or use the `fetch` tool\n  \
+  • `touch` → `copy /b nul + filename`\n  \
+  • `diff` → `fc`\n  \
+  • `ps` → `tasklist`\n  \
+  • `kill` → `taskkill /PID`\n  \
+  • Unix paths (`/tmp`, `/etc`) don't exist — use Windows paths (`%TEMP%`, etc.)\n  \
+  • The shell is `cmd.exe` with `/C`, not bash — single quotes `'` don't work; use double quotes `\"`.\n\
+- If a command fails with no output, it's almost certainly not available on Windows."
+    } else {
+        ""
+    };
+
     let prompt = format!(
         "You are a minimal local coding assistant running on the user's machine. \
-{env_line} \
+{env_line}{os_hints} \
 Prefer running shell commands via the `terminal` tool to answer questions about the system, \
 environment, files, processes, network, or dates — run the command and report the result \
 instead of telling the user how to do it or asking which OS they use (you already know it). \

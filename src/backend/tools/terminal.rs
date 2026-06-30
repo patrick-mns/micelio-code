@@ -35,7 +35,7 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
             Ok(Some(status)) => {
                 let output = std::fs::read_to_string(&log_path).unwrap_or_default();
                 let _ = std::fs::remove_file(&log_path); // short-lived: don't litter
-                return format_output(status.code().unwrap_or(-1), &output);
+                return format_output(status.code().unwrap_or(-1), &output, &command);
             }
             Ok(None) => {
                 if start.elapsed() >= FOREGROUND_TIMEOUT {
@@ -182,11 +182,30 @@ fn detach_child() {
     }
 }
 
-fn format_output(exit_code: i32, output: &str) -> Result<ToolResult, String> {
+fn format_output(exit_code: i32, output: &str, command: &str) -> Result<ToolResult, String> {
     let trimmed = output.trim();
     if exit_code != 0 {
+        let is_windows = cfg!(windows);
         let msg = if trimmed.is_empty() {
-            format!("command exited with code {exit_code}")
+            // On Windows, cmd.exe often produces no output when a command is
+            // not found, unlike bash which writes "command not found" to stderr.
+            // Include the exact command in the hint so the model can self-correct.
+            let cmd_name = command.split_whitespace().next().unwrap_or(command);
+            let hint = if is_windows {
+                format!(
+                    "command `{cmd_name}` exited with code {exit_code} and produced no output. \
+This probably means the program is not available on Windows. \
+Common Unix commands that don't exist natively on Windows: grep→findstr, \
+which→where.exe, rg (ripgrep may not be installed), make, diff, touch, curl, wget, ps, kill, chmod. \
+Try using the `search` tool instead of grep/rg, or adapt the command to Windows equivalents."
+                )
+            } else {
+                format!(
+                    "command `{cmd_name}` exited with code {exit_code} and produced no output. \
+This may mean the command was not found or couldn't execute."
+                )
+            };
+            hint
         } else {
             let first = trimmed.lines().next().unwrap_or("unknown error");
             if first.len() > 150 {
