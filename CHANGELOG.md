@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.5](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.4...micelio-v0.3.5) (2026-06-30)
+
+
+### Bug Fixes
+
+* **windows:** improve error feedback when commands fail without output ([3d07945](https://github.com/patrick-mns/micelio-code/commit/3d0794543659696b7ade5bad8cff33f073f3f0a4))
+
 ## [0.3.4](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.3...micelio-v0.3.4) (2026-06-30)
 
 
