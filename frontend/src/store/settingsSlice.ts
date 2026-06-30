@@ -20,8 +20,8 @@ export interface SettingsSlice {
 export const settingsSlice: StateCreator<AppState, [], [], SettingsSlice> = (set) => ({
   settings: null,
   models: [],
-  chatModel: prefs.chatModel || 'claude-sonnet-4-6',
-  summarizeModel: prefs.summarizeModel || 'claude-haiku-4-6',
+  chatModel: prefs.chatModel || '',
+  summarizeModel: prefs.summarizeModel || '',
 
   setSettings: (settings) => set({ settings }),
   setModels: (models) => set({ models }),
