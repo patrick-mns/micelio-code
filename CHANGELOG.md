@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.3...micelio-v0.3.4) (2026-06-30)
+
+
+### Bug Fixes
+
+* **windows:** use platform-appropriate commands in terminal tool and openers ([07c8098](https://github.com/patrick-mns/micelio-code/commit/07c8098001f2c451b61eaedd2844fdd3448b4a4f))
+
 ## [0.3.3](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.2...micelio-v0.3.3) (2026-06-29)
 
 
