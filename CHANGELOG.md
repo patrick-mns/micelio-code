@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.6](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.5...micelio-v0.3.6) (2026-06-30)
+
+
+### Bug Fixes
+
+* **updater:** remove unnecessary borrow flagged by clippy ([1b8a107](https://github.com/patrick-mns/micelio-code/commit/1b8a10744bc733d931468a4679e7b782456777ff))
+
 ## [0.3.5](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.4...micelio-v0.3.5) (2026-06-30)
 
 
