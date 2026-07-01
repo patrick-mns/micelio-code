@@ -29,11 +29,7 @@ export default function Sidebar({ workspaceName, onPickWorkspace, switching, onO
   const refresh = () =>
     ipc.listSessions().then((list) => {
       setSessions(list);
-      const active = list.find((s) => s.active);
-      if (active) {
-        setCurrentSession(active.id);
-        loadSessionModels(active.id);
-      }
+      return list;
     }).catch(console.error);
 
   const loadSessionModels = async (id: string) => {
@@ -45,7 +41,16 @@ export default function Sidebar({ workspaceName, onPickWorkspace, switching, onO
     }
   };
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    refresh().then((list) => {
+      if (!list || currentSession) return;
+      const active = list.find((s) => s.active);
+      if (active) {
+        setCurrentSession(active.id);
+        loadSessionModels(active.id);
+      }
+    });
+  }, []);
   // Re-pull after a turn finishes so new titles / counts show up.
   const curMsgs = currentSession ? messagesBySession[currentSession] : undefined;
   useEffect(() => { if (!isLoading) refresh(); }, [isLoading, curMsgs?.length]);
