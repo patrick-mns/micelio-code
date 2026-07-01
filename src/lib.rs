@@ -129,7 +129,13 @@ pub fn run() {
     ensure_cli_path();
 
     let workspace_root = backend::config::last_workspace().unwrap_or_else(|| {
-        env::home_dir().unwrap_or_else(|| env::current_dir().unwrap_or_default())
+        // Use the app's own data directory under ~/.micelio/workspace-root/ as a
+        // safe fallback when no workspace was ever picked.  This avoids touching
+        // ~/Documents/ (or another TCC-guarded path) on every launch, which would
+        // otherwise trigger repeated macOS permission prompts.
+        let fallback = backend::config::app_data_dir().join("workspace-root");
+        let _ = std::fs::create_dir_all(&fallback);
+        fallback
     });
 
     let model = backend::config::last_model().unwrap_or_else(|| "claude-sonnet-4-6".to_string());

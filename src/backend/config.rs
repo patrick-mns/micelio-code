@@ -23,6 +23,15 @@ pub fn data_dir(root: &Path) -> PathBuf {
     current
 }
 
+/// Returns the app-level data dir at `~/.micelio/`.  Used for global config
+/// (last workspace, model prefs, API keys) and as a safe fallback workspace
+/// root when no workspace has been picked yet (avoids touching TCC-guarded
+/// paths like ~/Documents/ just for bootstrapping).
+pub fn app_data_dir() -> PathBuf {
+    let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+    data_dir(&home)
+}
+
 /// Ensures `.micelio/` is listed in `<root>/.gitignore`. Creates the file if
 /// it doesn't exist. No-op if the entry is already present. Best-effort.
 pub fn ensure_gitignore(root: &Path) {
@@ -45,7 +54,7 @@ pub fn ensure_gitignore(root: &Path) {
 /// Absolute path of the config file named `key` under `~/.micelio/`.
 /// `None` only when `$HOME` can't be resolved.
 fn cfg_path(key: &str) -> Option<PathBuf> {
-    std::env::home_dir().map(|h| data_dir(&h).join(key))
+    Some(app_data_dir().join(key))
 }
 
 /// Reads `key`'s trimmed contents, or `None` when the file is missing/empty.
