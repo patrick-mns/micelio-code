@@ -127,15 +127,17 @@ export default function App() {
           {/* Header over the content area only. When the sidebar is closed it
               reserves the traffic-light gap; otherwise the sidebar does. */}
           <div style={appStyles.header} data-tauri-drag-region>
-            {!sidebarOpen && <div style={appStyles.trafficGap} />}
+            <div style={appStyles.headerLeft} data-tauri-drag-region>
+              {!sidebarOpen && <div style={appStyles.trafficGap} />}
 
-            <button
-              className="icon-btn"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              title="Toggle conversations"
-            >
-              <SidebarSimple size={18} weight={sidebarOpen ? 'fill' : 'regular'} />
-            </button>
+              <button
+                className="icon-btn"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                title="Toggle conversations"
+              >
+                <SidebarSimple size={18} weight={sidebarOpen ? 'fill' : 'regular'} />
+              </button>
+            </div>
 
             <div style={appStyles.center} data-tauri-drag-region>
               <div className="seg-track">
@@ -156,24 +158,26 @@ export default function App() {
             </div>
 
             {/* Right: context actions for the current workspace. */}
-            <button
-              className="btn btn-icon btn-ghost"
-              style={{ color: aboutOpen ? theme.text : theme.dim }}
-              title="About Micelio Code"
-              onClick={() => setAboutOpen(true)}
-            >
-              <Info size={16} />
-            </button>
-            <button
-              className="btn btn-icon btn-ghost"
-              style={{ color: sysPromptOpen ? theme.text : theme.dim }}
-              title="View system prompt"
-              onClick={() => setSysPromptOpen(true)}
-            >
-              <FileText size={16} />
-            </button>
-            <BgTasksChip running={runningCount} active={bgOpen} onClick={() => setBgOpen((o) => !o)} />
-            <OpenInButton />
+            <div style={appStyles.headerRight} data-tauri-drag-region>
+              <button
+                className="btn btn-icon btn-ghost"
+                style={{ color: aboutOpen ? theme.text : theme.dim }}
+                title="About Micelio Code"
+                onClick={() => setAboutOpen(true)}
+              >
+                <Info size={16} />
+              </button>
+              <button
+                className="btn btn-icon btn-ghost"
+                style={{ color: sysPromptOpen ? theme.text : theme.dim }}
+                title="View system prompt"
+                onClick={() => setSysPromptOpen(true)}
+              >
+                <FileText size={16} />
+              </button>
+              <BgTasksChip running={runningCount} active={bgOpen} onClick={() => setBgOpen((o) => !o)} />
+              <OpenInButton />
+            </div>
           </div>
 
           <div style={appStyles.view}>
