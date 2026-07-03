@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.7](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.6...micelio-v0.3.7) (2026-07-01)
+
+
+### Bug Fixes
+
+* **macos:** single Documents permission prompt (TCC) instead of multiple ([a25c542](https://github.com/patrick-mns/micelio-code/commit/a25c54239f96b5658daaedf4d9c4eba8364d3f7d))
+
 ## [0.3.6](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.5...micelio-v0.3.6) (2026-06-30)
 
 
