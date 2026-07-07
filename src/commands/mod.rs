@@ -3,6 +3,7 @@ pub mod bg;
 pub mod chat;
 pub mod graph;
 pub mod openers;
+pub mod review;
 pub mod sessions;
 pub mod settings;
 pub mod updater;

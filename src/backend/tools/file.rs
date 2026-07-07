@@ -170,10 +170,13 @@ fn list_directory(dir: &std::path::Path, display_path: &str) -> Result<FileResul
     })
 }
 
-fn write(path: &str, arguments: &str, context: &ToolContext) -> Result<FileResult, String> {
-    // Smaller models often name the payload differently — accept common aliases
-    // before giving up, so a write doesn't fail just over the field name.
-    let content = [
+/// Extract the write payload from tool arguments. Smaller models often name
+/// the payload differently — accept common aliases before giving up, so a
+/// write doesn't fail just over the field name. Shared by the real `write`
+/// action and by the review-mode interception in `commands::agent`, so both
+/// paths agree on what "the content to write" means.
+pub fn resolve_write_content(arguments: &str) -> Result<String, String> {
+    [
         "content",
         "contents",
         "text",
@@ -184,7 +187,11 @@ fn write(path: &str, arguments: &str, context: &ToolContext) -> Result<FileResul
     ]
     .iter()
     .find_map(|k| super::get_string_field(arguments, k))
-    .ok_or_else(|| "tool call missing `content` (the text to write into the file)".to_string())?;
+    .ok_or_else(|| "tool call missing `content` (the text to write into the file)".to_string())
+}
+
+fn write(path: &str, arguments: &str, context: &ToolContext) -> Result<FileResult, String> {
+    let content = resolve_write_content(arguments)?;
     let full_path = context.workspace_root.join(path);
 
     fs::write(&full_path, &content)
@@ -201,7 +208,18 @@ fn write(path: &str, arguments: &str, context: &ToolContext) -> Result<FileResul
     })
 }
 
-fn edit(path: &str, arguments: &str, context: &ToolContext) -> Result<FileResult, String> {
+/// Validate an edit's `old_string`/`new_string` against the file's current
+/// content and compute the replaced content. Shared by the real `edit` action
+/// and by the review-mode interception in `commands::agent`, so a rejected or
+/// ambiguous edit is caught the same way regardless of whether review mode is
+/// on — the interception no longer gets to silently "succeed" on a no-op.
+///
+/// Returns `(after_content, occurrences, replace_all)`.
+pub fn resolve_edit_content(
+    before_content: &str,
+    arguments: &str,
+    display_path: &str,
+) -> Result<(String, usize, bool), String> {
     let old_string = super::get_string_field(arguments, "old_string")
     .ok_or_else(|| "tool call missing `old_string` — for edit you must include both `old_string` (exact text to find) and `new_string` (replacement text)".to_string())?;
     let new_string = super::get_string_field(arguments, "new_string")
@@ -212,21 +230,15 @@ fn edit(path: &str, arguments: &str, context: &ToolContext) -> Result<FileResult
         return Err("old_string and new_string are identical — nothing to change".into());
     }
 
-    let full_path = context.workspace_root.join(path);
-    let before_content = fs::read_to_string(&full_path)
-        .map_err(|e| format!("failed to read {}: {e}", full_path.display()))?;
-
     let occurrences = before_content.matches(&old_string).count();
     if occurrences == 0 {
         return Err(format!(
-      "old_string not found in {} — read the file first to copy the exact text (including whitespace)",
-      full_path.display()
+      "old_string not found in {display_path} — read the file first to copy the exact text (including whitespace)"
     ));
     }
     if occurrences > 1 && !replace_all {
         return Err(format!(
-      "old_string appears {occurrences} times in {} — add more surrounding context to make it unique, or set replace_all:true",
-      full_path.display()
+      "old_string appears {occurrences} times in {display_path} — add more surrounding context to make it unique, or set replace_all:true"
     ));
     }
 
@@ -235,6 +247,19 @@ fn edit(path: &str, arguments: &str, context: &ToolContext) -> Result<FileResult
     } else {
         before_content.replacen(&old_string, &new_string, 1)
     };
+
+    Ok((after_content, occurrences, replace_all))
+}
+
+fn edit(path: &str, arguments: &str, context: &ToolContext) -> Result<FileResult, String> {
+    let full_path = context.workspace_root.join(path);
+    let before_content = fs::read_to_string(&full_path)
+        .map_err(|e| format!("failed to read {}: {e}", full_path.display()))?;
+
+    let (after_content, occurrences, replace_all) =
+        resolve_edit_content(&before_content, arguments, &full_path.display().to_string())?;
+
+    let old_string = super::get_string_field(arguments, "old_string").unwrap_or_default();
 
     fs::write(&full_path, &after_content)
         .map_err(|e| format!("failed to write {}: {e}", full_path.display()))?;

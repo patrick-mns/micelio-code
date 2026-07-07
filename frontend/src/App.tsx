@@ -11,12 +11,14 @@ import Sidebar from '@/components/Sidebar';
 import ScanOverlay from '@/components/ScanOverlay';
 import OpenInButton from '@/components/OpenInButton';
 import BgTasksChip, { BgTasksPanel } from '@/components/BgTasksChip';
+import ReviewChip, { ReviewPanel } from '@/components/ReviewChip';
 import AnimatedPanel from '@/components/AnimatedPanel';
 import Toasts from '@/components/Toasts';
 import { useStore } from '@/store';
 import { theme } from '@/theme';
 import { usePanelResize } from '@/hooks/usePanelResize';
 import { useBgTasks } from '@/hooks/useBgTasks';
+import { useReview } from '@/hooks/useReview';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { ipc } from '@/ipc';
 import type { TabId } from '@/store/uiSlice';
@@ -45,7 +47,7 @@ export default function App() {
     settings, setSettings, sidebarOpen, setSidebarOpen, scanning,
     update, setUpdateState, checkForUpdates,
   } = useStore();
-  const [bgOpen, setBgOpen] = useState(false);
+  const [rightPanel, setRightPanel] = useState<'bg' | 'review' | null>(null);
   const [sysPromptOpen, setSysPromptOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -96,6 +98,10 @@ export default function App() {
   }, []);
 
   const { tasks: bgTasks, runningCount, stop: stopBg, clear: clearBg } = useBgTasks();
+  const {
+    status: reviewStatus,
+    gitRevertFile, gitRevertAll,
+  } = useReview();
   const { switching, pickWorkspace } = useWorkspace();
 
   // Resizable widths for the two side panels (the wrapper width, including the
@@ -129,13 +135,15 @@ export default function App() {
           <div style={appStyles.header} data-tauri-drag-region>
             {!sidebarOpen && <div style={appStyles.trafficGap} />}
 
-            <button
-              className="icon-btn"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              title="Toggle conversations"
-            >
-              <SidebarSimple size={18} weight={sidebarOpen ? 'fill' : 'regular'} />
-            </button>
+            <div style={appStyles.headerLeft}>
+              <button
+                className="icon-btn"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                title="Toggle conversations"
+              >
+                <SidebarSimple size={18} weight={sidebarOpen ? 'fill' : 'regular'} />
+              </button>
+            </div>
 
             <div style={appStyles.center} data-tauri-drag-region>
               <div className="seg-track">
@@ -156,24 +164,27 @@ export default function App() {
             </div>
 
             {/* Right: context actions for the current workspace. */}
-            <button
-              className="btn btn-icon btn-ghost"
-              style={{ color: aboutOpen ? theme.text : theme.dim }}
-              title="About Micelio Code"
-              onClick={() => setAboutOpen(true)}
-            >
-              <Info size={16} />
-            </button>
-            <button
-              className="btn btn-icon btn-ghost"
-              style={{ color: sysPromptOpen ? theme.text : theme.dim }}
-              title="View system prompt"
-              onClick={() => setSysPromptOpen(true)}
-            >
-              <FileText size={16} />
-            </button>
-            <BgTasksChip running={runningCount} active={bgOpen} onClick={() => setBgOpen((o) => !o)} />
-            <OpenInButton />
+            <div style={appStyles.headerRight}>
+              <button
+                className="btn btn-icon btn-ghost"
+                style={{ color: aboutOpen ? theme.text : theme.dim }}
+                title="About Micelio Code"
+                onClick={() => setAboutOpen(true)}
+              >
+                <Info size={16} />
+              </button>
+              <button
+                className="btn btn-icon btn-ghost"
+                style={{ color: sysPromptOpen ? theme.text : theme.dim }}
+                title="View system prompt"
+                onClick={() => setSysPromptOpen(true)}
+              >
+                <FileText size={16} />
+              </button>
+              <BgTasksChip running={runningCount} active={rightPanel === 'bg'} onClick={() => setRightPanel((p) => (p === 'bg' ? null : 'bg'))} />
+              <ReviewChip pendingCount={reviewStatus.pending_count} active={rightPanel === 'review'} onClick={() => setRightPanel((p) => (p === 'review' ? null : 'review'))} />
+              <OpenInButton />
+            </div>
           </div>
 
           <div style={appStyles.view}>
@@ -187,14 +198,23 @@ export default function App() {
           </div>
         </div>
 
-        {bgOpen && <ResizeHandle onMouseDown={bgResize.startResize} />}
-        <AnimatedPanel open={bgOpen} side="right" width={bgResize.width} resizing={bgResize.isResizing}>
-          <BgTasksPanel
-            tasks={bgTasks}
-            onClose={() => setBgOpen(false)}
-            onStop={stopBg}
-            onClear={clearBg}
-          />
+        {rightPanel && <ResizeHandle onMouseDown={bgResize.startResize} />}
+        <AnimatedPanel open={!!rightPanel} side="right" width={bgResize.width} resizing={bgResize.isResizing}>
+          {rightPanel === 'review' ? (
+            <ReviewPanel
+              gitFiles={reviewStatus.changes.git_files}
+              onClose={() => setRightPanel(null)}
+              onRevert={gitRevertFile}
+              onRevertAll={gitRevertAll}
+            />
+          ) : (
+            <BgTasksPanel
+              tasks={bgTasks}
+              onClose={() => setRightPanel(null)}
+              onStop={stopBg}
+              onClear={clearBg}
+            />
+          )}
         </AnimatedPanel>
       </div>
 

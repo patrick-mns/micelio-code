@@ -5,6 +5,7 @@ import MessageList from '@/components/MessageList';
 import Composer from '@/components/Composer';
 import StreamStatus from '@/components/StreamStatus';
 import QuestionCard, { parseQuestions } from '@/components/QuestionCard';
+import EditApprovalCard from '@/components/EditApprovalCard';
 import GitContext from '@/components/GitContext';
 import SummarizeBanner from '@/components/SummarizeBanner';
 import TranscriptView from '@/components/TranscriptView';
@@ -15,7 +16,7 @@ import { MIN_SCAN_MS } from '@/utils/treemapHelpers';
 import { chatStyles as styles } from '@/utils/theme-styles';
 import type { StreamPart, StreamState } from '@/components/StreamStatus';
 import type { Question } from '@/components/QuestionCard';
-import type { Usage } from '@/types';
+import type { EditReviewRequest, Usage } from '@/types';
 
 // The in-flight assistant turn buffered in a ref (a richer StreamState with the
 // thinking text, start time, usage, and a cancel flag).
@@ -67,6 +68,7 @@ export default function Chat() {
 
   // ── Local state ────────────────────────────────────────────────────────────
   const [pendingAsk, setPendingAsk] = useState<Question[] | null>(null);
+  const [pendingEdit, setPendingEdit] = useState<EditReviewRequest | null>(null);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [summarize, setSummarize] = useState<SummarizeState | null>(null);
   const [cmdSelected, setCmdSelected] = useState(0);
@@ -129,6 +131,7 @@ export default function Chat() {
       const qs = parseQuestions(args);
       if (qs.length) setPendingAsk(qs);
     });
+    ipc.onReviewRequest((req) => setPendingEdit(req));
     ipc.onStreamUsage(({ session_id, ...u }) => {
       if (streamsRef.current[session_id]) streamsRef.current[session_id].usage = u;
     });
@@ -313,6 +316,17 @@ export default function Chat() {
     await ipc.stopChatStream().catch(console.error);
   }, []);
 
+  // ── EditApprovalCard ────────────────────────────────────────────────────────
+  const acceptEdit = useCallback(async () => {
+    setPendingEdit(null);
+    await ipc.answerEditReview(true).catch(console.error);
+  }, []);
+
+  const rejectEdit = useCallback(async () => {
+    setPendingEdit(null);
+    await ipc.answerEditReview(false).catch(console.error);
+  }, []);
+
   // ── Slash commands ─────────────────────────────────────────────────────────
   const showPalette = input.startsWith('/') && !input.includes(' ');
   const filteredCmds = showPalette ? COMMANDS.filter((c) => c.cmd.startsWith(input.toLowerCase())) : [];
@@ -415,6 +429,9 @@ export default function Chat() {
         <div style={{ maxWidth: 760, width: '100%', margin: '0 auto', padding: '0 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {pendingAsk && (streamingSession == null || streamingSession === viewingSession) && (
             <QuestionCard questions={pendingAsk} onAnswer={answerAsk} onCancel={cancelAsk} />
+          )}
+          {pendingEdit && pendingEdit.session_id === viewingSession && (
+            <EditApprovalCard request={pendingEdit} onAccept={acceptEdit} onReject={rejectEdit} />
           )}
           {summarize && (
             <SummarizeBanner
