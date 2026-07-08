@@ -68,46 +68,45 @@ export default function WorkspaceSettings() {
 
       {/* ── Current workspace name ── */}
       <Section title="WORKSPACE">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-
-          {isEditing ? (
-            <input
-              ref={nameInputRef}
-              type="text"
-              value={editingName}
-              onChange={(e) => setEditingName(e.target.value)}
-              onBlur={commitRename}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitRename();
-                if (e.key === 'Escape') { setEditingName(currentWorkspace.name); setIsEditing(false); }
-              }}
-              className="inline-input"
-              style={{ flex: 1 }}
-            />
-          ) : (
-            <span
-              onClick={() => setIsEditing(true)}
-              title="Click to rename"
-              style={{
-                fontSize: 15,
-                fontWeight: 550,
-                color: theme.text,
-                cursor: 'text',
-                flex: 1,
-                borderRadius: 4,
-                padding: '2px 4px',
-                margin: '-2px -4px',
-                transition: 'background 0.15s',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >
-              {currentWorkspace.name}
-            </span>
-          )}
-
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            ref={nameInputRef}
+            type="text"
+            value={isEditing ? editingName : currentWorkspace.name}
+            onChange={(e) => {
+              setEditingName(e.target.value);
+              if (!isEditing) setIsEditing(true);
+            }}
+            onFocus={() => {
+              setEditingName(currentWorkspace.name);
+              setIsEditing(true);
+              setTimeout(() => nameInputRef.current?.select(), 0);
+            }}
+            onBlur={() => {
+              if (isEditing) commitRename();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { commitRename(); nameInputRef.current?.blur(); }
+              if (e.key === 'Escape') { setEditingName(currentWorkspace.name); setIsEditing(false); nameInputRef.current?.blur(); }
+            }}
+            style={{
+              flex: 1,
+              fontSize: 15,
+              fontWeight: 550,
+              color: theme.text,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              padding: 0,
+              fontFamily: 'inherit',
+            }}
+          />
           <button
-            onClick={() => { setEditingName(currentWorkspace.name); setIsEditing(true); }}
+            onClick={() => {
+              setEditingName(currentWorkspace.name);
+              setIsEditing(true);
+              setTimeout(() => nameInputRef.current?.focus(), 0);
+            }}
             className="icon-btn-sm"
             title="Rename workspace"
             style={{ flexShrink: 0 }}
