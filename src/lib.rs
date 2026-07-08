@@ -262,6 +262,7 @@ pub fn run() {
             commands::settings::set_show_cost,
             commands::workspace::get_current_workspace,
             commands::workspace::list_all_workspaces,
+            commands::workspace::set_active_root,
             commands::workspace::list_all_workspaces_with_sessions,
             commands::workspace::create_workspace,
             commands::workspace::switch_workspace,

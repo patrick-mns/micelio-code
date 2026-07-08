@@ -5,8 +5,10 @@ use crate::backend::workspace::{Workspace, list_workspaces};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorkspaceWithSessions {
-    #[serde(flatten)]
-    pub workspace: Workspace,
+    pub id: String,
+    pub name: String,
+    pub folders: Vec<PathBuf>,
+    pub pinned_model: Option<String>,
     pub sessions: Vec<SessionBrief>,
     pub is_current: bool,
 }
@@ -58,9 +60,19 @@ pub async fn list_all_workspaces_with_sessions(state: State<'_, AppState>) -> Re
         } else {
             vec![]
         };
-        result.push(WorkspaceWithSessions { workspace: ws, sessions, is_current });
+        result.push(WorkspaceWithSessions { id: ws.id, name: ws.name, folders: ws.folders, pinned_model: ws.pinned_model, sessions, is_current });
     }
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn set_active_root(state: State<'_, AppState>, path: String) -> Result<(), String> {
+    let path = PathBuf::from(&path);
+    if !path.exists() {
+        return Err(format!("path does not exist: {}", path.display()));
+    }
+    *state.workspace_root.lock().unwrap() = path;
+    Ok(())
 }
 
 #[tauri::command]

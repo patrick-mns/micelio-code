@@ -68,6 +68,9 @@ export const ipc = {
   setSessionModel: (sessionId: string, role: string, model: string) =>
     invoke<void>('set_session_model', { sessionId, role, model }),
 
+  // Workspace root management (switch active folder in multi-root workspace)
+  setWorkspaceRoot: (path: string) => invoke<void>('set_active_root', { path }),
+
   // Native folder picker → returns the chosen path (or null if cancelled).
   pickFolder: (defaultPath?: string) =>
     open({ directory: true, multiple: false, defaultPath }) as Promise<string | null>,
