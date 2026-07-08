@@ -149,7 +149,7 @@ export default function Sidebar({
 
               {/* Sessions under this workspace */}
               {expanded && (
-                <div style={{ margin: '2px 0 14px' }}>
+                <div style={{ margin: '2px 0 14px', display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {/* New session button */}
                   {current && (
                     <div
