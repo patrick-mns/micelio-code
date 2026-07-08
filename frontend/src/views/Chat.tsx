@@ -249,6 +249,18 @@ export default function Chat() {
     const content = input.trim();
     if ((!content && !attachment) || streaming != null) return;
 
+    let activeSession = viewingSession;
+    if (!activeSession) {
+      try {
+        const nextId = await ipc.newSession();
+        await useStore.getState().loadSessions();
+        activeSession = nextId;
+      } catch (e) {
+        console.error('Failed to auto-create session', e);
+        return;
+      }
+    }
+
     // /summarize [n] shortcut
     const sm = content.match(/^\/summarize(?:\s+(\d+))?$/i);
     if (sm) {
@@ -267,30 +279,30 @@ export default function Chat() {
       ? `${content ? '\n\n' : ''}[The user attached an image at ${att.path}. Use the vision tool with this path to view it before answering.]`
       : '');
 
-    addMessage(viewingSession, { role: 'user', content, attachment: att ? { name: att.name, preview: att.preview } : undefined });
+    addMessage(activeSession, { role: 'user', content, attachment: att ? { name: att.name, preview: att.preview } : undefined });
     setLoading(true);
 
     const buf: StreamSession = { thinking: '', parts: [], startedAt: Date.now() };
-    streamsRef.current[viewingSession] = buf;
-    setStreamsBySession((prev) => ({ ...prev, [viewingSession]: buf }));
-    setStreamingSession(viewingSession);
+    streamsRef.current[activeSession] = buf;
+    setStreamsBySession((prev) => ({ ...prev, [activeSession]: buf }));
+    setStreamingSession(activeSession);
 
     try {
       const sessionId = await ipc.startChatStream(sentContent);
       setGitRefreshTick((t) => t + 1);
-      if (sessionId && sessionId !== viewingSession) {
-        streamsRef.current[sessionId] = streamsRef.current[viewingSession];
-        delete streamsRef.current[viewingSession];
-        setStreamsBySession((prev) => { const n = { ...prev }; n[sessionId] = n[viewingSession]; delete n[viewingSession]; return n; });
-        const fromMsgs = useStore.getState().messagesBySession[viewingSession] ?? [];
+      if (sessionId && sessionId !== activeSession) {
+        streamsRef.current[sessionId] = streamsRef.current[activeSession];
+        delete streamsRef.current[activeSession];
+        setStreamsBySession((prev) => { const n = { ...prev }; n[sessionId] = n[activeSession]; delete n[activeSession]; return n; });
+        const fromMsgs = useStore.getState().messagesBySession[activeSession] ?? [];
         setMessages(sessionId, fromMsgs);
         setCurrentSession(sessionId);
       }
-      setStreamingSession(sessionId ?? viewingSession);
+      setStreamingSession(sessionId ?? activeSession);
     } catch (e) {
-      addMessage(viewingSession, { role: 'assistant', content: `Error: ${String(e)}` });
-      delete streamsRef.current[viewingSession];
-      setStreamsBySession((prev) => { const n = { ...prev }; delete n[viewingSession]; return n; });
+      addMessage(activeSession, { role: 'assistant', content: `Error: ${String(e)}` });
+      delete streamsRef.current[activeSession];
+      setStreamsBySession((prev) => { const n = { ...prev }; delete n[activeSession]; return n; });
       setLoading(false);
     }
   }, [input, attachment, streaming, viewingSession]);

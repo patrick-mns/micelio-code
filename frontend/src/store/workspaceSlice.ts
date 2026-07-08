@@ -123,6 +123,7 @@ export const workspaceSlice: StateCreator<
       const ws = await invoke<Workspace>('switch_workspace', { id });
       set({ currentWorkspace: ws });
       await get().loadWorkspacesWithSessions();
+      await get().loadSessions(); // Reload sessions to update the central sessions list immediately on switch workspace!
       await get().refreshGraph();
       return ws;
     } finally {

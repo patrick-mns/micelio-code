@@ -275,17 +275,20 @@ async fn switch_workspace_internal(state: &State<'_, AppState>, ws: &Workspace) 
     // 3. Setup sessions db
     let store = crate::backend::sessions::SessionStore::open(&sessions_db_path)
         .map_err(|e| e.to_string())?;
-    let model = state.chat_model();
     let session_id = match store.latest_session_id() {
         Ok(Some(id)) => id,
-        _ => store.create_session("New session", &model).map_err(|e| e.to_string())?,
+        _ => String::new(), // no sessions yet — frontend shows "No conversations"
     };
 
-    let resumed: Vec<crate::backend::llm::Message> = store
-        .load_history(&session_id)
-        .ok()
-        .and_then(|j| serde_json::from_str(&j).ok())
-        .unwrap_or_default();
+    let resumed: Vec<crate::backend::llm::Message> = if session_id.is_empty() {
+        vec![]
+    } else {
+        store
+            .load_history(&session_id)
+            .ok()
+            .and_then(|j| serde_json::from_str(&j).ok())
+            .unwrap_or_default()
+    };
 
     // 4. Update memory structures in AppState
     let workspace_root = ws.folders.first().cloned().unwrap_or_else(|| ws.dir());

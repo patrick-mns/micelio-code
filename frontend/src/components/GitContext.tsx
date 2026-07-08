@@ -14,12 +14,17 @@ interface GitContextProps {
 }
 
 export default function GitContext({ onPickWorkspace, refreshTick = 0 }: GitContextProps) {
-  const { settings, currentWorkspace } = useStore();
+  const { settings, currentWorkspace, setActiveRoot, activeRoot } = useStore();
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Reset active folder when workspace changes
+  useEffect(() => {
+    setActiveFolder(null);
+  }, [currentWorkspace?.id]);
 
   // Close menu on click outside
   useEffect(() => {
@@ -67,6 +72,7 @@ export default function GitContext({ onPickWorkspace, refreshTick = 0 }: GitCont
 
   const switchFolder = async (folder: string) => {
     setActiveFolder(folder);
+    setActiveRoot(folder);
     setMenuOpen(false);
     try {
       await ipc.setWorkspaceRoot(folder);
@@ -77,65 +83,67 @@ export default function GitContext({ onPickWorkspace, refreshTick = 0 }: GitCont
 
   return (
     <div style={gitContextStyles.root}>
-      {/* Folder selector dropdown */}
-      <div ref={menuRef} style={{ position: 'relative' }}>
-        <button
-          className="repo-btn"
-          style={gitContextStyles.repoBtn}
-          onClick={() => setMenuOpen(!menuOpen)}
-          title={currentFolder}
-        >
-          <FolderOpen size={14} />
-          <span style={gitContextStyles.repoName}>{folderName}</span>
-          <CaretDown size={12} />
-        </button>
+      {/* Folder selector — only when workspace has folders */}
+      {folders.length > 0 && (
+        <div ref={menuRef} style={{ position: 'relative' }}>
+          <button
+            className="ghost-btn"
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', fontSize: 12.5, color: theme.text, borderRadius: 6 }}
+            onClick={() => setMenuOpen(!menuOpen)}
+            title={currentFolder}
+          >
+            <FolderOpen size={14} />
+            <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folderName}</span>
+            <CaretDown size={10} />
+          </button>
 
-        {menuOpen && folders.length > 0 && (
-          <div style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            marginTop: 4,
-            background: theme.bgDeep,
-            border: `1px solid ${theme.border}`,
-            borderRadius: 8,
-            padding: 4,
-            minWidth: 180,
-            zIndex: 100,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-          }}>
-            {folders.map((f) => {
-              const name = f.split('/').pop() || f.split('\\').pop() || f;
-              const isActive = f === currentFolder;
-              return (
-                <div
-                  key={f}
-                  onClick={() => switchFolder(f)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '7px 10px',
-                    borderRadius: 6,
-                    cursor: 'pointer',
-                    background: isActive ? theme.cardActive : 'transparent',
-                    color: theme.text,
-                    fontSize: 12.5,
-                  }}
-                  onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = theme.cardActive; }}
-                  onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
-                >
-                  <FolderOpen size={13} color={isActive ? theme.accent : theme.faint} />
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {name}
-                  </span>
-                  {isActive && <Check size={12} color={theme.accent} weight="bold" />}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+          {menuOpen && (
+            <div style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              marginTop: 4,
+              background: theme.bgDeep,
+              border: `1px solid ${theme.border}`,
+              borderRadius: 8,
+              padding: 4,
+              minWidth: 180,
+              zIndex: 100,
+            }}>
+              {folders.map((f) => {
+                const name = f.split('/').pop() || f.split('\\').pop() || f;
+                const isActive = f === currentFolder;
+                return (
+                  <div
+                    key={f}
+                    className="menu-item"
+                    onClick={() => switchFolder(f)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '6px 10px',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      background: isActive ? theme.cardActive : 'transparent',
+                      color: isActive ? theme.accent : theme.textSoft,
+                      fontSize: 12.5,
+                    }}
+                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = theme.cardActive; e.currentTarget.style.color = theme.text; }}
+                    onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = theme.textSoft; }}}
+                  >
+                    <FolderOpen size={13} color={isActive ? theme.accent : theme.faint} style={{ flexShrink: 0 }} />
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {name}
+                    </span>
+                    {isActive && <Check size={12} color={theme.accent} weight="bold" />}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {gitInfo && gitInfo.branch !== 'no git' && (
         <span style={gitContextStyles.branch}>

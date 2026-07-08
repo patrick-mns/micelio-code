@@ -12,7 +12,18 @@ import { MIN_SCAN_MS } from '@/utils/treemapHelpers';
 // shows one complete animation pass instead of a flicker.
 
 export default function TreemapView() {
-  const { graphNodes, setGraphNodes, selectedNode, setSelectedNode, scanning, setScanning } = useStore();
+  const { graphNodes, setGraphNodes, selectedNode, setSelectedNode, scanning, setScanning, activeRoot } = useStore();
+
+  // Filter graph nodes by active root prefix
+  const filteredNodes = React.useMemo(() => {
+    if (!activeRoot) return graphNodes;
+    const prefix = (activeRoot.split('/').pop() || activeRoot.split('\\').pop() || '').toLowerCase();
+    if (!prefix) return graphNodes;
+    return graphNodes.filter((n) => {
+      const label = (n.name || '').toLowerCase();
+      return label === prefix || label.startsWith(prefix + '/');
+    });
+  }, [graphNodes, activeRoot]);
 
   const [hovered, setHovered] = useState<TreemapNode | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -29,7 +40,7 @@ export default function TreemapView() {
     onMouseMove,
     onMouseUp,
     hitTestNodes,
-  } = useTreemapCanvas(graphNodes, dims);
+  } = useTreemapCanvas(filteredNodes, dims);
 
   // ── Fetch graph on mount ────────────────────────────────────────────────────
   useEffect(() => {

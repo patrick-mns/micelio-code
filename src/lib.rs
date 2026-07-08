@@ -181,9 +181,7 @@ pub fn run() {
         .expect("open session store");
     let current_session = match sessions.latest_session_id() {
         Ok(Some(id)) => id,
-        _ => sessions
-            .create_session("New session", &model)
-            .unwrap_or_default(),
+        _ => "".to_string(), // Allow absolutely no sessions on brand new workspace
     };
     let resumed_history: Vec<backend::llm::Message> = sessions
         .load_history(&current_session)

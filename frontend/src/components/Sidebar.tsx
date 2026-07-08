@@ -1,8 +1,8 @@
 import React, { useEffect, type CSSProperties } from 'react';
 import { sidebarStyles } from '@/utils/theme-styles';
 import {
-  PencilSimpleLine, Trash, ChatCircle, FolderOpen,
-  Gear, DownloadSimple, CaretDown, CaretRight, Plus,
+  Trash, FolderOpen,
+  Gear, DownloadSimple, CaretRight, Plus,
 } from '@phosphor-icons/react';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { ipc } from '@/ipc';
@@ -87,10 +87,12 @@ export default function Sidebar({
     loadWorkspacesWithSessions();
   };
 
-  const handleWsHeaderClick = (id: string) => {
+  const handleWsHeaderClick = async (id: string) => {
     toggleExpandedWorkspace(id);
     const ws = workspacesWithSessions.find((w) => w.id === id);
-    if (ws && !ws.is_current) switchWorkspace(id);
+    if (ws && !ws.is_current) {
+      await switchWorkspace(id);
+    }
   };
 
   return (
@@ -100,6 +102,24 @@ export default function Sidebar({
 
       {/* Workspaces → sessions tree */}
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '4px 0' }}>
+        {/* Global new session button */}
+        <div
+          onClick={newSession}
+          tabIndex={0}
+          role="button"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 14px', margin: '0 6px 8px 6px',
+            borderRadius: 8, cursor: 'pointer', fontSize: 12.5,
+            color: theme.faint,
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = theme.accent; e.currentTarget.style.background = theme.cardActive; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = theme.faint; e.currentTarget.style.background = 'transparent'; }}
+        >
+          <Plus size={14} weight="bold" />
+          <span>New session</span>
+        </div>
+
         {workspacesWithSessions.map((ws) => {
           const expanded = expandedWorkspaces.includes(ws.id);
           const current = ws.is_current;
@@ -125,13 +145,8 @@ export default function Sidebar({
                 }}
               >
                 <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center', color: theme.faint }}>
-                  {expanded ? <CaretDown size={12} weight="fill" /> : <CaretRight size={12} weight="fill" />}
+                  <CaretRight size={12} weight="bold" style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
                 </span>
-                <FolderOpen
-                  size={15}
-                  color={current ? theme.accent : theme.faint}
-                  style={{ flexShrink: 0 }}
-                />
                 <span style={{
                   flex: 1, fontSize: 12.5,
                   fontWeight: current ? 600 : 450,
@@ -140,38 +155,14 @@ export default function Sidebar({
                 }}>
                   {ws.name}
                 </span>
-                {current && (
-                  <span style={{ fontSize: 10, color: theme.accent, fontWeight: 500, flexShrink: 0 }}>
-                    active
-                  </span>
-                )}
               </div>
 
               {/* Sessions under this workspace */}
               {expanded && (
                 <div style={{ margin: '2px 0 14px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {/* New session button */}
-                  {current && (
-                    <div
-                      onClick={newSession}
-                      tabIndex={0}
-                      role="button"
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        padding: '6px 14px 6px 38px', margin: '0 6px',
-                        borderRadius: 6, cursor: 'pointer', fontSize: 12,
-                        color: theme.faint,
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = theme.accent; e.currentTarget.style.background = theme.cardActive; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = theme.faint; e.currentTarget.style.background = 'transparent'; }}
-                    >
-                      <Plus size={13} weight="bold" />
-                      <span>New session</span>
-                    </div>
-                  )}
-                  {ws.sessions.length === 0 && !current && (
-                    <div style={{ fontSize: 11.5, color: theme.faint, padding: '6px 14px 6px 38px', fontStyle: 'italic' }}>
-                      No conversations
+                  {ws.sessions.length === 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', padding: '6px 14px 6px 36px', margin: '0 6px', fontSize: 11.5, color: theme.faint, fontWeight: 400 }}>
+                        No conversations
                     </div>
                   )}
                   {ws.sessions.map((s) => (
@@ -179,9 +170,13 @@ export default function Sidebar({
                         key={s.id}
                         session={s}
                         isCurrentWs={current}
-                        onSwitch={() => {
-                          if (!current) switchWorkspace(ws.id).then(() => switchTo(s.id, s.active));
-                          else switchTo(s.id, s.active);
+                        onSwitch={async () => {
+                          if (!current) {
+                            await switchWorkspace(ws.id);
+                            await switchTo(s.id, s.active);
+                          } else {
+                            await switchTo(s.id, s.active);
+                          }
                         }}
                         onDelete={(e) => deleteSession(e, s.id)}
                       />
@@ -237,11 +232,8 @@ function WsHeader({
         cursor: 'pointer',
         background: isCurrent || hover ? theme.cardActive : 'transparent',
       }}
-    >
-      <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center', color: theme.faint }}>
-        {expanded ? <CaretDown size={12} weight="fill" /> : <CaretRight size={12} weight="fill" />}
-      </span>
-      <FolderOpen size={15} color={isCurrent ? theme.accent : theme.faint} style={{ flexShrink: 0 }} />
+>
+      <FolderOpen size={15} color={theme.faint} style={{ flexShrink: 0 }} />
       <span style={{
         flex: 1, fontSize: 12.5,
         fontWeight: isCurrent ? 600 : 450,
@@ -250,9 +242,16 @@ function WsHeader({
       }}>
         {name}
       </span>
-      {isCurrent && (
-        <span style={{ fontSize: 10, color: theme.accent, fontWeight: 500, flexShrink: 0 }}>active</span>
-      )}
+      <CaretRight
+        size={12}
+        weight="bold"
+        style={{
+          transform: expanded ? 'rotate(90deg)' : 'none',
+          transition: 'transform .15s',
+          flexShrink: 0,
+          color: theme.faint,
+        }}
+      />
     </div>
   );
 }
@@ -275,7 +274,7 @@ function SidebarRow({
       role="button"
       style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: '6px 14px 6px 38px', margin: '0 6px',
+        padding: '8px 14px', margin: '0 6px',
         borderRadius: 6, cursor: 'pointer',
         background: isActive || hover ? theme.cardActive : 'transparent',
         color: isActive ? theme.accent : hover ? theme.accent : theme.faint,
@@ -309,18 +308,19 @@ function SessionItem({
       role="button"
       style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: '6px 14px 6px 38px', margin: '0 6px',
+        padding: '8px 14px', margin: '0 6px',
         borderRadius: 6, cursor: 'pointer',
         background: isActive ? theme.cardActive : hover ? theme.cardActive : 'transparent',
       }}
     >
-      <ChatCircle
-        size={13}
-        color={isActive ? theme.accent : theme.faint}
-        style={{ flexShrink: 0 }}
-      />
       <span style={{
-        flex: 1, fontSize: 12,
+        width: 6, height: 6, borderRadius: '50%',
+        background: isActive ? theme.accent : theme.faint,
+        flexShrink: 0,
+        marginLeft: 3, // Align with the Caret collapse button above
+      }} />
+      <span style={{
+        flex: 1, fontSize: 12.5,
         color: isActive ? theme.text : theme.textSoft,
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}>

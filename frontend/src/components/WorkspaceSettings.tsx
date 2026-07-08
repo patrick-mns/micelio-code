@@ -10,10 +10,21 @@ const mono: React.CSSProperties = {
   fontFamily: 'ui-monospace, SFMono-Regular, monospace',
 };
 
+const listCard: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '8px 12px',
+  borderRadius: 6,
+  background: theme.bgDeep,
+  border: `1px solid ${theme.border}`,
+};
+
 export default function WorkspaceSettings() {
   const {
     currentWorkspace,
     allWorkspaces,
+    workspaceLoading,
     loadAllWorkspaces,
     createWorkspace,
     switchWorkspace,
@@ -30,18 +41,30 @@ export default function WorkspaceSettings() {
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadAllWorkspaces(); }, [loadAllWorkspaces]);
+
+  // Sync editing name when current workspace changes (and when not actively editing)
   useEffect(() => {
     if (currentWorkspace) setEditingName(currentWorkspace.name);
   }, [currentWorkspace]);
+
+  // Select all text when entering edit mode
   useEffect(() => {
-    if (isEditing) nameInputRef.current?.select();
+    if (isEditing) {
+      const t = setTimeout(() => nameInputRef.current?.select(), 10);
+      return () => clearTimeout(t);
+    }
   }, [isEditing]);
 
   if (!currentWorkspace) {
-    return <div style={{ color: theme.dim, fontSize: 13 }}>Loading workspace…</div>;
+    return (
+      <div style={{ padding: '24px 0', color: theme.dim, fontSize: 13 }}>
+        Loading workspace…
+      </div>
+    );
   }
 
   const commitRename = async () => {
+    if (!isEditing) return;
     const trimmed = editingName.trim();
     if (!trimmed || trimmed === currentWorkspace.name) {
       setEditingName(currentWorkspace.name);
@@ -50,6 +73,11 @@ export default function WorkspaceSettings() {
     }
     try { await renameWorkspace(trimmed); } catch (e) { console.error(e); }
     setIsEditing(false);
+  };
+
+  const startEditing = () => {
+    setEditingName(currentWorkspace.name);
+    setIsEditing(true);
   };
 
   const handleAddFolder = async () => {
@@ -72,31 +100,22 @@ export default function WorkspaceSettings() {
 
       {/* ── Current workspace name ── */}
       <Section title="WORKSPACE">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={listCard}>
           <input
             ref={nameInputRef}
             type="text"
             value={isEditing ? editingName : currentWorkspace.name}
-            onChange={(e) => {
-              setEditingName(e.target.value);
-              if (!isEditing) setIsEditing(true);
-            }}
-            onFocus={() => {
-              setEditingName(currentWorkspace.name);
-              setIsEditing(true);
-              setTimeout(() => nameInputRef.current?.select(), 0);
-            }}
-            onBlur={() => {
-              if (isEditing) commitRename();
-            }}
+            onChange={(e) => setEditingName(e.target.value)}
+            onFocus={() => { if (!isEditing) startEditing(); }}
+            onBlur={commitRename}
             onKeyDown={(e) => {
               if (e.key === 'Enter') { commitRename(); nameInputRef.current?.blur(); }
               if (e.key === 'Escape') { setEditingName(currentWorkspace.name); setIsEditing(false); nameInputRef.current?.blur(); }
             }}
             style={{
               flex: 1,
-              fontSize: 15,
-              fontWeight: 550,
+              fontSize: 13,
+              fontWeight: 500,
               color: theme.text,
               background: 'transparent',
               border: 'none',
@@ -106,16 +125,12 @@ export default function WorkspaceSettings() {
             }}
           />
           <button
-            onClick={() => {
-              setEditingName(currentWorkspace.name);
-              setIsEditing(true);
-              setTimeout(() => nameInputRef.current?.focus(), 0);
-            }}
+            onClick={startEditing}
             className="icon-btn-sm"
             title="Rename workspace"
             style={{ flexShrink: 0 }}
           >
-            <PencilSimple size={14} color={theme.dim} />
+            <PencilSimple size={13} color={theme.dim} />
           </button>
         </div>
       </Section>
@@ -133,20 +148,9 @@ export default function WorkspaceSettings() {
               const dirName = parts[parts.length - 1] || folder;
 
               return (
-                <div
-                  key={folder}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 12px',
-                    borderRadius: 6,
-                    background: theme.bgDeep,
-                    border: `1px solid ${theme.border}`,
-                  }}
-                >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, overflow: 'hidden' }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: theme.text }}>{dirName}</span>
+                <div key={folder} style={listCard}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dirName}</span>
                     <span style={{ ...mono, fontSize: 11, color: theme.dim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {folder}
                     </span>
@@ -168,19 +172,8 @@ export default function WorkspaceSettings() {
         <button
           onClick={handleAddFolder}
           disabled={addingFolder}
-          className="ghost-btn"
-          style={{
-            padding: '8px 14px',
-            fontSize: 12.5,
-            fontWeight: 500,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 7,
-            color: theme.accent,
-            background: theme.bgDeep,
-            border: `1px solid ${theme.border}`,
-            borderRadius: 6,
-          }}
+          className="btn btn-sm btn-outline"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 4 }}
         >
           <Plus size={14} weight="bold" />
           {addingFolder ? 'Adding…' : 'Add folder'}
@@ -189,16 +182,16 @@ export default function WorkspaceSettings() {
 
       {/* ── All workspaces ── */}
       <Section title="ALL WORKSPACES">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {allWorkspaces.length === 0 ? (
-            <div style={fieldStyles.desc}>No workspaces found.</div>
-          ) : (
-            allWorkspaces.map((ws) => {
+        {allWorkspaces.length === 0 ? (
+          <div style={fieldStyles.desc}>No workspaces found.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {allWorkspaces.map((ws) => {
               const isCurrent = ws.id === currentWorkspace.id;
               return (
                 <div
                   key={ws.id}
-                  onClick={() => { if (!isCurrent) switchWorkspace(ws.id); }}
+                  onClick={() => { if (!isCurrent && !workspaceLoading) switchWorkspace(ws.id); }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -207,33 +200,45 @@ export default function WorkspaceSettings() {
                     borderRadius: 6,
                     background: isCurrent ? theme.bgDeep : 'transparent',
                     border: `1px solid ${isCurrent ? theme.border : 'transparent'}`,
-                    cursor: isCurrent ? 'default' : 'pointer',
-                    position: 'relative',
+                    cursor: !isCurrent && !workspaceLoading ? 'pointer' : 'default',
+                    transition: 'background 0.1s, border-color 0.1s',
+                    opacity: workspaceLoading && !isCurrent ? 0.5 : 1,
+                    pointerEvents: workspaceLoading && !isCurrent ? 'none' : 'auto',
                   }}
                 >
                   <FolderOpen size={16} color={isCurrent ? theme.accent : theme.dim} style={{ flexShrink: 0 }} />
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: theme.text }}>{ws.name}</span>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {ws.name}
+                    </span>
                     <span style={{ fontSize: 11, color: theme.dim }}>
                       {ws.folders.length} folder{ws.folders.length !== 1 ? 's' : ''}
                     </span>
                   </div>
-                  {isCurrent && <span style={{ fontSize: 10, color: theme.accent, fontWeight: 500 }}>Active</span>}
+                  {isCurrent && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, color: theme.accent,
+                      background: `${theme.accent}18`,
+                      padding: '2px 7px', borderRadius: 4, letterSpacing: '0.03em', textTransform: 'uppercase',
+                    }}>
+                      Active
+                    </span>
+                  )}
                   {!isCurrent && (
                     <button
                       onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete workspace "${ws.name}"?`)) deleteWorkspace(ws.id); }}
                       className="icon-btn-sm"
                       title="Delete workspace"
-                      style={{ flexShrink: 0, color: theme.dim }}
+                      style={{ flexShrink: 0, color: theme.dim, opacity: 0.5 }}
                     >
                       <Trash size={13} />
                     </button>
                   )}
                 </div>
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        )}
       </Section>
 
       {/* ── New workspace ── */}
@@ -242,7 +247,7 @@ export default function WorkspaceSettings() {
         <form onSubmit={handleCreateWorkspace} style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <input
             type="text"
-            placeholder="Name"
+            placeholder="Workspace name"
             value={createName}
             onChange={(e) => setCreateName(e.target.value)}
             style={fieldStyles.input}
@@ -250,16 +255,7 @@ export default function WorkspaceSettings() {
           <button
             type="submit"
             disabled={!createName.trim()}
-            style={{
-              padding: '7px 16px',
-              fontSize: 12.5,
-              fontWeight: 500,
-              background: createName.trim() ? theme.accent : theme.bgDeep,
-              border: `1px solid ${createName.trim() ? theme.accent : theme.border}`,
-              borderRadius: 6,
-              color: createName.trim() ? '#fff' : theme.dim,
-              cursor: createName.trim() ? 'pointer' : 'default',
-            }}
+            className="btn btn-sm btn-primary"
           >
             Create
           </button>
