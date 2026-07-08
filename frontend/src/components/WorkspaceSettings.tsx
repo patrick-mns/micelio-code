@@ -65,7 +65,7 @@ export default function WorkspaceSettings() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 8 }}>
 
       {/* ── Current workspace name ── */}
       <Section title="WORKSPACE">
