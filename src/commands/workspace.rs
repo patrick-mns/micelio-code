@@ -149,6 +149,41 @@ pub async fn rename_workspace(
     Ok(ws)
 }
 
+#[tauri::command]
+pub async fn delete_workspace(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let ws_dir = workspaces_dir().join(&id);
+    match std::fs::remove_dir_all(&ws_dir) {
+        Ok(_) => (),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+        Err(e) => return Err(format!("failed to delete workspace: {e}")),
+    }
+
+    // If we deleted the current workspace, switch to the next available
+    let is_current = {
+        let current = state.current_workspace.lock().unwrap();
+        current.id == id
+    };
+
+    if is_current {
+        let remaining = list_workspaces();
+        if let Some(next) = remaining.first() {
+            switch_workspace_internal(&state, next).await?;
+        } else {
+            // No workspaces left — create a fresh default one
+            let fallback = crate::backend::config::app_data_dir().join("workspace-root");
+            let _ = std::fs::create_dir_all(&fallback);
+            let ws = crate::backend::workspace::bootstrap_default_workspace(&fallback);
+            switch_workspace_internal(&state, &ws).await?;
+        }
+    }
+
+    Ok(())
+}
+
+fn workspaces_dir() -> std::path::PathBuf {
+    crate::backend::config::app_data_dir().join("workspaces")
+}
+
 /// Internal helper to change the current active workspace in AppState
 async fn switch_workspace_internal(state: &State<'_, AppState>, ws: &Workspace) -> Result<(), String> {
     // 1. Core paths

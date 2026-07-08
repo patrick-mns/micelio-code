@@ -267,6 +267,7 @@ pub fn run() {
             commands::workspace::add_folder_to_workspace,
             commands::workspace::remove_folder_from_workspace,
             commands::workspace::rename_workspace,
+            commands::workspace::delete_workspace,
             commands::sessions::list_sessions,
             commands::sessions::new_session,
             commands::sessions::switch_session,

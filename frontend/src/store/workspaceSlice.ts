@@ -21,6 +21,7 @@ export interface WorkspaceSlice {
   addFolderToWorkspace: (path: string) => Promise<Workspace>;
   removeFolderFromWorkspace: (path: string) => Promise<Workspace>;
   renameWorkspace: (name: string) => Promise<Workspace>;
+  deleteWorkspace: (id: string) => Promise<void>;
 }
 
 export const workspaceSlice: StateCreator<
@@ -134,6 +135,25 @@ export const workspaceSlice: StateCreator<
       return ws;
     } catch (e) {
       console.error('Failed to rename workspace', e);
+      throw e;
+    }
+  },
+
+  deleteWorkspace: async (id) => {
+    try {
+      await invoke('delete_workspace', { id });
+      // Refresh list
+      const list = await invoke<Workspace[]>('list_all_workspaces');
+      set({ allWorkspaces: list });
+      // If the deleted one was current, update currentWorkspace
+      if (get().currentWorkspace?.id === id) {
+        const ws = await invoke<Workspace>('get_current_workspace');
+        set({ currentWorkspace: ws });
+        await get().loadSessions();
+        await get().refreshGraph();
+      }
+    } catch (e) {
+      console.error('Failed to delete workspace', e);
       throw e;
     }
   },

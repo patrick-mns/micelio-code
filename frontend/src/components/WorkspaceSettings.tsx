@@ -20,6 +20,7 @@ export default function WorkspaceSettings() {
     addFolderToWorkspace,
     removeFolderFromWorkspace,
     renameWorkspace,
+    deleteWorkspace,
   } = useStore();
 
   const [editingName, setEditingName] = useState('');
@@ -218,6 +219,16 @@ export default function WorkspaceSettings() {
                     </span>
                   </div>
                   {isCurrent && <span style={{ fontSize: 10, color: theme.accent, fontWeight: 500 }}>Active</span>}
+                  {!isCurrent && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete workspace "${ws.name}"?`)) deleteWorkspace(ws.id); }}
+                      className="icon-btn-sm"
+                      title="Delete workspace"
+                      style={{ flexShrink: 0, color: theme.dim }}
+                    >
+                      <Trash size={13} />
+                    </button>
+                  )}
                 </div>
               );
             })
