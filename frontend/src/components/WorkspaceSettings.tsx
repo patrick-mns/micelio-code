@@ -4,6 +4,7 @@ import { theme } from '@/theme';
 import Section from './Section';
 import { Plus, Trash, PencilSimple } from '@phosphor-icons/react';
 import { ipc } from '@/ipc';
+import { fieldStyles } from '@/utils/theme-styles';
 
 const mono: React.CSSProperties = {
   fontFamily: 'ui-monospace, SFMono-Regular, monospace',
@@ -118,13 +119,13 @@ export default function WorkspaceSettings() {
 
       {/* ── Folders ── */}
       <Section title="FOLDERS">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {currentWorkspace.folders.length === 0 ? (
-            <div style={{ color: theme.dim, fontSize: 13, padding: '2px 0' }}>
-              No folders yet — add one to get started.
-            </div>
-          ) : (
-            currentWorkspace.folders.map((folder) => {
+        {currentWorkspace.folders.length === 0 ? (
+          <div style={{ ...fieldStyles.desc, padding: '4px 0 8px' }}>
+            No folders yet. Add one to start scanning files.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+            {currentWorkspace.folders.map((folder) => {
               const parts = folder.split(/[/\\]/);
               const dirName = parts[parts.length - 1] || folder;
 
@@ -132,12 +133,17 @@ export default function WorkspaceSettings() {
                 <div
                   key={folder}
                   style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '7px 0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                    background: theme.bgDeep,
+                    border: `1px solid ${theme.border}`,
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0, overflow: 'hidden' }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: theme.text, whiteSpace: 'nowrap' }}>{dirName}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, overflow: 'hidden' }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: theme.text }}>{dirName}</span>
                     <span style={{ ...mono, fontSize: 11, color: theme.dim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {folder}
                     </span>
@@ -145,50 +151,61 @@ export default function WorkspaceSettings() {
                   <button
                     onClick={() => removeFolderFromWorkspace(folder)}
                     className="icon-btn-sm"
-                    style={{ color: theme.dim, flexShrink: 0, marginLeft: 8 }}
                     title="Remove folder"
+                    style={{ flexShrink: 0, marginLeft: 12 }}
                   >
-                    <Trash size={13} />
+                    <Trash size={13} color={theme.dim} />
                   </button>
                 </div>
               );
-            })
-          )}
+            })}
+          </div>
+        )}
 
-          <button
-            onClick={handleAddFolder}
-            disabled={addingFolder}
-            className="ghost-btn"
-            style={{
-              marginTop: 8, padding: '8px 0', fontSize: 12.5, fontWeight: 500,
-              display: 'flex', alignItems: 'center', gap: 7, color: theme.accent,
-              alignSelf: 'flex-start',
-            }}
-          >
-            <Plus size={14} weight="bold" />
-            {addingFolder ? 'Adding…' : 'Add folder'}
-          </button>
-        </div>
+        <button
+          onClick={handleAddFolder}
+          disabled={addingFolder}
+          className="ghost-btn"
+          style={{
+            padding: '8px 14px',
+            fontSize: 12.5,
+            fontWeight: 500,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 7,
+            color: theme.accent,
+            background: theme.bgDeep,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 6,
+          }}
+        >
+          <Plus size={14} weight="bold" />
+          {addingFolder ? 'Adding…' : 'Add folder'}
+        </button>
       </Section>
 
       {/* ── New workspace ── */}
       <Section title="NEW WORKSPACE">
-        <form onSubmit={handleCreateWorkspace} style={{ display: 'flex', gap: 8 }}>
+        <div style={fieldStyles.desc}>Create a fresh workspace with its own sessions, graph, and folders.</div>
+        <form onSubmit={handleCreateWorkspace} style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <input
             type="text"
             placeholder="Name"
             value={createName}
             onChange={(e) => setCreateName(e.target.value)}
-            className="inline-input"
-            style={{ flex: 1 }}
+            style={fieldStyles.input}
           />
           <button
             type="submit"
             disabled={!createName.trim()}
-            className="ghost-btn"
             style={{
-              fontSize: 12.5, fontWeight: 500, padding: '7px 14px',
-              color: createName.trim() ? theme.accent : theme.dim,
+              padding: '7px 16px',
+              fontSize: 12.5,
+              fontWeight: 500,
+              background: createName.trim() ? theme.accent : theme.bgDeep,
+              border: `1px solid ${createName.trim() ? theme.accent : theme.border}`,
+              borderRadius: 6,
+              color: createName.trim() ? '#fff' : theme.dim,
               cursor: createName.trim() ? 'pointer' : 'default',
             }}
           >
