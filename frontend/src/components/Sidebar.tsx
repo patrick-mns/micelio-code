@@ -1,6 +1,6 @@
 import React, { useEffect, type CSSProperties } from 'react';
 import { sidebarStyles } from '@/utils/theme-styles';
-import { PencilSimpleLine, Trash, ChatCircle, FolderOpen, Gear, DownloadSimple } from '@phosphor-icons/react';
+import { PencilSimpleLine, Trash, ChatCircle, FolderOpen, Folder, Gear, DownloadSimple, CaretDown, CaretRight } from '@phosphor-icons/react';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { ipc } from '@/ipc';
 import { useStore } from '@/store';
@@ -15,15 +15,15 @@ interface SidebarProps {
   onOpenUpdate: () => void;
 }
 
-// Left rail with the conversation list, Claude/Codex style. Full height: the
-// mac traffic lights sit in the reserved gap at the top, the "New session" action
-// and sessions fill the middle, and the workspace switcher + settings live in
-// the footer.
+// Left rail with workspaces → sessions, like Claude/Codex.
 export default function Sidebar({ workspaceName, onPickWorkspace, switching, onOpenSettings, onOpenUpdate }: SidebarProps) {
   const {
     sessions, setSessions, setMessages, setActiveTab,
     messagesBySession, isLoading, setCurrentSession, currentSession,
-    setSessionModels, update, currentWorkspace, setSettingsCategory, setShowSettings
+    setSessionModels, update, setSettingsCategory, setShowSettings,
+    workspacesWithSessions, loadWorkspacesWithSessions,
+    switchWorkspace, expandedWorkspaces, toggleExpandedWorkspace,
+    currentWorkspace,
   } = useStore();
 
   const refresh = () =>
@@ -42,6 +42,10 @@ export default function Sidebar({ workspaceName, onPickWorkspace, switching, onO
   };
 
   useEffect(() => {
+    loadWorkspacesWithSessions();
+  }, [loadWorkspacesWithSessions]);
+
+  useEffect(() => {
     refresh().then((list) => {
       if (!list || currentSession) return;
       const active = list.find((s) => s.active);
@@ -51,11 +55,10 @@ export default function Sidebar({ workspaceName, onPickWorkspace, switching, onO
       }
     });
   }, []);
-  // Re-pull after a turn finishes so new titles / counts show up.
+
   const curMsgs = currentSession ? messagesBySession[currentSession] : undefined;
   useEffect(() => { if (!isLoading) refresh(); }, [isLoading, curMsgs?.length]);
 
-  // Update session title in-place when the backend generates one.
   useEffect(() => {
     let unsub: UnlistenFn | undefined;
     ipc.onSessionTitle(({ session_id, title }) => {
@@ -73,6 +76,7 @@ export default function Sidebar({ workspaceName, onPickWorkspace, switching, onO
     }
     setActiveTab('chat');
     refresh();
+    loadWorkspacesWithSessions();
   };
 
   const switchTo = async (id: string, active: boolean) => {
@@ -83,6 +87,7 @@ export default function Sidebar({ workspaceName, onPickWorkspace, switching, onO
     loadSessionModels(id);
     setActiveTab('chat');
     refresh();
+    loadWorkspacesWithSessions();
   };
 
   const remove = async (e: React.MouseEvent, id: string) => {
@@ -94,6 +99,18 @@ export default function Sidebar({ workspaceName, onPickWorkspace, switching, onO
       setMessages(nextId, msgs);
     }
     refresh();
+    loadWorkspacesWithSessions();
+  };
+
+  const handleWorkspaceClick = (id: string) => {
+    toggleExpandedWorkspace(id);
+    // If collapsed and not current, switch to it
+    if (!expandedWorkspaces.includes(id)) {
+      const ws = workspacesWithSessions.find((w) => w.id === id);
+      if (ws && !ws.is_current) {
+        switchWorkspace(id);
+      }
+    }
   };
 
   return (
@@ -101,58 +118,138 @@ export default function Sidebar({ workspaceName, onPickWorkspace, switching, onO
       {/* Reserved gap so the mac traffic-light buttons sit here, top-left. */}
       <div style={sidebarStyles.trafficGap} data-tauri-drag-region />
 
-      {/* Workspace indicator — clean row matching sidebar aesthetic */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '8px 14px',
-          margin: '0 6px 6px 6px',
-          minWidth: 0,
-        }}
-      >
-        <FolderOpen size={15} color={theme.accent} style={{ flexShrink: 0, opacity: 0.85 }} />
-        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
-          <span style={{
-            fontSize: 12.5, fontWeight: 550, color: theme.text,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            lineHeight: 1.3,
-          }}>
-            {currentWorkspace?.name || workspaceName}
-          </span>
-          <span style={{ fontSize: 10.5, color: theme.dim, lineHeight: 1.2 }}>
-            {currentWorkspace?.folders.length || 0} folder{(currentWorkspace?.folders.length ?? 0) !== 1 ? 's' : ''}
-          </span>
-        </div>
-        <button
-          onClick={() => { setSettingsCategory('workspace'); setShowSettings(true); }}
-          className="icon-btn-sm"
-          title="Workspace settings"
-          style={{ flexShrink: 0 }}
-        >
-          <Gear size={13} color={theme.dim} />
-        </button>
-      </div>
+      {/* Workspaces tree */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+        {workspacesWithSessions.map((ws) => {
+          const isExpanded = expandedWorkspaces.includes(ws.id);
+          const isCurrent = ws.is_current;
 
-      <button className="ghost-btn" style={sidebarStyles.newBtn} onClick={newChat}>
-        <PencilSimpleLine size={15} />
-        New session
-      </button>
+          return (
+            <div key={ws.id} style={{ marginBottom: 2 }}>
+              {/* Workspace header */}
+              <div
+                onClick={() => handleWorkspaceClick(ws.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 14px',
+                  margin: '0 6px',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  background: isCurrent ? theme.cardActive : 'transparent',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={(e) => { if (!isCurrent) e.currentTarget.style.background = theme.cardActive; }}
+                onMouseLeave={(e) => { if (!isCurrent) e.currentTarget.style.background = 'transparent'; }}
+              >
+                {isExpanded ? (
+                  <CaretDown size={12} color={theme.dim} weight="fill" style={{ flexShrink: 0 }} />
+                ) : (
+                  <CaretRight size={12} color={theme.dim} weight="fill" style={{ flexShrink: 0 }} />
+                )}
+                <FolderOpen size={15} color={isCurrent ? theme.accent : theme.faint} style={{ flexShrink: 0 }} />
+                <span style={{
+                  flex: 1,
+                  fontSize: 12.5,
+                  fontWeight: isCurrent ? 600 : 450,
+                  color: isCurrent ? theme.text : theme.textSoft,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {ws.name}
+                </span>
+                {ws.folders.length > 0 && (
+                  <span style={{ fontSize: 10, color: theme.faint }}>
+                    {ws.folders.length}F
+                  </span>
+                )}
+              </div>
 
-      <div style={sidebarStyles.list}>
-        {sessions.length === 0 && <div style={sidebarStyles.empty}>No conversations yet</div>}
-        {sessions.map((s) => (
-          <SessionRow key={s.id} s={s} onClick={() => switchTo(s.id, s.active)} onDelete={(e) => remove(e, s.id)} />
-        ))}
+              {/* Sessions under this workspace */}
+              {isExpanded && (
+                <div style={{ marginLeft: 8 }}>
+                  {ws.sessions.length === 0 && (
+                    <div style={{
+                      fontSize: 11.5,
+                      color: theme.faint,
+                      padding: '6px 14px 6px 36px',
+                      fontStyle: 'italic',
+                    }}>
+                      No conversations yet
+                    </div>
+                  )}
+                  {ws.sessions.map((s) => (
+                    <div
+                      key={s.id}
+                      onClick={() => {
+                        if (!isCurrent) switchWorkspace(ws.id).then(() => switchTo(s.id, s.active));
+                        else switchTo(s.id, s.active);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '6px 14px 6px 36px',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        background: s.active && isCurrent ? theme.cardActive : 'transparent',
+                        transition: 'background 0.1s',
+                        margin: '0 6px',
+                      }}
+                      onMouseEnter={(e) => { if (!(s.active && isCurrent)) e.currentTarget.style.background = theme.cardActive; }}
+                      onMouseLeave={(e) => { if (!(s.active && isCurrent)) e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <ChatCircle size={13} color={s.active && isCurrent ? theme.accent : theme.faint} style={{ flexShrink: 0 }} />
+                      <span style={{
+                        flex: 1,
+                        fontSize: 12,
+                        color: s.active && isCurrent ? theme.text : theme.textSoft,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {s.title || 'New session'}
+                      </span>
+                      <button
+                        className="icon-btn-sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // For simplicity, delete using standard ipc method
+                          ipc.deleteSession(s.id).then(() => {
+                            refresh();
+                            loadWorkspacesWithSessions();
+                          });
+                        }}
+                        title="Delete conversation"
+                        style={{ flexShrink: 0, opacity: 0.6 }}
+                      >
+                        <Trash size={11} color={theme.dim} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Update status indicator */}
       <UpdateStatusBar onOpenUpdate={onOpenUpdate} />
 
-      {/* Footer: settings. */}
+      {/* Footer: workspace settings gear. */}
       <div style={sidebarStyles.footer}>
-        <button className="ghost-btn" style={sidebarStyles.gearBtn} onClick={onOpenSettings} title="Settings">
+        <button
+          className="ghost-btn"
+          style={sidebarStyles.gearBtn}
+          onClick={() => { setSettingsCategory('workspace'); setShowSettings(true); }}
+          title="Workspace settings"
+        >
+          <FolderOpen size={15} />
+        </button>
+        <button className="ghost-btn" style={sidebarStyles.gearBtn} onClick={onOpenSettings} title="All settings">
           <Gear size={17} />
         </button>
       </div>
@@ -195,7 +292,6 @@ function UpdateStatusBar({ onOpenUpdate }: { onOpenUpdate: () => void }) {
   const { update } = useStore();
   const [hover, setHover] = React.useState(false);
 
-  // Only show in sidebar when there's something actionable
   if (update.status !== 'available' && update.status !== 'ready') {
     return null;
   }
@@ -268,4 +364,3 @@ function UpdateStatusBar({ onOpenUpdate }: { onOpenUpdate: () => void }) {
     </div>
   );
 }
-

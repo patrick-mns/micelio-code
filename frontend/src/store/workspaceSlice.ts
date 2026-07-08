@@ -9,13 +9,33 @@ export interface Workspace {
   pinned_model: string | null;
 }
 
+export interface SessionBrief {
+  id: string;
+  title: string;
+  message_count: number;
+  active: boolean;
+}
+
+export interface WorkspaceWithSessions {
+  id: string;
+  name: string;
+  folders: string[];
+  pinned_model: string | null;
+  sessions: SessionBrief[];
+  is_current: boolean;
+}
+
 export interface WorkspaceSlice {
   currentWorkspace: Workspace | null;
   allWorkspaces: Workspace[];
+  workspacesWithSessions: WorkspaceWithSessions[];
   workspaceLoading: boolean;
+  expandedWorkspaces: string[];
 
   loadCurrentWorkspace: () => Promise<Workspace | null>;
   loadAllWorkspaces: () => Promise<Workspace[]>;
+  loadWorkspacesWithSessions: () => Promise<void>;
+  toggleExpandedWorkspace: (id: string) => void;
   createWorkspace: (name: string, folders: string[]) => Promise<Workspace>;
   switchWorkspace: (id: string) => Promise<Workspace>;
   addFolderToWorkspace: (path: string) => Promise<Workspace>;
@@ -32,13 +52,15 @@ export const workspaceSlice: StateCreator<
 > = (set, get) => ({
   currentWorkspace: null,
   allWorkspaces: [],
+  workspacesWithSessions: [],
   workspaceLoading: false,
+  expandedWorkspaces: [],
 
   loadCurrentWorkspace: async () => {
     set({ workspaceLoading: true });
     try {
       const ws = await invoke<Workspace>('get_current_workspace');
-      set({ currentWorkspace: ws });
+      set({ currentWorkspace: ws, expandedWorkspaces: [ws.id] });
       return ws;
     } catch (e) {
       console.error('Failed to load current workspace', e);
@@ -59,17 +81,35 @@ export const workspaceSlice: StateCreator<
     }
   },
 
+  loadWorkspacesWithSessions: async () => {
+    try {
+      const list = await invoke<WorkspaceWithSessions[]>('list_all_workspaces_with_sessions');
+      set((s) => ({
+        workspacesWithSessions: list,
+        currentWorkspace: list.find((w) => w.is_current) ?? s.currentWorkspace,
+        expandedWorkspaces:
+          s.expandedWorkspaces.length > 0
+            ? s.expandedWorkspaces
+            : list.filter((w) => w.is_current).map((w) => w.id),
+      }));
+    } catch (e) {
+      console.error('Failed to load workspaces with sessions', e);
+    }
+  },
+
+  toggleExpandedWorkspace: (id) =>
+    set((s) => ({
+      expandedWorkspaces: s.expandedWorkspaces.includes(id)
+        ? s.expandedWorkspaces.filter((e) => e !== id)
+        : [...s.expandedWorkspaces, id],
+    })),
+
   createWorkspace: async (name, folders) => {
     set({ workspaceLoading: true });
     try {
       const ws = await invoke<Workspace>('create_workspace', { name, folders });
       set({ currentWorkspace: ws });
-      // Refresh list
-      const list = await invoke<Workspace[]>('list_all_workspaces');
-      set({ allWorkspaces: list });
-      
-      // Sync sessions list after switch
-      await get().loadSessions();
+      await get().loadWorkspacesWithSessions();
       await get().refreshGraph();
       return ws;
     } finally {
@@ -82,12 +122,7 @@ export const workspaceSlice: StateCreator<
     try {
       const ws = await invoke<Workspace>('switch_workspace', { id });
       set({ currentWorkspace: ws });
-      // Refresh list
-      const list = await invoke<Workspace[]>('list_all_workspaces');
-      set({ allWorkspaces: list });
-
-      // Sync sessions and reset workspace_root
-      await get().loadSessions();
+      await get().loadWorkspacesWithSessions();
       await get().refreshGraph();
       return ws;
     } finally {
@@ -99,9 +134,7 @@ export const workspaceSlice: StateCreator<
     try {
       const ws = await invoke<Workspace>('add_folder_to_workspace', { folderPath: path });
       set({ currentWorkspace: ws });
-      // Refresh list
-      const list = await invoke<Workspace[]>('list_all_workspaces');
-      set({ allWorkspaces: list });
+      await get().loadWorkspacesWithSessions();
       await get().refreshGraph();
       return ws;
     } catch (e) {
@@ -114,9 +147,7 @@ export const workspaceSlice: StateCreator<
     try {
       const ws = await invoke<Workspace>('remove_folder_from_workspace', { folderPath: path });
       set({ currentWorkspace: ws });
-      // Refresh list
-      const list = await invoke<Workspace[]>('list_all_workspaces');
-      set({ allWorkspaces: list });
+      await get().loadWorkspacesWithSessions();
       await get().refreshGraph();
       return ws;
     } catch (e) {
@@ -129,9 +160,7 @@ export const workspaceSlice: StateCreator<
     try {
       const ws = await invoke<Workspace>('rename_workspace', { name });
       set({ currentWorkspace: ws });
-      // Refresh list
-      const list = await invoke<Workspace[]>('list_all_workspaces');
-      set({ allWorkspaces: list });
+      await get().loadWorkspacesWithSessions();
       return ws;
     } catch (e) {
       console.error('Failed to rename workspace', e);
@@ -142,13 +171,8 @@ export const workspaceSlice: StateCreator<
   deleteWorkspace: async (id) => {
     try {
       await invoke('delete_workspace', { id });
-      // Refresh list
-      const list = await invoke<Workspace[]>('list_all_workspaces');
-      set({ allWorkspaces: list });
-      // If the deleted one was current, update currentWorkspace
+      await get().loadWorkspacesWithSessions();
       if (get().currentWorkspace?.id === id) {
-        const ws = await invoke<Workspace>('get_current_workspace');
-        set({ currentWorkspace: ws });
         await get().loadSessions();
         await get().refreshGraph();
       }

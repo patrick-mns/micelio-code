@@ -3,6 +3,22 @@ use tauri::State;
 use crate::AppState;
 use crate::backend::workspace::{Workspace, list_workspaces};
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WorkspaceWithSessions {
+    #[serde(flatten)]
+    pub workspace: Workspace,
+    pub sessions: Vec<SessionBrief>,
+    pub is_current: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionBrief {
+    pub id: String,
+    pub title: String,
+    pub message_count: usize,
+    pub active: bool,
+}
+
 #[tauri::command]
 pub async fn get_current_workspace(state: State<'_, AppState>) -> Result<Workspace, String> {
     let ws = state.current_workspace.lock().unwrap();
@@ -12,6 +28,39 @@ pub async fn get_current_workspace(state: State<'_, AppState>) -> Result<Workspa
 #[tauri::command]
 pub async fn list_all_workspaces() -> Result<Vec<Workspace>, String> {
     Ok(list_workspaces())
+}
+
+#[tauri::command]
+pub async fn list_all_workspaces_with_sessions(state: State<'_, AppState>) -> Result<Vec<WorkspaceWithSessions>, String> {
+    let current_id = state.current_workspace.lock().unwrap().id.clone();
+    let current_session_id = state.current_session.lock().unwrap().clone();
+    let all = list_workspaces();
+    let mut result = Vec::new();
+    for ws in all {
+        let is_current = ws.id == current_id;
+        let db_path = ws.dir().join("sessions.db");
+        let sessions = if db_path.exists() {
+            match crate::backend::sessions::SessionStore::open(&db_path) {
+                Ok(store) => match store.list_sessions() {
+                    Ok(metas) => metas.into_iter().map(|m| {
+                        let mid = m.id;
+                        SessionBrief {
+                            id: mid.clone(),
+                            title: m.title,
+                            message_count: m.event_count,
+                            active: is_current && mid == current_session_id,
+                        }
+                    }).collect(),
+                    Err(_) => vec![],
+                },
+                Err(_) => vec![],
+            }
+        } else {
+            vec![]
+        };
+        result.push(WorkspaceWithSessions { workspace: ws, sessions, is_current });
+    }
+    Ok(result)
 }
 
 #[tauri::command]
