@@ -133,9 +133,9 @@ export default function App() {
           {/* Header over the content area only. When the sidebar is closed it
               reserves the traffic-light gap; otherwise the sidebar does. */}
           <div style={appStyles.header} data-tauri-drag-region>
-            {!sidebarOpen && <div style={appStyles.trafficGap} />}
+            <div style={appStyles.headerLeft} data-tauri-drag-region>
+              {!sidebarOpen && <div style={appStyles.trafficGap} />}
 
-            <div style={appStyles.headerLeft}>
               <button
                 className="icon-btn"
                 onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -164,7 +164,7 @@ export default function App() {
             </div>
 
             {/* Right: context actions for the current workspace. */}
-            <div style={appStyles.headerRight}>
+            <div style={appStyles.headerRight} data-tauri-drag-region>
               <button
                 className="btn btn-icon btn-ghost"
                 style={{ color: aboutOpen ? theme.text : theme.dim }}

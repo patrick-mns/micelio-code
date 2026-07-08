@@ -23,9 +23,11 @@ export const appStyles: Record<string, CSSProperties> = {
     paddingInline: 12,
   },
   trafficGap: { width: 72, flexShrink: 0 },
-  headerLeft: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 140, flexShrink: 0 },
-  center: { flex: 0, display: 'flex', justifyContent: 'center', margin: '0 auto' },
-  headerRight: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 140, flexShrink: 0, justifyContent: 'flex-end' },
+  // Left/right get equal flex so the segmented control stays truly centered
+  // regardless of how many action buttons each side holds.
+  headerLeft: { flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 },
+  headerRight: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, minWidth: 0 },
+  center: { display: 'flex', justifyContent: 'center', flexShrink: 0 },
   // Tabs (.seg-track/.seg-btn) and the sidebar toggle (.icon-btn) are styled
   // via the unified button classes in buttons.css.
   body: { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'row' },
