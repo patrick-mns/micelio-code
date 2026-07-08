@@ -233,6 +233,130 @@ export const bgTasksChipStyles: Record<string, CSSProperties> = {
   // close button uses .close-btn (primitives.css)
 };
 
+// ── ReviewPanel.tsx ────────────────────────────────────────────────────────
+export const reviewPanelStyles: Record<string, CSSProperties> = {
+  chip: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+    minWidth: 28, height: 28, padding: '0 6px',
+    borderRadius: "var(--radius-md)",
+    fontSize: 12.5, fontFamily: 'inherit',
+  },
+  badge: {
+    display: 'flex', alignItems: 'center', gap: 5,
+    fontSize: 11.5, fontWeight: 600,
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+    color: theme.text,
+  },
+  panel: {
+    width: 'calc(100% - 8px)', flexShrink: 0,
+    margin: '8px 8px 8px 0',
+    height: 'calc(100% - 16px)',
+    background: theme.card, border: `1px solid ${theme.border}`, borderRadius: "var(--radius-lg)",
+    display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  },
+  head: {
+    display: 'flex', alignItems: 'center', gap: 8, padding: '12px 12px 10px 16px',
+    flexShrink: 0,
+  },
+  headTitle: { flex: 1, color: theme.text, fontSize: 13, fontWeight: 600 },
+  closeBtn: {
+    // Uses .close-btn from primitives.css — same as BgTasks
+  },
+  body: {
+    flex: 1, overflowY: 'auto', padding: '4px 10px 4px',
+  },
+  empty: { color: theme.faint, fontSize: 12.5, padding: '24px 8px', textAlign: 'center' },
+  card: {
+    background: theme.bg, borderRadius: "var(--radius-md)",
+    padding: '8px 10px', marginBottom: 4,
+    border: `1px solid ${theme.border}`,
+  },
+  cardHead: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+  },
+  cardHeadLeft: {
+    display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: 1,
+  },
+  cardHeadRight: {
+    display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0,
+  },
+  filename: {
+    fontSize: 13, fontWeight: 500,
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+    color: theme.text,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  diffContainer: {
+    marginTop: 6,
+    borderRadius: "var(--radius-sm)",
+    border: `1px solid ${theme.border}`,
+    overflow: 'hidden',
+    maxHeight: 300, overflowY: 'auto',
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+    fontSize: 11, lineHeight: 1.45,
+  },
+  hunkHeader: {
+    padding: '4px 8px',
+    fontSize: 10.5,
+    fontWeight: 600,
+    color: theme.dim,
+    background: theme.card,
+    borderBottom: `1px solid ${theme.border}`,
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+  },
+  diffLine: {
+    display: 'flex', alignItems: 'flex-start', gap: 0,
+    padding: '0 4px 0 0',
+    minHeight: 18,
+  },
+  lineNum: {
+    width: 30, flexShrink: 0, textAlign: 'right',
+    paddingRight: 6,
+    fontSize: 10, fontWeight: 400,
+    color: theme.dim,
+    userSelect: 'none',
+    opacity: 0.6,
+  },
+  diffMarker: {
+    width: 12, flexShrink: 0, textAlign: 'center',
+    fontWeight: 600, fontSize: 10,
+    color: theme.dim,
+    userSelect: 'none',
+  },
+  diffText: {
+    flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+    paddingLeft: 2,
+  },
+  actionBtn: {
+    display: 'flex', alignItems: 'center', gap: 4,
+    padding: '3px 8px',
+    fontSize: 11.5, fontWeight: 500,
+    color: theme.textSoft,
+    borderRadius: "var(--radius-sm)",
+    fontFamily: 'inherit',
+  },
+  collapseBtn: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: 20, height: 20,
+    color: theme.dim,
+    borderRadius: "var(--radius-sm)",
+  },
+  bottomBar: {
+    display: 'flex', alignItems: 'center', gap: 4,
+    padding: '6px 12px',
+    borderTop: `1px solid ${theme.border}`,
+    flexShrink: 0,
+  },
+  bottomAction: {
+    display: 'flex', alignItems: 'center', gap: 4,
+    padding: '4px 10px',
+    fontSize: 12, fontWeight: 500,
+    color: theme.textSoft,
+    borderRadius: "var(--radius-sm)",
+    fontFamily: 'inherit',
+  },
+};
+
 // ── CommandPalette.tsx ───────────────────────────────────────────────────
 export const commandPaletteStyles: Record<string, CSSProperties> = {
   wrap: {

@@ -39,6 +39,10 @@ pub struct AppState {
     pub session_cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
     /// Parked ask_user call: (session_id, reply channel).
     pub session_pending: Mutex<Option<(String, std::sync::mpsc::Sender<String>)>>,
+    /// Parked file edit/write approval (review mode): (session_id, reply channel).
+    pub pending_edit: Mutex<Option<(String, std::sync::mpsc::Sender<bool>)>>,
+    /// Review manager: review-mode toggle + unstaged git changes.
+    pub review: Mutex<backend::review::ReviewManager>,
 }
 
 impl AppState {
@@ -194,6 +198,8 @@ pub fn run() {
             session_histories: Mutex::new(initial_histories),
             session_cancels: Mutex::new(HashMap::new()),
             session_pending: Mutex::new(None),
+            pending_edit: Mutex::new(None),
+            review: Mutex::new(backend::review::ReviewManager::new()),
         })
         .manage(updater)
         .invoke_handler(tauri::generate_handler![
@@ -246,6 +252,12 @@ pub fn run() {
             commands::bg::stop_bg_task,
             commands::bg::clear_bg_tasks,
             commands::bg::get_bg_task_log,
+            commands::review::get_review_status,
+            commands::review::toggle_review_mode,
+            commands::review::get_review_mode,
+            commands::review::git_revert_review_file,
+            commands::review::git_revert_all_review,
+            commands::review::answer_edit_review,
             commands::openers::list_openers,
             commands::openers::open_in,
             commands::openers::open_url,

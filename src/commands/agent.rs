@@ -482,21 +482,7 @@ pub fn run_tool_calls(
     let mut summaries = Vec::with_capacity(calls.len());
     let mut any_error = false;
     for call in calls {
-        // Note write/edit targets BEFORE the call consumes it, so the turn-end
-        // auto-summary can refresh them. (Reads and other tools don't dirty.)
-        let touched = if call.name == "file" {
-            let action =
-                tools::get_string_field(&call.arguments, "action").unwrap_or_else(|| "read".into());
-            if action == "write" || action == "edit" {
-                tools::get_string_field(&call.arguments, "path")
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let (summary, is_error) = execute_tool_call(
+        let (summary, is_error, touched) = execute_tool_call(
             app,
             history,
             call,
@@ -506,8 +492,10 @@ pub fn run_tool_calls(
             session_id,
         );
 
-        // Only mark dirty when the edit actually succeeded.
-        if let (Some(path), false) = (touched, is_error) {
+        // `touched` is only Some when the file was actually written to disk
+        // (not e.g. a rejected review-mode edit), so the turn-end auto-summary
+        // only refreshes files that really changed.
+        if let Some(path) = touched {
             dirty.lock().unwrap().insert(path);
         }
         any_error |= is_error;
@@ -518,7 +506,10 @@ pub fn run_tool_calls(
 
 /// Executes a single tool call and appends its `tool` result message. The
 /// assistant message carrying the call(s) must already be in `history` (see
-/// [`run_tool_calls`]). Returns `(summary, is_error)`.
+/// [`run_tool_calls`]). Returns `(summary, is_error, touched_path)` — the
+/// third element is `Some(path)` only when a file was actually written to
+/// disk this call, so the caller can dirty-track just the files that really
+/// changed (a rejected review-mode edit does not count).
 fn execute_tool_call(
     app: &AppHandle,
     history: &mut Vec<Message>,
@@ -527,7 +518,7 @@ fn execute_tool_call(
     model: &str,
     graph_json: &str,
     session_id: &str,
-) -> (String, bool) {
+) -> (String, bool, Option<String>) {
     // `ask_user` is interactive: hand the questions to the UI and block this
     // worker thread until the user answers (or cancels / stops the stream).
     if call.name == "ask_user" {
@@ -573,7 +564,7 @@ fn execute_tool_call(
             serde_json::json!({ "session_id": session_id, "summary": summary }),
         );
         history.push(Message::tool("ask_user", &answer));
-        return (summary, false);
+        return (summary, false, None);
     }
 
     let ctx = tools::ToolContext {
@@ -585,9 +576,133 @@ fn execute_tool_call(
         debug: false,
         graph_json: graph_json.to_string(),
     };
-    let (is_error, result) = match tools::run(&call.name, &call.arguments, &ctx) {
-        Ok(r) => (false, truncate_for_context(&r.content)),
-        Err(e) => (true, format!("error: {e}")),
+
+    // ── Review mode: pause file write/edit for user approval ────────────
+    // Normalize the tool name the same way tools::run does (handles stuttering).
+    let normalized = tools::normalize_tool_name(&call.name);
+    let is_file_mod = normalized == "file"
+        && tools::get_string_field(&call.arguments, "action")
+            .as_deref()
+            .map(|a| a == "write" || a == "edit")
+            .unwrap_or(false);
+    // Also handle legacy tool names that map to write/edit.
+    let is_legacy_mod = matches!(normalized, "write_file" | "edit_file");
+    let is_edit = normalized == "edit_file"
+        || (normalized == "file"
+            && tools::get_string_field(&call.arguments, "action").as_deref() == Some("edit"));
+
+    let review_on = (is_file_mod || is_legacy_mod)
+        && app.state::<AppState>().review.lock().unwrap().review_mode;
+
+    let (is_error, result, touched) = if review_on {
+        let path = tools::get_string_field(&call.arguments, "path")
+            .unwrap_or_else(|| "unknown".into());
+        let full_path = workspace_root.join(&path);
+        let original = std::fs::read_to_string(&full_path).unwrap_or_default();
+
+        // Compute the proposed content with the exact same validation the real
+        // write/edit tools use, so a bad edit (unmatched old_string, ambiguous
+        // match, etc.) errors out here instead of silently "succeeding".
+        let proposed = if is_edit {
+            match tools::file::resolve_edit_content(&original, &call.arguments, &path) {
+                Ok((after, _, _)) => after,
+                Err(e) => {
+                    let summary = format!("{} completed\nerror: {e}", call.name);
+                    let _ = app.emit(
+                        "stream_tool",
+                        serde_json::json!({ "session_id": session_id, "summary": summary }),
+                    );
+                    history.push(Message::tool(&call.name, &format!("error: {e}")));
+                    return (summary, true, None);
+                }
+            }
+        } else {
+            match tools::file::resolve_write_content(&call.arguments) {
+                Ok(c) => c,
+                Err(e) => {
+                    let summary = format!("{} completed\nerror: {e}", call.name);
+                    let _ = app.emit(
+                        "stream_tool",
+                        serde_json::json!({ "session_id": session_id, "summary": summary }),
+                    );
+                    history.push(Message::tool(&call.name, &format!("error: {e}")));
+                    return (summary, true, None);
+                }
+            }
+        };
+
+        // Ask the frontend to show a diff and wait for the user's decision —
+        // the same blocking pattern `ask_user` uses, so a rejected edit never
+        // touches disk and an accepted one is written immediately (no
+        // in-memory staging area to keep in sync with the real filesystem).
+        let (tx, rx) = std::sync::mpsc::channel::<bool>();
+        {
+            let st = app.state::<AppState>();
+            *st.pending_edit.lock().unwrap() = Some((session_id.to_string(), tx));
+        }
+        let _ = app.emit(
+            "review_request",
+            serde_json::json!({
+                "session_id": session_id,
+                "path": path,
+                "original_content": original,
+                "proposed_content": proposed,
+            }),
+        );
+
+        let cancel = {
+            let st = app.state::<AppState>();
+            let c = st.session_cancels.lock().unwrap().get(session_id).cloned();
+            c
+        };
+        let accepted = loop {
+            let canceled = cancel
+                .as_ref()
+                .map(|c| c.load(Ordering::SeqCst))
+                .unwrap_or(false);
+            if canceled {
+                break false;
+            }
+            match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                Ok(a) => break a,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break false,
+            }
+        };
+        {
+            let st = app.state::<AppState>();
+            *st.pending_edit.lock().unwrap() = None;
+        }
+
+        if accepted {
+            match std::fs::write(&full_path, &proposed) {
+                Ok(()) => {
+                    let _ = app.emit("review_changed", serde_json::json!({}));
+                    (false, format!("`{path}` updated and applied."), Some(path))
+                }
+                Err(e) => (
+                    true,
+                    format!("error: failed to write {}: {e}", full_path.display()),
+                    None,
+                ),
+            }
+        } else {
+            (
+                false,
+                format!("`{path}` change was rejected by the user — the file was not modified."),
+                None,
+            )
+        }
+    } else {
+        let touched = if is_file_mod || is_legacy_mod {
+            tools::get_string_field(&call.arguments, "path")
+        } else {
+            None
+        };
+        match tools::run(&call.name, &call.arguments, &ctx) {
+            Ok(r) => (false, truncate_for_context(&r.content), touched),
+            Err(e) => (true, format!("error: {e}"), None),
+        }
     };
     let summary = format!("{} completed\n{}", call.name, result);
     let _ = app.emit(
@@ -595,7 +710,7 @@ fn execute_tool_call(
         serde_json::json!({ "session_id": session_id, "summary": summary }),
     );
     history.push(Message::tool(&call.name, &result));
-    (summary, is_error)
+    (summary, is_error, touched)
 }
 
 /// Generates a short session title using the summarize model and emits

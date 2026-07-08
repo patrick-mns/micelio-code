@@ -228,6 +228,15 @@ export interface AskUser {
   args: string;
 }
 
+// Emitted when review mode pauses a file write/edit for user approval (see
+// commands::agent::execute_tool_call). Answered via `answerEditReview`.
+export interface EditReviewRequest {
+  session_id: string;
+  path: string;
+  original_content: string;
+  proposed_content: string;
+}
+
 export interface SessionTitle {
   session_id: string;
   title: string;
