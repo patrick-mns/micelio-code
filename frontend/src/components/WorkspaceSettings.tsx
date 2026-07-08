@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '@/store';
 import { theme } from '@/theme';
 import Section from './Section';
-import { Plus, Trash, FolderOpen, PencilSimple } from '@phosphor-icons/react';
+import { Plus, Trash, PencilSimple } from '@phosphor-icons/react';
 import { ipc } from '@/ipc';
 
 const mono: React.CSSProperties = {
@@ -69,7 +69,6 @@ export default function WorkspaceSettings() {
       {/* ── Current workspace name ── */}
       <Section title="WORKSPACE">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <FolderOpen size={18} color={theme.accent} style={{ flexShrink: 0, opacity: 0.9 }} />
 
           {isEditing ? (
             <input
