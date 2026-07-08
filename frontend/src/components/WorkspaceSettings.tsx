@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '@/store';
 import { theme } from '@/theme';
 import Section from './Section';
-import { Plus, Trash, FolderOpen, PencilSimple, Check } from '@phosphor-icons/react';
+import { Plus, Trash, FolderOpen, PencilSimple } from '@phosphor-icons/react';
 import { ipc } from '@/ipc';
 
 const mono: React.CSSProperties = {
@@ -12,35 +12,40 @@ const mono: React.CSSProperties = {
 export default function WorkspaceSettings() {
   const {
     currentWorkspace,
-    allWorkspaces,
     loadAllWorkspaces,
     createWorkspace,
-    switchWorkspace,
     addFolderToWorkspace,
     removeFolderFromWorkspace,
     renameWorkspace,
   } = useStore();
 
-  const [newName, setNewName] = useState('');
-  const [editing, setEditing] = useState(false);
+  const [editingName, setEditingName] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
   const [createName, setCreateName] = useState('');
   const [addingFolder, setAddingFolder] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadAllWorkspaces(); }, [loadAllWorkspaces]);
   useEffect(() => {
-    if (currentWorkspace) setNewName(currentWorkspace.name);
+    if (currentWorkspace) setEditingName(currentWorkspace.name);
   }, [currentWorkspace]);
+  useEffect(() => {
+    if (isEditing) nameInputRef.current?.select();
+  }, [isEditing]);
 
   if (!currentWorkspace) {
     return <div style={{ color: theme.dim, fontSize: 13 }}>Loading workspace…</div>;
   }
 
-  const handleRename = async () => {
-    if (!newName.trim() || newName === currentWorkspace.name) {
-      setEditing(false);
+  const commitRename = async () => {
+    const trimmed = editingName.trim();
+    if (!trimmed || trimmed === currentWorkspace.name) {
+      setEditingName(currentWorkspace.name);
+      setIsEditing(false);
       return;
     }
-    try { await renameWorkspace(newName.trim()); setEditing(false); } catch (e) { console.error(e); }
+    try { await renameWorkspace(trimmed); } catch (e) { console.error(e); }
+    setIsEditing(false);
   };
 
   const handleAddFolder = async () => {
@@ -62,31 +67,55 @@ export default function WorkspaceSettings() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
       {/* ── Current workspace name ── */}
-      <Section title="WORKSPACE NAME">
-        {editing ? (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <Section title="WORKSPACE">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <FolderOpen size={18} color={theme.accent} style={{ flexShrink: 0, opacity: 0.9 }} />
+
+          {isEditing ? (
             <input
+              ref={nameInputRef}
               type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
+              value={editingName}
+              onChange={(e) => setEditingName(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') { setEditingName(currentWorkspace.name); setIsEditing(false); }
+              }}
               className="inline-input"
-              style={{ flex: 1, fontSize: 15, fontWeight: 500 }}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); if (e.key === 'Escape') { setNewName(currentWorkspace.name); setEditing(false); } }}
-              autoFocus
+              style={{ flex: 1 }}
             />
-            <button onClick={handleRename} className="icon-btn-sm" style={{ color: theme.accent }} title="Save">
-              <Check size={15} weight="bold" />
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <FolderOpen size={18} color={theme.accent} style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: 15, fontWeight: 550, color: theme.text }}>{currentWorkspace.name}</span>
-            <button onClick={() => setEditing(true)} className="icon-btn-sm" title="Rename">
-              <PencilSimple size={14} color={theme.dim} />
-            </button>
-          </div>
-        )}
+          ) : (
+            <span
+              onClick={() => setIsEditing(true)}
+              title="Click to rename"
+              style={{
+                fontSize: 15,
+                fontWeight: 550,
+                color: theme.text,
+                cursor: 'text',
+                flex: 1,
+                borderRadius: 4,
+                padding: '2px 4px',
+                margin: '-2px -4px',
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              {currentWorkspace.name}
+            </span>
+          )}
+
+          <button
+            onClick={() => { setEditingName(currentWorkspace.name); setIsEditing(true); }}
+            className="icon-btn-sm"
+            title="Rename workspace"
+            style={{ flexShrink: 0 }}
+          >
+            <PencilSimple size={14} color={theme.dim} />
+          </button>
+        </div>
       </Section>
 
       {/* ── Folders ── */}
@@ -141,30 +170,6 @@ export default function WorkspaceSettings() {
             <Plus size={14} weight="bold" />
             {addingFolder ? 'Adding…' : 'Add folder'}
           </button>
-        </div>
-      </Section>
-
-      {/* ── Switch workspace ── */}
-      <Section title="SWITCH WORKSPACE">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {allWorkspaces
-            .filter((w) => w.id !== currentWorkspace.id)
-            .map((ws) => (
-              <button
-                key={ws.id}
-                onClick={() => switchWorkspace(ws.id)}
-                className="menu-item"
-                style={{ justifyContent: 'space-between', width: '100%' }}
-              >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: theme.text }}>{ws.name}</span>
-                  <span style={{ fontSize: 11, color: theme.dim }}>
-                    {ws.folders.length} folder{ws.folders.length !== 1 ? 's' : ''}
-                  </span>
-                </div>
-                <FolderOpen size={15} color={theme.dim} />
-              </button>
-            ))}
         </div>
       </Section>
 
