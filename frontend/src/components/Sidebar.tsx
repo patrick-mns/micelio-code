@@ -101,18 +101,13 @@ export default function Sidebar({
       <div style={sidebarStyles.trafficGap} data-tauri-drag-region />
 
       {/* Workspaces → sessions tree */}
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '4px 0' }}>
+      <div style={sidebarStyles.sessionList}>
         {/* Global new session button */}
         <div
           onClick={newSession}
           tabIndex={0}
           role="button"
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '8px 14px', margin: '0 6px 8px 6px',
-            borderRadius: 8, cursor: 'pointer', fontSize: 12.5,
-            color: theme.faint,
-          }}
+          style={sidebarStyles.newBtn}
           onMouseEnter={(e) => { e.currentTarget.style.color = theme.accent; e.currentTarget.style.background = theme.cardActive; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = theme.faint; e.currentTarget.style.background = 'transparent'; }}
         >
@@ -132,9 +127,7 @@ export default function Sidebar({
                 tabIndex={0}
                 role="button"
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '8px 14px', margin: '0 6px', borderRadius: 8,
-                  cursor: 'pointer',
+                  ...sidebarStyles.wsHeader,
                   background: current ? theme.cardActive : 'transparent',
                 }}
                 onMouseEnter={(e) => {
@@ -144,14 +137,13 @@ export default function Sidebar({
                   if (!current) e.currentTarget.style.background = 'transparent';
                 }}
               >
-                <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center', color: theme.faint }}>
+                <span style={sidebarStyles.wsChevron}>
                   <CaretRight size={12} weight="bold" style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
                 </span>
                 <span style={{
-                  flex: 1, fontSize: 12.5,
+                  ...sidebarStyles.wsName,
                   fontWeight: current ? 600 : 450,
                   color: current ? theme.text : theme.textSoft,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
                   {ws.name}
                 </span>

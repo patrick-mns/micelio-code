@@ -71,11 +71,11 @@ export default function GitContext({ onPickWorkspace, refreshTick = 0 }: GitCont
   const hasChanges = gitInfo && (gitInfo.added > 0 || gitInfo.modified > 0 || gitInfo.deleted > 0);
 
   const switchFolder = async (folder: string) => {
-    setActiveFolder(folder);
-    setActiveRoot(folder);
     setMenuOpen(false);
     try {
       await ipc.setWorkspaceRoot(folder);
+      setActiveFolder(folder);
+      setActiveRoot(folder);
     } catch (e) {
       console.error('failed to switch workspace root', e);
     }
@@ -88,28 +88,17 @@ export default function GitContext({ onPickWorkspace, refreshTick = 0 }: GitCont
         <div ref={menuRef} style={{ position: 'relative' }}>
           <button
             className="ghost-btn"
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', fontSize: 12.5, color: theme.text, borderRadius: 6 }}
+            style={gitContextStyles.folderBtn}
             onClick={() => setMenuOpen(!menuOpen)}
             title={currentFolder}
           >
             <FolderOpen size={14} />
-            <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folderName}</span>
+            <span style={gitContextStyles.folderName}>{folderName}</span>
             <CaretDown size={10} />
           </button>
 
           {menuOpen && (
-            <div style={{
-              position: 'absolute',
-              top: '100%',
-              left: 0,
-              marginTop: 4,
-              background: theme.bgDeep,
-              border: `1px solid ${theme.border}`,
-              borderRadius: 8,
-              padding: 4,
-              minWidth: 180,
-              zIndex: 100,
-            }}>
+            <div style={gitContextStyles.folderDropdown}>
               {folders.map((f) => {
                 const name = f.split('/').pop() || f.split('\\').pop() || f;
                 const isActive = f === currentFolder;
@@ -119,21 +108,15 @@ export default function GitContext({ onPickWorkspace, refreshTick = 0 }: GitCont
                     className="menu-item"
                     onClick={() => switchFolder(f)}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '6px 10px',
-                      borderRadius: 6,
-                      cursor: 'pointer',
+                      ...gitContextStyles.folderItem,
                       background: isActive ? theme.cardActive : 'transparent',
                       color: isActive ? theme.accent : theme.textSoft,
-                      fontSize: 12.5,
                     }}
-                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = theme.cardActive; e.currentTarget.style.color = theme.text; }}
+                    onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.background = theme.cardActive; e.currentTarget.style.color = theme.text; }}}
                     onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = theme.textSoft; }}}
                   >
                     <FolderOpen size={13} color={isActive ? theme.accent : theme.faint} style={{ flexShrink: 0 }} />
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={gitContextStyles.folderItemName}>
                       {name}
                     </span>
                     {isActive && <Check size={12} color={theme.accent} weight="bold" />}

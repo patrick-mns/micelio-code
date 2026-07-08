@@ -4,21 +4,7 @@ import { theme } from '@/theme';
 import Section from './Section';
 import { Plus, Trash, PencilSimple, FolderOpen } from '@phosphor-icons/react';
 import { ipc } from '@/ipc';
-import { fieldStyles } from '@/utils/theme-styles';
-
-const mono: React.CSSProperties = {
-  fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-};
-
-const listCard: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  padding: '8px 12px',
-  borderRadius: 6,
-  background: theme.bgDeep,
-  border: `1px solid ${theme.border}`,
-};
+import { fieldStyles, workspaceSettingsStyles } from '@/utils/theme-styles';
 
 export default function WorkspaceSettings() {
   const {
@@ -100,7 +86,7 @@ export default function WorkspaceSettings() {
 
       {/* ── Current workspace name ── */}
       <Section title="WORKSPACE">
-        <div style={listCard}>
+        <div style={workspaceSettingsStyles.listCard}>
           <input
             ref={nameInputRef}
             type="text"
@@ -112,17 +98,7 @@ export default function WorkspaceSettings() {
               if (e.key === 'Enter') { commitRename(); nameInputRef.current?.blur(); }
               if (e.key === 'Escape') { setEditingName(currentWorkspace.name); setIsEditing(false); nameInputRef.current?.blur(); }
             }}
-            style={{
-              flex: 1,
-              fontSize: 13,
-              fontWeight: 500,
-              color: theme.text,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              padding: 0,
-              fontFamily: 'inherit',
-            }}
+            style={workspaceSettingsStyles.nameInput}
           />
           <button
             onClick={startEditing}
@@ -148,10 +124,10 @@ export default function WorkspaceSettings() {
               const dirName = parts[parts.length - 1] || folder;
 
               return (
-                <div key={folder} style={listCard}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dirName}</span>
-                    <span style={{ ...mono, fontSize: 11, color: theme.dim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div key={folder} style={workspaceSettingsStyles.listCard}>
+                  <div style={workspaceSettingsStyles.listCardColumn}>
+                    <span style={workspaceSettingsStyles.dirName}>{dirName}</span>
+                    <span style={workspaceSettingsStyles.dirPath}>
                       {folder}
                     </span>
                   </div>
@@ -208,21 +184,13 @@ export default function WorkspaceSettings() {
                 >
                   <FolderOpen size={16} color={isCurrent ? theme.accent : theme.dim} style={{ flexShrink: 0 }} />
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {ws.name}
-                    </span>
-                    <span style={{ fontSize: 11, color: theme.dim }}>
+                    <span style={workspaceSettingsStyles.wsName}>{ws.name}</span>
+                    <span style={workspaceSettingsStyles.wsPath}>
                       {ws.folders.length} folder{ws.folders.length !== 1 ? 's' : ''}
                     </span>
                   </div>
                   {isCurrent && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 600, color: theme.accent,
-                      background: `${theme.accent}18`,
-                      padding: '2px 7px', borderRadius: 4, letterSpacing: '0.03em', textTransform: 'uppercase',
-                    }}>
-                      Active
-                    </span>
+                    <span style={workspaceSettingsStyles.activeBadge}>Active</span>
                   )}
                   {!isCurrent && (
                     <button

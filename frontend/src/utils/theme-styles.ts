@@ -407,24 +407,28 @@ export const gitContextStyles: Record<string, CSSProperties> = {
     background: theme.card,
     borderRadius: "var(--radius-lg)",
   },
-  repoBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 5,
-    padding: '3px 7px',
-    marginLeft: -3,
-    border: 'none',
-    borderRadius: "var(--radius-sm)",
-    cursor: 'pointer',
-    fontSize: 11.5,
-    fontWeight: 500,
-    fontFamily: 'inherit',
+  folderBtn: {
+    display: 'flex', alignItems: 'center', gap: 6,
+    padding: '3px 8px', fontSize: 12.5, color: theme.text, borderRadius: 6,
   },
-  repoName: {
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-    maxWidth: 140,
+  folderName: {
+    maxWidth: 120, overflow: 'hidden',
+    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  folderDropdown: {
+    position: 'absolute', top: '100%', left: 0,
+    marginTop: 4, background: theme.bgDeep,
+    border: `1px solid ${theme.border}`, borderRadius: 8,
+    padding: 4, minWidth: 180, zIndex: 100,
+  },
+  folderItem: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+    fontSize: 12.5,
+  },
+  folderItemName: {
+    flex: 1, overflow: 'hidden',
+    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
   branch: {
     display: 'flex',
@@ -666,9 +670,9 @@ export const sidebarStyles: Record<string, CSSProperties> = {
   trafficGap: { height: 38, flexShrink: 0 },
   newBtn: {
     display: 'flex', alignItems: 'center', gap: 8,
-    margin: '6px 6px 8px', padding: '0 10px', height: 34,
-    border: 'none', borderRadius: 9, cursor: 'pointer',
-    fontSize: 13, fontFamily: 'inherit',
+    padding: '8px 14px', margin: '0 6px 8px 6px',
+    borderRadius: 8, cursor: 'pointer', fontSize: 12.5,
+    color: theme.faint, border: 'none', fontFamily: 'inherit',
   },
   list: { flex: 1, overflowY: 'auto', padding: '0 6px 8px' },
   empty: { color: theme.faint, fontSize: 12, padding: '12px 10px' },
@@ -697,6 +701,82 @@ export const sidebarStyles: Record<string, CSSProperties> = {
   gearBtn: {
     width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
     border: 'none', borderRadius: "var(--radius-md)", cursor: 'pointer', flexShrink: 0,
+  },
+  wsHeader: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '8px 14px', margin: '0 6px', borderRadius: 8, cursor: 'pointer',
+  },
+  wsName: {
+    flex: 1, fontSize: 12.5,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  wsChevron: {
+    flexShrink: 0, display: 'flex', alignItems: 'center', color: theme.faint,
+  },
+  wsCount: {
+    marginLeft: 'auto', fontSize: 11, color: theme.faint,
+  },
+  sessionList: {
+    flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '4px 0',
+  },
+  sessionRow: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '6px 14px', margin: '0 6px', borderRadius: 8, cursor: 'pointer',
+    fontSize: 12.5,
+  },
+  updateBar: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '0 10px', margin: '0 6px 4px 6px', height: 34,
+    borderRadius: 9, cursor: 'pointer', transition: 'all 0.15s ease-in-out', userSelect: 'none',
+  },
+  updateLabel: {
+    flex: 1, fontSize: 13, fontWeight: 400,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  updateDot: {
+    width: 5, height: 5, borderRadius: '50%',
+    background: theme.accent, boxShadow: `0 0 6px ${theme.accent}`,
+  },
+};
+
+// ── WorkspaceSettings.tsx ────────────────────────────────────────────────
+export const workspaceSettingsStyles: Record<string, CSSProperties> = {
+  listCard: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '8px 12px', borderRadius: 6,
+    background: theme.bgDeep, border: `1px solid ${theme.border}`,
+  },
+  listCardColumn: {
+    display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0,
+  },
+  dirName: {
+    fontSize: 13, fontWeight: 500, color: theme.text,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  dirPath: {
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+    fontSize: 11, color: theme.dim,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  nameInput: {
+    flex: 1, fontSize: 13, fontWeight: 500, color: theme.text,
+    background: 'transparent', border: 'none', outline: 'none', padding: 0,
+    fontFamily: 'inherit',
+  },
+  activeBadge: {
+    fontSize: 10, fontWeight: 600, color: theme.accent,
+    background: `${theme.accent}18`,
+    padding: '2px 7px', borderRadius: 4,
+    letterSpacing: '0.03em', textTransform: 'uppercase',
+  },
+  wsName: {
+    fontSize: 13, fontWeight: 500, color: theme.text,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  wsPath: {
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+    fontSize: 10.5, color: theme.dim,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
 };
 

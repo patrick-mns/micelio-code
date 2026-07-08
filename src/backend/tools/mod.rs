@@ -30,16 +30,28 @@ impl ToolContext {
         if path.is_absolute() {
             return path.to_path_buf();
         }
-        
-        // Find existing match in any workspace root
+
+        // Resolve by the root whose prefix produces the shortest relative path.
+        // This avoids the ambiguity of `exists()` when the same relative path
+        // happens to exist under multiple roots.
+        let mut best: Option<(usize, &PathBuf)> = None;
         for root in &self.workspace_roots {
-            let full = root.join(path);
-            if full.exists() {
-                return full;
+            let candidate = root.join(path);
+            // Only consider roots that actually contain the file.
+            if candidate.exists() {
+                let depth = root.components().count();
+                best = match best {
+                    Some((prev_depth, _)) if depth >= prev_depth => best,
+                    _ => Some((depth, root)),
+                };
             }
         }
-        
-        // Fallback to first workspace_root if none exist
+
+        if let Some((_, root)) = best {
+            return root.join(path);
+        }
+
+        // Brand-new file (or non-existent path): land in the primary root
         self.workspace_root.join(path)
     }
 }
