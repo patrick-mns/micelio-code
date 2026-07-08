@@ -13,6 +13,7 @@ use std::path::PathBuf;
 #[derive(Clone)]
 pub struct ToolContext {
     pub workspace_root: PathBuf,
+    pub workspace_roots: Vec<PathBuf>,
     pub model_name: String,
     /// Vision-role model for this session (empty = unassigned). Used by the
     /// `vision` tool so each session can target its own image model.
@@ -21,6 +22,26 @@ pub struct ToolContext {
     pub show_tools: bool,
     pub debug: bool,
     pub graph_json: String,
+}
+
+impl ToolContext {
+    pub fn resolve_path(&self, arg: &str) -> PathBuf {
+        let path = std::path::Path::new(arg);
+        if path.is_absolute() {
+            return path.to_path_buf();
+        }
+        
+        // Find existing match in any workspace root
+        for root in &self.workspace_roots {
+            let full = root.join(path);
+            if full.exists() {
+                return full;
+            }
+        }
+        
+        // Fallback to first workspace_root if none exist
+        self.workspace_root.join(path)
+    }
 }
 
 #[derive(Debug)]
@@ -311,8 +332,10 @@ mod tests {
     use super::*;
 
     fn ctx() -> ToolContext {
+        let root = PathBuf::from("/tmp");
         ToolContext {
-            workspace_root: PathBuf::from("/tmp"),
+            workspace_root: root.clone(),
+            workspace_roots: vec![root],
             model_name: String::new(),
             vision_model: String::new(),
             history_len: 0,

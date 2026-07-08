@@ -2,45 +2,42 @@ import { useState, useCallback } from 'react';
 import { ipc } from '@/ipc';
 import { useStore } from '@/store';
 
-// Workspace folder picker + switch. Prompts for a folder, points the backend at
-// it, then reloads the dependent bundle (settings, graph, sessions, history).
-// `switching` is true while the swap is in flight (for "Scanning…" labels).
-// Pass a fallback session id (e.g. the currently viewed one) used when the new
-// workspace has no active session of its own.
 export function useWorkspace() {
   const {
-    settings, setSettings, setGraphNodes, setScanning,
-    setSelectedNode, setSessions, setMessages, setCurrentSession,
+    currentWorkspace,
+    addFolderToWorkspace,
+    removeFolderFromWorkspace,
+    switchWorkspace,
+    workspaceLoading,
+    setSelectedNode,
+    setGraphNodes,
   } = useStore();
   const [switching, setSwitching] = useState(false);
 
-  const pickWorkspace = useCallback(async (fallbackSessionId: string | null = null) => {
-    const path = await ipc.pickFolder(settings?.workspace).catch(() => null);
+  const addNewFolder = useCallback(async (_fallbackPath?: string) => {
+    // Open directory picker
+    const path = await ipc.pickFolder(currentWorkspace?.folders?.[0]).catch(() => null);
     if (!path) return;
     setSwitching(true);
-    setScanning(true);
     setSelectedNode(null);
     setGraphNodes([]);
     try {
-      await ipc.setWorkspace(path);
-      const [s, nodes, sessions, history] = await Promise.all([
-        ipc.getSettings(), ipc.getGraph(), ipc.listSessions(), ipc.getHistory(),
-      ]);
-      setSettings(s);
-      setGraphNodes(nodes);
-      setSessions(sessions);
-      const activeId = sessions.find((x) => x.active)?.id ?? fallbackSessionId;
-      if (activeId) {
-        setCurrentSession(activeId);
-        setMessages(activeId, history);
-      }
+      await addFolderToWorkspace(path);
     } catch (e) {
-      console.error('workspace switch failed', e);
+      console.error('Failed to add folder to workspace', e);
     } finally {
-      setScanning(false);
       setSwitching(false);
     }
-  }, [settings]);
+  }, [currentWorkspace, addFolderToWorkspace, setSelectedNode, setGraphNodes]);
 
-  return { switching, pickWorkspace };
+  return {
+    currentWorkspace,
+    addNewFolder,
+    pickWorkspace: addNewFolder,
+    removeFolder: removeFolderFromWorkspace,
+    switchWorkspace,
+    loading: workspaceLoading || switching,
+    switching,
+    workspaceLoading,
+  };
 }

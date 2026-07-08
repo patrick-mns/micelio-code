@@ -72,27 +72,39 @@ pub async fn get_graph(state: State<'_, AppState>) -> Result<Vec<TreemapNode>, S
 
 #[tauri::command]
 pub async fn scan_workspace(app: AppHandle, state: State<'_, AppState>) -> Result<usize, String> {
-    let root = state.workspace_root.lock().unwrap().clone();
-
     // Reset cancel flag at the start of every scan
     state.scan_cancel.store(false, std::sync::atomic::Ordering::SeqCst);
 
-    let added = {
-        let mut graph = state.graph.lock().unwrap();
-        graph.scan_workspace_progress(&root, &state.scan_cancel, &mut |_| {})?
-    };
+    let ws = state.current_workspace.lock().unwrap().clone();
+    let multi_folder = ws.folders.len() > 1;
 
-    // Persist
-    {
-        let graph = state.graph.lock().unwrap();
-        let path = root.join(".micelio/graph.json");
-        let _ = graph.save(&path);
+    let mut total_added = 0;
+    let mut graph = crate::backend::knowledge::KnowledgeGraph::new();
+
+    for folder in &ws.folders {
+        if state.scan_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        let prefix = if multi_folder {
+            folder.file_name().map(|n| n.to_string_lossy().to_string())
+        } else {
+            None
+        };
+        let added = graph.scan_workspace_progress(folder, prefix, &state.scan_cancel, &mut |_| {})?;
+        total_added += added.added;
     }
 
-    app.emit("graph_updated", added.added)
+    // Persist to workspace dir
+    let path = ws.dir().join("graph.json");
+    let _ = graph.save(&path);
+
+    // Save back to AppState
+    *state.graph.lock().unwrap() = graph;
+
+    app.emit("graph_updated", total_added)
         .map_err(|e| e.to_string())?;
 
-    Ok(added.added)
+    Ok(total_added)
 }
 
 /// Signal the workspace scan to stop.

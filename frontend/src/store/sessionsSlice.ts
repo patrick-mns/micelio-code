@@ -2,6 +2,7 @@
 import type { StateCreator } from 'zustand';
 import type { SessionInfo, SessionModels } from '@/types';
 import type { AppState } from './index';
+import { ipc } from '@/ipc';
 
 export interface SessionsSlice {
   sessions: SessionInfo[];
@@ -14,6 +15,7 @@ export interface SessionsSlice {
   setStreamingSession: (streamingSession: string | null) => void;
   /** Update the model pins for one session. */
   setSessionModels: (sessionId: string, models: SessionModels) => void;
+  loadSessions: () => Promise<void>;
 }
 
 export const sessionsSlice: StateCreator<AppState, [], [], SessionsSlice> = (set) => ({
@@ -36,4 +38,13 @@ export const sessionsSlice: StateCreator<AppState, [], [], SessionsSlice> = (set
     set((s) => ({
       sessionModels: { ...s.sessionModels, [sessionId]: models },
     })),
+
+  loadSessions: async () => {
+    try {
+      const sess = await ipc.listSessions();
+      set({ sessions: sess });
+    } catch (e) {
+      console.error('Failed to load sessions', e);
+    }
+  },
 });

@@ -401,9 +401,9 @@ impl KnowledgeGraph {
         Ok(g)
     }
 
-    pub fn scan_workspace(&mut self, root: &Path) -> BackendResult<usize> {
+    pub fn scan_workspace(&mut self, root: &Path, prefix: Option<String>) -> BackendResult<usize> {
         use std::sync::atomic::AtomicBool;
-        self.scan_workspace_progress(root, &AtomicBool::new(false), &mut |_| {})
+        self.scan_workspace_progress(root, prefix, &AtomicBool::new(false), &mut |_| {})
             .map(|r| r.added)
     }
 
@@ -417,6 +417,7 @@ impl KnowledgeGraph {
     pub fn scan_workspace_progress(
         &mut self,
         root: &Path,
+        prefix: Option<String>,
         cancel: &std::sync::atomic::AtomicBool,
         progress: &mut dyn FnMut(usize),
     ) -> BackendResult<ScanReport> {
@@ -496,16 +497,21 @@ impl KnowledgeGraph {
                 continue;
             }
 
+            let rel_str = relative.to_string_lossy().to_string();
+            let label = if let Some(ref pfx) = prefix {
+                format!("{pfx}/{rel_str}")
+            } else {
+                rel_str.clone()
+            };
+
             if let Some(ft) = entry.file_type() {
                 if ft.is_dir() {
-                    let label = relative.to_string_lossy().to_string();
                     if let std::collections::hash_map::Entry::Vacant(slot) = by_label.entry(label) {
                         let id = self.add_with_desc(slot.key(), "", NodeKind::Directory);
                         slot.insert(id);
                         count += 1;
                     }
                 } else if ft.is_file() {
-                    let label = relative.to_string_lossy().to_string();
                     let ext = path
                         .extension()
                         .map(|e| format!(".{}", e.to_string_lossy()))
@@ -869,7 +875,7 @@ mod tests {
         std::fs::write(dir.join("node_modules/dep.js"), "fn x(){}").unwrap();
 
         let mut g = KnowledgeGraph::new();
-        let added = g.scan_workspace(&dir).unwrap();
+        let added = g.scan_workspace(&dir, None).unwrap();
         assert!(added > 0);
 
         let labels: Vec<&str> = g.nodes().iter().map(|n| n.label.as_str()).collect();

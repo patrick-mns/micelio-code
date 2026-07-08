@@ -26,7 +26,7 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
     let prompt = super::get_string_field(arguments, "prompt")
         .unwrap_or_else(|| "Describe this image in detail.".to_string());
 
-    let full_path = context.workspace_root.join(&path);
+    let full_path = context.resolve_path(&path);
     let bytes = std::fs::read(&full_path)
         .map_err(|e| format!("vision tool: failed to read {path}: {e}"))?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);

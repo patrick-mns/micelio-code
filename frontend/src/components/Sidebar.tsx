@@ -23,7 +23,7 @@ export default function Sidebar({ workspaceName, onPickWorkspace, switching, onO
   const {
     sessions, setSessions, setMessages, setActiveTab,
     messagesBySession, isLoading, setCurrentSession, currentSession,
-    setSessionModels, update,
+    setSessionModels, update, currentWorkspace, setSettingsCategory, setShowSettings
   } = useStore();
 
   const refresh = () =>
@@ -100,6 +100,41 @@ export default function Sidebar({ workspaceName, onPickWorkspace, switching, onO
     <div style={sidebarStyles.root}>
       {/* Reserved gap so the mac traffic-light buttons sit here, top-left. */}
       <div style={sidebarStyles.trafficGap} data-tauri-drag-region />
+
+      {/* Modern Workspace Header Widget */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 12px',
+        margin: '2px 8px 10px 8px',
+        borderRadius: 8,
+        background: 'rgba(255,255,255,0.02)',
+        border: `1px solid ${theme.border}`,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <FolderOpen size={16} color={theme.accent} style={{ flexShrink: 0 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 550, color: theme.text, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+              {currentWorkspace?.name || workspaceName}
+            </span>
+            <span style={{ fontSize: 10, color: theme.dim }}>
+              {currentWorkspace?.folders.length || 0} folder{currentWorkspace?.folders.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            setSettingsCategory('workspace');
+            setShowSettings(true);
+          }}
+          className="ghost-btn"
+          style={{ padding: 4, height: 'auto', width: 'auto', minWidth: 0, background: 'none', border: 'none' }}
+          title="Manage folders & workspaces"
+        >
+          <Gear size={13} color={theme.dim} />
+        </button>
+      </div>
 
       <button className="ghost-btn" style={sidebarStyles.newBtn} onClick={newChat}>
         <PencilSimpleLine size={15} />

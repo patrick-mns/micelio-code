@@ -15,3 +15,4 @@ pub mod review;
 pub mod tokens;
 pub mod tools;
 pub mod updater;
+pub mod workspace;

@@ -7,3 +7,4 @@ pub mod review;
 pub mod sessions;
 pub mod settings;
 pub mod updater;
+pub mod workspace;

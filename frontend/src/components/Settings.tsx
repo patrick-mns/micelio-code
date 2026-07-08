@@ -1,17 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { ChatCircle, Cloud, Wrench, X, type Icon } from '@phosphor-icons/react';
+import { ChatCircle, Cloud, FolderOpen, Wrench, X, type Icon } from '@phosphor-icons/react';
 import { theme } from '@/theme';
 import ChatSettings from './ChatSettings';
 import ProviderSettings from './ProviderSettings';
+import WorkspaceSettings from './WorkspaceSettings';
 import AdvancedSettings from './AdvancedSettings';
 import { settingsModalStyles as modalStyles } from '@/utils/theme-styles';
 import { ipc } from '@/ipc';
 
-type CategoryId = 'chat' | 'providers' | 'advanced';
+import { useStore } from '@/store';
+
+type CategoryId = 'chat' | 'providers' | 'workspace' | 'advanced';
 
 const CATEGORIES: { id: CategoryId; label: string; Icon: Icon }[] = [
   { id: 'chat', label: 'Chat', Icon: ChatCircle },
   { id: 'providers', label: 'Providers', Icon: Cloud },
+  { id: 'workspace', label: 'Workspace', Icon: FolderOpen },
   { id: 'advanced', label: 'Advanced', Icon: Wrench },
 ];
 
@@ -20,7 +24,7 @@ interface SettingsProps {
 }
 
 export default function Settings({ onClose }: SettingsProps) {
-  const [category, setCategory] = useState<CategoryId>('chat');
+  const { settingsCategory: category, setSettingsCategory: setCategory } = useStore();
   const [version, setVersion] = useState('');
 
   useEffect(() => {
@@ -59,6 +63,7 @@ export default function Settings({ onClose }: SettingsProps) {
           </button>
           {category === 'chat' && <ChatSettings />}
           {category === 'providers' && <ProviderSettings />}
+          {category === 'workspace' && <WorkspaceSettings />}
           {category === 'advanced' && <AdvancedSettings />}
         </div>
       </div>

@@ -176,7 +176,7 @@ pub async fn set_workspace(state: State<'_, AppState>, path: String) -> Result<u
         Ok(g) if g.total_count() > 0 => g,
         _ => {
             let mut g = crate::backend::knowledge::KnowledgeGraph::new();
-            g.scan_workspace(&root)?;
+            g.scan_workspace(&root, None)?;
             g
         }
     };

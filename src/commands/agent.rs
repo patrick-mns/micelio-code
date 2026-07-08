@@ -567,8 +567,16 @@ fn execute_tool_call(
         return (summary, false, None);
     }
 
+    let ws = app.state::<AppState>().current_workspace.lock().unwrap().clone();
+    let workspace_roots = if ws.folders.is_empty() {
+        vec![workspace_root.to_path_buf()]
+    } else {
+        ws.folders
+    };
+
     let ctx = tools::ToolContext {
         workspace_root: workspace_root.to_path_buf(),
+        workspace_roots,
         model_name: model.to_string(),
         vision_model: app.state::<AppState>().session_vision_model(session_id),
         history_len: history.len(),

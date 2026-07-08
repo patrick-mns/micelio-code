@@ -27,6 +27,7 @@ pub struct ModelRoles {
 pub struct AppState {
     pub graph: Mutex<KnowledgeGraph>,
     pub workspace_root: Mutex<std::path::PathBuf>,
+    pub current_workspace: Mutex<backend::workspace::Workspace>,
     /// Per-role model assignments (chat / summarize / vision).
     pub models: Mutex<ModelRoles>,
     pub sessions: Mutex<SessionStore>,
@@ -132,7 +133,7 @@ fn ensure_cli_path() {
 pub fn run() {
     ensure_cli_path();
 
-    let workspace_root = backend::config::last_workspace().unwrap_or_else(|| {
+    let legacy_root = backend::config::last_workspace().unwrap_or_else(|| {
         // Use the app's own data directory under ~/.micelio/workspace-root/ as a
         // safe fallback when no workspace was ever picked.  This avoids touching
         // ~/Documents/ (or another TCC-guarded path) on every launch, which would
@@ -141,6 +142,12 @@ pub fn run() {
         let _ = std::fs::create_dir_all(&fallback);
         fallback
     });
+
+    let workspace = backend::workspace::bootstrap_default_workspace(&legacy_root);
+    
+    // O workspace_root em memória (onde as tools buscam hoje) será o primeiro folder do workspace,
+    // ou a pasta do próprio workspace caso não tenha folders ainda.
+    let workspace_root = workspace.folders.first().cloned().unwrap_or_else(|| workspace.dir());
 
     let model = backend::config::last_model().unwrap_or_else(|| "claude-sonnet-4-6".to_string());
 
@@ -151,12 +158,16 @@ pub fn run() {
     // picks a model for it.
     let vision_model = backend::config::vision_model().unwrap_or_default();
 
-    let graph_path = workspace_root.join(".micelio/graph.json");
+    // graph.json e sessions.db agora residem no diretório do workspace!
+    let graph_path = workspace.dir().join("graph.json");
     let graph = backend::knowledge::KnowledgeGraph::load(&graph_path)
         .unwrap_or_else(|_| backend::knowledge::KnowledgeGraph::new());
 
-    backend::config::ensure_gitignore(&workspace_root);
-    let sessions = SessionStore::open(&workspace_root.join(".micelio/sessions.db"))
+    if let Some(first_folder) = workspace.folders.first() {
+        backend::config::ensure_gitignore(first_folder);
+    }
+
+    let sessions = SessionStore::open(&workspace.dir().join("sessions.db"))
         .expect("open session store");
     let current_session = match sessions.latest_session_id() {
         Ok(Some(id)) => id,
@@ -186,6 +197,7 @@ pub fn run() {
         .manage(AppState {
             graph: Mutex::new(graph),
             workspace_root: Mutex::new(workspace_root),
+            current_workspace: Mutex::new(workspace.clone()),
             models: Mutex::new(ModelRoles {
                 chat: model,
                 summarize: summarize_model,
@@ -238,6 +250,13 @@ pub fn run() {
             commands::settings::get_version,
             commands::settings::set_auto_summarize,
             commands::settings::set_show_cost,
+            commands::workspace::get_current_workspace,
+            commands::workspace::list_all_workspaces,
+            commands::workspace::create_workspace,
+            commands::workspace::switch_workspace,
+            commands::workspace::add_folder_to_workspace,
+            commands::workspace::remove_folder_from_workspace,
+            commands::workspace::rename_workspace,
             commands::sessions::list_sessions,
             commands::sessions::new_session,
             commands::sessions::switch_session,

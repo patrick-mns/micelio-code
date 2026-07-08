@@ -103,6 +103,7 @@ export default function App() {
     gitRevertFile, gitRevertAll,
   } = useReview();
   const { switching, pickWorkspace } = useWorkspace();
+  const { loadCurrentWorkspace, loadAllWorkspaces, currentWorkspace } = useStore();
 
   // Resizable widths for the two side panels (the wrapper width, including the
   // 8px float inset). Persisted + clamped by the hook.
@@ -110,8 +111,10 @@ export default function App() {
   const bgResize = usePanelResize({ storageKey: 'bgPanelWidth', defaultWidth: 328, min: 268, side: 'right' });
 
   useEffect(() => {
+    loadCurrentWorkspace();
+    loadAllWorkspaces();
     ipc.getSettings().then(setSettings).catch(console.error);
-  }, []);
+  }, [loadCurrentWorkspace, loadAllWorkspaces]);
 
   return (
     <div style={appStyles.root}>
@@ -120,7 +123,7 @@ export default function App() {
       <div style={appStyles.body}>
         <AnimatedPanel open={sidebarOpen} side="left" width={sidebarResize.width} resizing={sidebarResize.isResizing}>
           <Sidebar
-            workspaceName={switching ? 'Scanning…' : basename(settings?.workspace) || 'Open folder'}
+            workspaceName={switching ? 'Scanning…' : currentWorkspace?.name || 'Open folder'}
             onPickWorkspace={pickWorkspace}
             switching={switching}
             onOpenSettings={() => setShowSettings(true)}
