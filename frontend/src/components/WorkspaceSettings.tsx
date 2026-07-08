@@ -4,6 +4,8 @@ import { theme } from '@/theme';
 import Section from './Section';
 import { Plus, Trash, FolderOpen, PencilSimple, Check } from '@phosphor-icons/react';
 
+import { ipc } from '@/ipc';
+
 export default function WorkspaceSettings() {
   const {
     currentWorkspace,
@@ -51,15 +53,9 @@ export default function WorkspaceSettings() {
   const handleAddFolder = async () => {
     setAddingFolder(true);
     try {
-      // Pick logic via Tauri dialog
-      // @ts-ignore
-      const { dialog } = await import('@tauri-apps/plugin-dialog');
-      const selected = await dialog.open({
-        directory: true,
-        multiple: false,
-      });
-      if (selected && typeof selected === 'string') {
-        await addFolderToWorkspace(selected);
+      const path = await ipc.pickFolder(currentWorkspace.folders[0]);
+      if (path) {
+        await addFolderToWorkspace(path);
       }
     } catch (e) {
       console.error(e);
