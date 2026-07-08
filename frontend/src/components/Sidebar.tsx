@@ -101,36 +101,35 @@ export default function Sidebar({ workspaceName, onPickWorkspace, switching, onO
       {/* Reserved gap so the mac traffic-light buttons sit here, top-left. */}
       <div style={sidebarStyles.trafficGap} data-tauri-drag-region />
 
-      {/* Modern Workspace Header Widget */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '10px 12px',
-        margin: '2px 8px 10px 8px',
-        borderRadius: 8,
-        background: 'rgba(255,255,255,0.02)',
-        border: `1px solid ${theme.border}`,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <FolderOpen size={16} color={theme.accent} style={{ flexShrink: 0 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-            <span style={{ fontSize: 13, fontWeight: 550, color: theme.text, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-              {currentWorkspace?.name || workspaceName}
-            </span>
-            <span style={{ fontSize: 10, color: theme.dim }}>
-              {currentWorkspace?.folders.length || 0} folder{currentWorkspace?.folders.length !== 1 ? 's' : ''}
-            </span>
-          </div>
+      {/* Workspace indicator — clean row matching sidebar aesthetic */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '8px 14px',
+          margin: '0 6px 6px 6px',
+          minWidth: 0,
+        }}
+      >
+        <FolderOpen size={15} color={theme.accent} style={{ flexShrink: 0, opacity: 0.85 }} />
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+          <span style={{
+            fontSize: 12.5, fontWeight: 550, color: theme.text,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            lineHeight: 1.3,
+          }}>
+            {currentWorkspace?.name || workspaceName}
+          </span>
+          <span style={{ fontSize: 10.5, color: theme.dim, lineHeight: 1.2 }}>
+            {currentWorkspace?.folders.length || 0} folder{(currentWorkspace?.folders.length ?? 0) !== 1 ? 's' : ''}
+          </span>
         </div>
         <button
-          onClick={() => {
-            setSettingsCategory('workspace');
-            setShowSettings(true);
-          }}
-          className="ghost-btn"
-          style={{ padding: 4, height: 'auto', width: 'auto', minWidth: 0, background: 'none', border: 'none' }}
-          title="Manage folders & workspaces"
+          onClick={() => { setSettingsCategory('workspace'); setShowSettings(true); }}
+          className="icon-btn-sm"
+          title="Workspace settings"
+          style={{ flexShrink: 0 }}
         >
           <Gear size={13} color={theme.dim} />
         </button>
