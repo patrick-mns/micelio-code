@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '@/store';
 import { theme } from '@/theme';
 import Section from './Section';
-import { Plus, Trash, PencilSimple } from '@phosphor-icons/react';
+import { Plus, Trash, PencilSimple, FolderOpen } from '@phosphor-icons/react';
 import { ipc } from '@/ipc';
 import { fieldStyles } from '@/utils/theme-styles';
 
@@ -13,8 +13,10 @@ const mono: React.CSSProperties = {
 export default function WorkspaceSettings() {
   const {
     currentWorkspace,
+    allWorkspaces,
     loadAllWorkspaces,
     createWorkspace,
+    switchWorkspace,
     addFolderToWorkspace,
     removeFolderFromWorkspace,
     renameWorkspace,
@@ -182,6 +184,45 @@ export default function WorkspaceSettings() {
           <Plus size={14} weight="bold" />
           {addingFolder ? 'Adding…' : 'Add folder'}
         </button>
+      </Section>
+
+      {/* ── All workspaces ── */}
+      <Section title="ALL WORKSPACES">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {allWorkspaces.length === 0 ? (
+            <div style={fieldStyles.desc}>No workspaces found.</div>
+          ) : (
+            allWorkspaces.map((ws) => {
+              const isCurrent = ws.id === currentWorkspace.id;
+              return (
+                <div
+                  key={ws.id}
+                  onClick={() => { if (!isCurrent) switchWorkspace(ws.id); }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '9px 12px',
+                    borderRadius: 6,
+                    background: isCurrent ? theme.bgDeep : 'transparent',
+                    border: `1px solid ${isCurrent ? theme.border : 'transparent'}`,
+                    cursor: isCurrent ? 'default' : 'pointer',
+                    position: 'relative',
+                  }}
+                >
+                  <FolderOpen size={16} color={isCurrent ? theme.accent : theme.dim} style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: theme.text }}>{ws.name}</span>
+                    <span style={{ fontSize: 11, color: theme.dim }}>
+                      {ws.folders.length} folder{ws.folders.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  {isCurrent && <span style={{ fontSize: 10, color: theme.accent, fontWeight: 500 }}>Active</span>}
+                </div>
+              );
+            })
+          )}
+        </div>
       </Section>
 
       {/* ── New workspace ── */}
