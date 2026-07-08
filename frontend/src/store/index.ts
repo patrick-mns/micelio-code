@@ -10,6 +10,8 @@ import { themeSlice, type ThemeSlice } from './themeSlice';
 import { updateSlice, type UpdateSlice } from './updateSlice';
 import { workspaceSlice, type WorkspaceSlice } from './workspaceSlice';
 
+export type { SessionBrief } from './workspaceSlice';
+
 export type AppState =
   & ChatSlice
   & ComposerSlice
