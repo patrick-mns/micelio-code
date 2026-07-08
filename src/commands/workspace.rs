@@ -75,16 +75,21 @@ pub async fn add_folder_to_workspace(
         *state.workspace_root.lock().unwrap() = path.clone();
     }
 
-    // Trigger scan on the newly added folder
-    let mut graph = state.graph.lock().unwrap();
-    let prefix = if ws.folders.len() > 1 {
-        path.file_name().map(|n| n.to_string_lossy().to_string())
-    } else {
-        None
-    };
-    let _ = graph.scan_workspace(&path, prefix);
+    // Rescan everything so all nodes have consistent prefixes (especially
+    // when going from 1 → 2+ folders where the single-folder prefix flips on).
+    let mut graph = crate::backend::knowledge::KnowledgeGraph::new();
+    let multi = ws.folders.len() > 1;
+    for folder in &ws.folders {
+        let prefix = if multi {
+            folder.file_name().map(|n| n.to_string_lossy().to_string())
+        } else {
+            None
+        };
+        graph.scan_workspace(folder, prefix).map_err(|e| format!("scan error: {e}"))?;
+    }
     let graph_path = ws.dir().join("graph.json");
-    let _ = graph.save(&graph_path);
+    graph.save(&graph_path).map_err(|e| format!("save graph: {e}"))?;
+    *state.graph.lock().unwrap() = graph;
 
     Ok(ws)
 }

@@ -69,7 +69,7 @@ export const workspaceSlice: StateCreator<
       
       // Sync sessions list after switch
       await get().loadSessions();
-      get().refreshGraph();
+      await get().refreshGraph();
       return ws;
     } finally {
       set({ workspaceLoading: false });
@@ -87,7 +87,7 @@ export const workspaceSlice: StateCreator<
 
       // Sync sessions and reset workspace_root
       await get().loadSessions();
-      get().refreshGraph();
+      await get().refreshGraph();
       return ws;
     } finally {
       set({ workspaceLoading: false });
@@ -101,7 +101,7 @@ export const workspaceSlice: StateCreator<
       // Refresh list
       const list = await invoke<Workspace[]>('list_all_workspaces');
       set({ allWorkspaces: list });
-      get().refreshGraph();
+      await get().refreshGraph();
       return ws;
     } catch (e) {
       console.error('Failed to add folder', e);
@@ -116,7 +116,7 @@ export const workspaceSlice: StateCreator<
       // Refresh list
       const list = await invoke<Workspace[]>('list_all_workspaces');
       set({ allWorkspaces: list });
-      get().refreshGraph();
+      await get().refreshGraph();
       return ws;
     } catch (e) {
       console.error('Failed to remove folder', e);

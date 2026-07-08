@@ -160,8 +160,18 @@ pub fn run() {
 
     // graph.json e sessions.db agora residem no diretório do workspace!
     let graph_path = workspace.dir().join("graph.json");
-    let graph = backend::knowledge::KnowledgeGraph::load(&graph_path)
-        .unwrap_or_else(|_| backend::knowledge::KnowledgeGraph::new());
+    let mut graph = backend::knowledge::KnowledgeGraph::load(&graph_path).unwrap_or_default();
+    // If graph is empty (new workspace or no scan yet), scan all folders now
+    if graph.total_count() == 0 {
+        let multi = workspace.folders.len() > 1;
+        for folder in &workspace.folders {
+            let prefix = if multi { folder.file_name().map(|n| n.to_string_lossy().to_string()) } else { None };
+            if let Err(e) = graph.scan_workspace(folder, prefix) {
+                eprintln!("scan error on startup for {folder:?}: {e}");
+            }
+        }
+        let _ = graph.save(&graph_path);
+    }
 
     if let Some(first_folder) = workspace.folders.first() {
         backend::config::ensure_gitignore(first_folder);
