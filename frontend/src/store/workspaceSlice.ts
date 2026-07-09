@@ -6,7 +6,6 @@ export interface Workspace {
   id: string;
   name: string;
   folders: string[];
-  pinned_model: string | null;
 }
 
 export interface SessionBrief {
@@ -20,7 +19,6 @@ export interface WorkspaceWithSessions {
   id: string;
   name: string;
   folders: string[];
-  pinned_model: string | null;
   sessions: SessionBrief[];
   is_current: boolean;
 }

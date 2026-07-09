@@ -8,7 +8,6 @@ pub struct WorkspaceWithSessions {
     pub id: String,
     pub name: String,
     pub folders: Vec<PathBuf>,
-    pub pinned_model: Option<String>,
     pub sessions: Vec<SessionBrief>,
     pub is_current: bool,
 }
@@ -60,7 +59,7 @@ pub async fn list_all_workspaces_with_sessions(state: State<'_, AppState>) -> Re
         } else {
             vec![]
         };
-        result.push(WorkspaceWithSessions { id: ws.id, name: ws.name, folders: ws.folders, pinned_model: ws.pinned_model, sessions, is_current });
+        result.push(WorkspaceWithSessions { id: ws.id, name: ws.name, folders: ws.folders, sessions, is_current });
     }
     Ok(result)
 }
@@ -81,12 +80,7 @@ pub async fn create_workspace(
     name: String,
     folders: Vec<String>,
 ) -> Result<Workspace, String> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let epoch = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let id = format!("ws_{:x}", epoch & 0xFFFFFFFF);
+    let id = crate::backend::workspace::generate_id();
 
     let folders: Vec<PathBuf> = folders.into_iter().map(PathBuf::from).collect();
     let ws = Workspace::new(id, name, folders);
