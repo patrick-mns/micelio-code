@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { ToolGroup } from '@/components/ToolEntry';
 import { mdComponents } from '@/components/MdComponents';
 import { chatStyles as styles } from '@/utils/theme-styles';
+import { fmtDuration, fmtTok } from '@/utils/formatters';
 import type { Prefs } from '@/store/prefsSlice';
 
 // One chunk of the in-flight assistant turn: either a tool-call summary or a
@@ -67,12 +68,12 @@ export default function StreamStatus({ streaming, elapsed, liveTokens, liveConte
           </div>
         ) : null
       )}
-      {/* Activity line: ✻ Ns · ~N tok · thinking/responding */}
+      {/* Activity line: ✻ <duration> · ~<tokens> tok · thinking/responding */}
       <div style={styles.activity}>
         <span style={styles.star}>✻</span>
         <span style={styles.activityText}>
-          {elapsed}s
-          {liveTokens > 0 ? ` · ~${liveTokens} tok` : ''}
+          {fmtDuration(elapsed)}
+          {liveTokens > 0 ? ` · ~${fmtTok(liveTokens)} tok` : ''}
           {' · '}
           {liveContentLen > 0 ? 'responding' : 'thinking'}
           <span className="think-dots-inline" />
