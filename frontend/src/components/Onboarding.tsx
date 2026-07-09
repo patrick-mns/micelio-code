@@ -48,23 +48,23 @@ export default function Onboarding() {
   return (
     <div style={styles.root}>
       <div style={styles.card}>
-        <div style={styles.iconWrap}>
-          <FolderOpen size={28} color={theme.accent} weight="duotone" />
-        </div>
         <h1 style={styles.title}>Create your first workspace</h1>
         <p style={styles.subtitle}>
           A workspace holds its own folders, conversations, and knowledge graph.
-          Open a folder to get started, or create an empty one and add folders later.
         </p>
 
+        {/* Primary action — mirrors the sidebar's "New session" row: a quiet,
+            borderless row that lifts on hover, not a loud filled button. */}
         <button
           onClick={openFolder}
           disabled={disabled}
-          className="btn btn-primary"
-          style={styles.primaryBtn}
+          style={{ ...styles.openRow, ...(disabled ? styles.rowDisabled : null) }}
+          onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.background = theme.cardActive; e.currentTarget.style.color = theme.text; e.currentTarget.style.borderColor = theme.dim; } }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = theme.card; e.currentTarget.style.color = theme.textSoft; e.currentTarget.style.borderColor = theme.border; }}
         >
-          <FolderOpen size={16} weight="bold" />
-          {busy ? 'Opening…' : 'Open a folder'}
+          <FolderOpen size={17} weight="regular" />
+          <span style={{ flex: 1, textAlign: 'left' }}>{busy ? 'Opening…' : 'Open a folder'}</span>
+          <span style={styles.hint}>scan a project</span>
         </button>
 
         <div style={styles.divider}>
@@ -76,7 +76,7 @@ export default function Onboarding() {
         <form onSubmit={createEmpty} style={styles.form}>
           <input
             type="text"
-            placeholder="Workspace name"
+            placeholder="Name an empty workspace"
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={disabled}
@@ -85,8 +85,8 @@ export default function Onboarding() {
           <button
             type="submit"
             disabled={disabled || !name.trim()}
-            className="btn btn-outline"
-            style={styles.createBtn}
+            className="btn btn-md btn-solid"
+            style={{ flexShrink: 0 }}
           >
             <Plus size={15} weight="bold" />
             Create
@@ -108,30 +108,28 @@ const styles: Record<string, React.CSSProperties> = {
   },
   card: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 360,
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
+    gap: 12,
+  },
+  title: { fontSize: 16, fontWeight: 600, color: theme.text, margin: 0, textAlign: 'center' },
+  subtitle: {
+    fontSize: 12.5, lineHeight: 1.5, color: theme.dim, margin: '0 0 4px',
     textAlign: 'center',
-    gap: 14,
   },
-  iconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: theme.cardActive,
+  openRow: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    width: '100%', padding: '11px 14px',
+    borderRadius: 'var(--radius-md)',
+    background: theme.card,
     border: `1px solid ${theme.border}`,
-    marginBottom: 2,
+    color: theme.textSoft,
+    fontSize: 13, fontFamily: 'inherit', cursor: 'pointer',
+    transition: 'background-color 0.15s, color 0.15s, border-color 0.15s',
   },
-  title: { fontSize: 17, fontWeight: 600, color: theme.text, margin: 0 },
-  subtitle: { fontSize: 12.5, lineHeight: 1.5, color: theme.dim, margin: 0 },
-  primaryBtn: {
-    display: 'inline-flex', alignItems: 'center', gap: 8,
-    width: '100%', justifyContent: 'center', marginTop: 6,
-  },
+  rowDisabled: { opacity: 0.5, cursor: 'default', pointerEvents: 'none' },
+  hint: { fontSize: 11, color: theme.faint, flexShrink: 0 },
   divider: {
     display: 'flex', alignItems: 'center', gap: 10, width: '100%', margin: '2px 0',
   },
@@ -140,8 +138,7 @@ const styles: Record<string, React.CSSProperties> = {
   form: { display: 'flex', gap: 8, width: '100%' },
   input: {
     flex: 1, background: theme.bgDeep, border: `1px solid ${theme.border}`,
-    borderRadius: 'var(--radius-md)', padding: '8px 11px', fontSize: 13,
+    borderRadius: 'var(--radius-md)', padding: '0 11px', height: 28, fontSize: 12.5,
     color: theme.text, fontFamily: 'inherit', outline: 'none',
   },
-  createBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 },
 };
