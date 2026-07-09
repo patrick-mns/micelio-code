@@ -739,47 +739,6 @@ export const sidebarStyles: Record<string, CSSProperties> = {
   },
 };
 
-// ── WorkspaceSettings.tsx ────────────────────────────────────────────────
-export const workspaceSettingsStyles: Record<string, CSSProperties> = {
-  listCard: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '8px 12px', borderRadius: 6,
-    background: theme.bgDeep, border: `1px solid ${theme.border}`,
-  },
-  listCardColumn: {
-    display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0,
-  },
-  dirName: {
-    fontSize: 13, fontWeight: 500, color: theme.text,
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  },
-  dirPath: {
-    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-    fontSize: 11, color: theme.dim,
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  },
-  nameInput: {
-    flex: 1, fontSize: 13, fontWeight: 500, color: theme.text,
-    background: 'transparent', border: 'none', outline: 'none', padding: 0,
-    fontFamily: 'inherit',
-  },
-  activeBadge: {
-    fontSize: 10, fontWeight: 600, color: theme.accent,
-    background: `${theme.accent}18`,
-    padding: '2px 7px', borderRadius: 4,
-    letterSpacing: '0.03em', textTransform: 'uppercase',
-  },
-  wsName: {
-    fontSize: 13, fontWeight: 500, color: theme.text,
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  },
-  wsPath: {
-    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-    fontSize: 10.5, color: theme.dim,
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  },
-};
-
 // ── SystemPromptModal.tsx ────────────────────────────────────────────────
 export const systemPromptModalStyles: Record<string, CSSProperties> = {
   head: {
