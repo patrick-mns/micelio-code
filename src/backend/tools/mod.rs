@@ -85,7 +85,7 @@ fn inject_action(args: &str, action: &str) -> String {
 /// Normalize a tool name that may contain stuttering/repetition (e.g.
 /// `filefilefilefile` or `read_fileread_file`) by looking for a known tool
 /// name as a substring. Falls back to the original name if nothing matches.
-pub fn normalize_tool_name<'a>(name: &'a str) -> &'a str {
+pub fn normalize_tool_name(name: &str) -> &str {
     const KNOWN: &[&str] = &[
         // Longest first so `context_node` matches before `context`, etc.
         "context_node",
