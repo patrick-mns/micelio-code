@@ -61,6 +61,7 @@ export default function MessageList({ messages, renderedMessages, hoveredKey, se
           if (item.type === 'tools') {
             return <ToolGroup key={item.key} tools={item.tools} />;
           } else if (item.type === 'thinking') {
+            if (!prefs.showThinking) return null;
             return <Thinking key={item.key} content={item.msg.content} duration={item.msg.duration} />;
           } else if (item.type === 'canceled') {
             return (
