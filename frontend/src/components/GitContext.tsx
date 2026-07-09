@@ -75,6 +75,9 @@ export default function GitContext({ onPickWorkspace, refreshTick = 0 }: GitCont
     try {
       await ipc.setWorkspaceRoot(folder);
       setActiveFolder(folder);
+      // Refresh the graph FIRST so the treemap has fresh data for this folder,
+      // then set activeRoot so the filter runs with accurate nodes.
+      await useStore.getState().refreshGraph();
       setActiveRoot(folder);
     } catch (e) {
       console.error('failed to switch workspace root', e);
