@@ -21,7 +21,7 @@ pub struct SessionBrief {
 }
 
 #[tauri::command]
-pub async fn get_current_workspace(state: State<'_, AppState>) -> Result<Workspace, String> {
+pub async fn get_current_workspace(state: State<'_, AppState>) -> Result<Option<Workspace>, String> {
     let ws = state.current_workspace.lock().unwrap();
     Ok(ws.clone())
 }
@@ -33,7 +33,13 @@ pub async fn list_all_workspaces() -> Result<Vec<Workspace>, String> {
 
 #[tauri::command]
 pub async fn list_all_workspaces_with_sessions(state: State<'_, AppState>) -> Result<Vec<WorkspaceWithSessions>, String> {
-    let current_id = state.current_workspace.lock().unwrap().id.clone();
+    let current_id = state
+        .current_workspace
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|w| w.id.clone())
+        .unwrap_or_default();
     let current_session_id = state.current_session.lock().unwrap().clone();
     let all = list_workspaces();
     let mut result = Vec::new();
@@ -111,7 +117,7 @@ pub async fn add_folder_to_workspace(
 
     let mut ws = {
         let current = state.current_workspace.lock().unwrap();
-        current.clone()
+        current.clone().ok_or("no active workspace")?
     };
 
     if !ws.folders.contains(&path) {
@@ -120,7 +126,7 @@ pub async fn add_folder_to_workspace(
     }
 
     // Update global state
-    *state.current_workspace.lock().unwrap() = ws.clone();
+    *state.current_workspace.lock().unwrap() = Some(ws.clone());
 
     // ensure gitignore
     crate::backend::config::ensure_gitignore(&path);
@@ -157,13 +163,13 @@ pub async fn remove_folder_from_workspace(
     let path = PathBuf::from(&folder_path);
     let mut ws = {
         let current = state.current_workspace.lock().unwrap();
-        current.clone()
+        current.clone().ok_or("no active workspace")?
     };
 
     ws.folders.retain(|f| f != &path);
     ws.save().map_err(|e| e.to_string())?;
 
-    *state.current_workspace.lock().unwrap() = ws.clone();
+    *state.current_workspace.lock().unwrap() = Some(ws.clone());
 
     // If active root was removed, transition to the next available or workspace folder itself
     let new_root = ws.folders.first().cloned().unwrap_or_else(|| ws.dir());
@@ -194,13 +200,13 @@ pub async fn rename_workspace(
 ) -> Result<Workspace, String> {
     let mut ws = {
         let current = state.current_workspace.lock().unwrap();
-        current.clone()
+        current.clone().ok_or("no active workspace")?
     };
 
     ws.name = name;
     ws.save().map_err(|e| e.to_string())?;
 
-    *state.current_workspace.lock().unwrap() = ws.clone();
+    *state.current_workspace.lock().unwrap() = Some(ws.clone());
     Ok(ws)
 }
 
@@ -216,7 +222,7 @@ pub async fn delete_workspace(state: State<'_, AppState>, id: String) -> Result<
     // If we deleted the current workspace, switch to the next available
     let is_current = {
         let current = state.current_workspace.lock().unwrap();
-        current.id == id
+        current.as_ref().map(|w| w.id == id).unwrap_or(false)
     };
 
     if is_current {
@@ -224,15 +230,30 @@ pub async fn delete_workspace(state: State<'_, AppState>, id: String) -> Result<
         if let Some(next) = remaining.first() {
             switch_workspace_internal(&state, next).await?;
         } else {
-            // No workspaces left — create a fresh default one
-            let fallback = crate::backend::config::app_data_dir().join("workspace-root");
-            let _ = std::fs::create_dir_all(&fallback);
-            let ws = crate::backend::workspace::bootstrap_default_workspace(&fallback);
-            switch_workspace_internal(&state, &ws).await?;
+            // No workspaces left — drop to the empty onboarding state instead of
+            // recreating a phantom default. The UI will prompt to create one.
+            clear_current_workspace(&state);
         }
     }
 
     Ok(())
+}
+
+/// Reset AppState to the "no workspace" state: empty graph, an empty sessions
+/// store under the data dir, and no current workspace/session. Used when the
+/// last workspace is deleted so the UI can show onboarding.
+fn clear_current_workspace(state: &State<'_, AppState>) {
+    let data_dir = crate::backend::config::app_data_dir().join("_no_workspace");
+    let _ = std::fs::create_dir_all(&data_dir);
+
+    *state.current_workspace.lock().unwrap() = None;
+    *state.workspace_root.lock().unwrap() = data_dir.clone();
+    *state.graph.lock().unwrap() = crate::backend::knowledge::KnowledgeGraph::new();
+    if let Ok(store) = crate::backend::sessions::SessionStore::open(&data_dir.join("sessions.db")) {
+        *state.sessions.lock().unwrap() = store;
+    }
+    *state.current_session.lock().unwrap() = String::new();
+    state.session_histories.lock().unwrap().clear();
 }
 
 fn workspaces_dir() -> std::path::PathBuf {
@@ -287,7 +308,7 @@ async fn switch_workspace_internal(state: &State<'_, AppState>, ws: &Workspace) 
     // 4. Update memory structures in AppState
     let workspace_root = ws.folders.first().cloned().unwrap_or_else(|| ws.dir());
     *state.workspace_root.lock().unwrap() = workspace_root;
-    *state.current_workspace.lock().unwrap() = ws.clone();
+    *state.current_workspace.lock().unwrap() = Some(ws.clone());
     *state.graph.lock().unwrap() = graph;
     *state.sessions.lock().unwrap() = store;
     *state.current_session.lock().unwrap() = session_id.clone();

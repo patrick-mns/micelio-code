@@ -568,10 +568,9 @@ fn execute_tool_call(
     }
 
     let ws = app.state::<AppState>().current_workspace.lock().unwrap().clone();
-    let workspace_roots = if ws.folders.is_empty() {
-        vec![workspace_root.to_path_buf()]
-    } else {
-        ws.folders
+    let workspace_roots = match ws {
+        Some(w) if !w.folders.is_empty() => w.folders,
+        _ => vec![workspace_root.to_path_buf()],
     };
 
     let ctx = tools::ToolContext {

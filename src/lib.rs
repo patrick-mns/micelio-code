@@ -27,7 +27,9 @@ pub struct ModelRoles {
 pub struct AppState {
     pub graph: Mutex<KnowledgeGraph>,
     pub workspace_root: Mutex<std::path::PathBuf>,
-    pub current_workspace: Mutex<backend::workspace::Workspace>,
+    /// The workspace currently loaded in memory, or `None` when the app has no
+    /// workspaces yet (fresh install / all deleted) and is showing onboarding.
+    pub current_workspace: Mutex<Option<backend::workspace::Workspace>>,
     /// Per-role model assignments (chat / summarize / vision).
     pub models: Mutex<ModelRoles>,
     pub sessions: Mutex<SessionStore>,
@@ -133,21 +135,33 @@ fn ensure_cli_path() {
 pub fn run() {
     ensure_cli_path();
 
-    let legacy_root = backend::config::last_workspace().unwrap_or_else(|| {
-        // Use the app's own data directory under ~/.micelio/workspace-root/ as a
-        // safe fallback when no workspace was ever picked.  This avoids touching
-        // ~/Documents/ (or another TCC-guarded path) on every launch, which would
-        // otherwise trigger repeated macOS permission prompts.
-        let fallback = backend::config::app_data_dir().join("workspace-root");
-        let _ = std::fs::create_dir_all(&fallback);
-        fallback
-    });
+    // Load the existing workspaces, if any. We no longer auto-create a default
+    // "workspace-root" on first launch — a fresh install starts with NO
+    // workspace and the UI shows an onboarding screen where the user creates
+    // their first one. Returning users reopen the workspace they last visited
+    // (matched by its first folder), falling back to the first available.
+    let current_workspace: Option<backend::workspace::Workspace> = {
+        let all = backend::workspace::list_workspaces();
+        let by_last = backend::config::last_workspace()
+            .and_then(|last| all.iter().find(|w| w.folders.first() == Some(&last)).cloned());
+        by_last.or_else(|| all.into_iter().next())
+    };
 
-    let workspace = backend::workspace::bootstrap_default_workspace(&legacy_root);
-    
+    // Runtime structures fall back to safe empties when there's no workspace.
+    // The main UI is gated behind having a workspace, so these placeholders are
+    // never actually exercised until the user creates or opens one.
+    let data_dir = current_workspace
+        .as_ref()
+        .map(|w| w.dir())
+        .unwrap_or_else(|| backend::config::app_data_dir().join("_no_workspace"));
+    let _ = std::fs::create_dir_all(&data_dir);
+
     // O workspace_root em memória (onde as tools buscam hoje) será o primeiro folder do workspace,
-    // ou a pasta do próprio workspace caso não tenha folders ainda.
-    let workspace_root = workspace.folders.first().cloned().unwrap_or_else(|| workspace.dir());
+    // ou a pasta de dados de fallback caso não haja workspace/folders ainda.
+    let workspace_root = current_workspace
+        .as_ref()
+        .and_then(|w| w.folders.first().cloned())
+        .unwrap_or_else(|| data_dir.clone());
 
     let model = backend::config::last_model().unwrap_or_else(|| "claude-sonnet-4-6".to_string());
 
@@ -159,25 +173,28 @@ pub fn run() {
     let vision_model = backend::config::vision_model().unwrap_or_default();
 
     // graph.json e sessions.db agora residem no diretório do workspace!
-    let graph_path = workspace.dir().join("graph.json");
+    let graph_path = data_dir.join("graph.json");
     let mut graph = backend::knowledge::KnowledgeGraph::load(&graph_path).unwrap_or_default();
-    // If graph is empty (new workspace or no scan yet), scan all folders now
+    // If graph is empty (new workspace or no scan yet), scan the workspace's
+    // folders now. With no workspace, the graph simply stays empty.
     if graph.total_count() == 0 {
-        let multi = workspace.folders.len() > 1;
-        for folder in &workspace.folders {
-            let prefix = if multi { folder.file_name().map(|n| n.to_string_lossy().to_string()) } else { None };
-            if let Err(e) = graph.scan_workspace(folder, prefix) {
-                eprintln!("scan error on startup for {folder:?}: {e}");
+        if let Some(ws) = &current_workspace {
+            let multi = ws.folders.len() > 1;
+            for folder in &ws.folders {
+                let prefix = if multi { folder.file_name().map(|n| n.to_string_lossy().to_string()) } else { None };
+                if let Err(e) = graph.scan_workspace(folder, prefix) {
+                    eprintln!("scan error on startup for {folder:?}: {e}");
+                }
             }
+            let _ = graph.save(&graph_path);
         }
-        let _ = graph.save(&graph_path);
     }
 
-    if let Some(first_folder) = workspace.folders.first() {
+    if let Some(first_folder) = current_workspace.as_ref().and_then(|w| w.folders.first()) {
         backend::config::ensure_gitignore(first_folder);
     }
 
-    let sessions = SessionStore::open(&workspace.dir().join("sessions.db"))
+    let sessions = SessionStore::open(&data_dir.join("sessions.db"))
         .expect("open session store");
     let current_session = match sessions.latest_session_id() {
         Ok(Some(id)) => id,
@@ -205,7 +222,7 @@ pub fn run() {
         .manage(AppState {
             graph: Mutex::new(graph),
             workspace_root: Mutex::new(workspace_root),
-            current_workspace: Mutex::new(workspace.clone()),
+            current_workspace: Mutex::new(current_workspace),
             models: Mutex::new(ModelRoles {
                 chat: model,
                 summarize: summarize_model,

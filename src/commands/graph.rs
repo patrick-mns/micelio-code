@@ -75,7 +75,9 @@ pub async fn scan_workspace(app: AppHandle, state: State<'_, AppState>) -> Resul
     // Reset cancel flag at the start of every scan
     state.scan_cancel.store(false, std::sync::atomic::Ordering::SeqCst);
 
-    let ws = state.current_workspace.lock().unwrap().clone();
+    let Some(ws) = state.current_workspace.lock().unwrap().clone() else {
+        return Ok(0); // No workspace to scan.
+    };
     let multi_folder = ws.folders.len() > 1;
 
     let mut total_added = 0;

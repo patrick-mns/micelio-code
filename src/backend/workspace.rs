@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,32 +59,6 @@ pub fn list_workspaces() -> Vec<Workspace> {
         }
     }
     list
-}
-
-/// Cria o workspace padrão baseado no last_workspace que tínhamos anteriormente,
-/// facilitando o onboarding de quem já vinha usando o app.
-pub fn bootstrap_default_workspace(fallback_folder: &Path) -> Workspace {
-    let list = list_workspaces();
-    if !list.is_empty() {
-        return list[0].clone();
-    }
-
-    // Criar um workspace inicial
-    let id = generate_id();
-    let name = fallback_folder
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("Default Workspace")
-        .to_string();
-
-    let mut folders = Vec::new();
-    if fallback_folder.is_dir() {
-        folders.push(fallback_folder.to_path_buf());
-    }
-
-    let ws = Workspace::new(id, name, folders);
-    let _ = ws.save();
-    ws
 }
 
 /// Gera um id único para um workspace no formato `ws_<nanos>_<seq>`.
