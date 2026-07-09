@@ -60,6 +60,13 @@ export const workspaceSlice: StateCreator<
       // null when the app has no workspaces yet (fresh install / all deleted).
       const ws = await invoke<Workspace | null>('get_current_workspace');
       set({ currentWorkspace: ws, expandedWorkspaces: ws ? [ws.id] : [] });
+      // Startup no longer scans on the backend, so a workspace whose graph was
+      // never built (missing graph.json) loads empty — build it in the
+      // background instead of freezing the app before the window appears.
+      if (ws) {
+        await get().refreshGraph();
+        if (get().graphNodes.length === 0 && ws.folders.length > 0) get().backgroundScan();
+      }
       return ws;
     } catch (e) {
       console.error('Failed to load current workspace', e);

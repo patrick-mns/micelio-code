@@ -173,22 +173,12 @@ pub fn run() {
     let vision_model = backend::config::vision_model().unwrap_or_default();
 
     // graph.json e sessions.db agora residem no diretório do workspace!
+    // Load the saved graph, or start empty. We deliberately DON'T scan here:
+    // scanning a large folder would block startup and the window would never
+    // appear. When the graph is empty, the frontend kicks off a background scan
+    // (with progress + cancel + overlay) right after it loads the workspace.
     let graph_path = data_dir.join("graph.json");
-    let mut graph = backend::knowledge::KnowledgeGraph::load(&graph_path).unwrap_or_default();
-    // If graph is empty (new workspace or no scan yet), scan the workspace's
-    // folders now. With no workspace, the graph simply stays empty.
-    if graph.total_count() == 0 {
-        if let Some(ws) = &current_workspace {
-            let multi = ws.folders.len() > 1;
-            for folder in &ws.folders {
-                let prefix = if multi { folder.file_name().map(|n| n.to_string_lossy().to_string()) } else { None };
-                if let Err(e) = graph.scan_workspace(folder, prefix) {
-                    eprintln!("scan error on startup for {folder:?}: {e}");
-                }
-            }
-            let _ = graph.save(&graph_path);
-        }
-    }
+    let graph = backend::knowledge::KnowledgeGraph::load(&graph_path).unwrap_or_default();
 
     if let Some(first_folder) = current_workspace.as_ref().and_then(|w| w.folders.first()) {
         backend::config::ensure_gitignore(first_folder);
