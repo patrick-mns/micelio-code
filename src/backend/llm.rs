@@ -18,17 +18,20 @@ use std::sync::OnceLock;
 pub enum ProviderKind {
     Ollama,
     OpenRouter,
+    LiteLLM,
 }
 
 impl ProviderKind {
     /// Every registered kind, in catalog display order.
-    pub const ALL: [ProviderKind; 2] = [ProviderKind::Ollama, ProviderKind::OpenRouter];
+    pub const ALL: [ProviderKind; 3] =
+        [ProviderKind::Ollama, ProviderKind::OpenRouter, ProviderKind::LiteLLM];
 
     /// Human label for catalog section headers.
     pub fn label(self) -> &'static str {
         match self {
             Self::Ollama => "Ollama",
             Self::OpenRouter => "OpenRouter",
+            Self::LiteLLM => "LiteLLM",
         }
     }
 }
@@ -294,7 +297,8 @@ fn providers() -> &'static [Box<dyn Provider>] {
     PROVIDERS.get_or_init(|| {
         vec![
             Box::new(crate::backend::ollama::OllamaProvider),
-            Box::new(crate::backend::openrouter::OpenRouterProvider),
+            Box::new(crate::backend::openai_compat::OPENROUTER),
+            Box::new(crate::backend::openai_compat::LITELLM),
         ]
     })
 }

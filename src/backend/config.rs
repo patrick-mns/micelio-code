@@ -91,6 +91,40 @@ pub fn save_openrouter_key(key: &str) {
     write_value("openrouter_key", key.trim());
 }
 
+/// LiteLLM API key, from `LITELLM_API_KEY` or `~/.micelio/litellm_key`.
+/// None/empty = provider disabled (contributes nothing to the catalog).
+pub fn litellm_key() -> Option<String> {
+    if let Ok(k) = std::env::var("LITELLM_API_KEY") {
+        let k = k.trim().to_string();
+        if !k.is_empty() {
+            return Some(k);
+        }
+    }
+    read_trimmed("litellm_key")
+}
+
+/// Persists the LiteLLM API key (best-effort). Empty clears it.
+pub fn save_litellm_key(key: &str) {
+    write_value("litellm_key", key.trim());
+}
+
+/// LiteLLM base URL, from `LITELLM_BASE_URL` env or `~/.micelio/litellm_base_url`.
+/// Empty string = provider disabled (no default).
+pub fn litellm_base_url() -> String {
+    if let Ok(url) = std::env::var("LITELLM_BASE_URL") {
+        let url = url.trim().to_string();
+        if !url.is_empty() {
+            return url;
+        }
+    }
+    read_trimmed("litellm_base_url").unwrap_or_default()
+}
+
+/// Persists the LiteLLM base URL (best-effort). Empty resets to default.
+pub fn save_litellm_base_url(url: &str) {
+    write_value("litellm_base_url", url.trim());
+}
+
 /// Last workspace path, if it was saved and still exists as a directory.
 pub fn last_workspace() -> Option<PathBuf> {
     let path = PathBuf::from(read_trimmed("last_workspace")?);

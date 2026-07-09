@@ -1,7 +1,7 @@
 import React, { useState, type CSSProperties } from 'react';
 import { toolEntryStyles } from '@/utils/theme-styles';
 import {
-  CaretRight, Check, Terminal, FileText, MagnifyingGlass,
+  CaretRight, Terminal, FileText, MagnifyingGlass,
   PencilSimple, FilePlus, Folder, Wrench, GlobeSimple, GitBranch,
   type Icon,
 } from '@phosphor-icons/react';
@@ -92,9 +92,7 @@ export default function ToolEntry({ content, showDetails = true, nested = false 
           </span>
         )}
         <div style={{ flex: 1 }} />
-        {isRunning
-          ? <span style={toolEntryStyles.spinner} />
-          : <Check size={12} color={theme.faint} weight="bold" />}
+        {isRunning && <span style={toolEntryStyles.spinner} />}
       </button>
 
       {hasDetail && open && (

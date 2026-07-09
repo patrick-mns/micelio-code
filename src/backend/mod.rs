@@ -7,7 +7,7 @@ pub mod hierarchy;
 pub mod knowledge;
 pub mod llm;
 pub mod ollama;
-pub mod openrouter;
+pub mod openai_compat;
 pub mod prompt;
 pub mod sessions;
 pub mod symbols;

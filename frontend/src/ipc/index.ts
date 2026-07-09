@@ -51,6 +51,11 @@ export const ipc = {
   getOpenrouterKey: () => invoke<string>('get_openrouter_key'),
   saveOpenrouterKey: (key: string) => invoke<void>('save_openrouter_key', { key }),
   checkOpenrouterKey: (key: string) => invoke<OpenRouterStatus>('check_openrouter_key', { key }),
+  getLitellmKey: () => invoke<string>('get_litellm_key'),
+  saveLitellmKey: (key: string) => invoke<void>('save_litellm_key', { key }),
+  checkLitellmKey: (key: string) => invoke<OpenRouterStatus>('check_litellm_key', { key }),
+  getLitellmBaseUrl: () => invoke<string>('get_litellm_base_url'),
+  saveLitellmBaseUrl: (url: string) => invoke<void>('save_litellm_base_url', { url }),
   getGitContext: () => invoke<GitContext>('get_git_context'),
   getVersion: () => invoke<string>('get_version'),
 
