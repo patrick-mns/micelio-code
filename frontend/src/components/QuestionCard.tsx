@@ -1,5 +1,8 @@
 import React, { useState, type CSSProperties } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { questionCardStyles } from '@/utils/theme-styles';
+import { mdComponents } from '@/components/MdComponents';
 import { Check, ArrowRight, CaretLeft, CaretRight, X } from '@phosphor-icons/react';
 import { theme } from '@/theme';
 
@@ -112,9 +115,11 @@ export default function QuestionCard({ questions, onAnswer, onCancel }: Question
       {/* Question card */}
       <div style={questionCardStyles.card}>
 
-        {/* Header + question text */}
+        {/* Header + question text (rendered as markdown) */}
         {q.header && <span style={questionCardStyles.header}>{q.header}</span>}
-        <div style={questionCardStyles.question}>{q.question}</div>
+        <div style={questionCardStyles.question}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{q.question}</ReactMarkdown>
+        </div>
 
         {/* Options as compact chips */}
         {q.options.length > 0 && (
