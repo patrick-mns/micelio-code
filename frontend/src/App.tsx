@@ -103,7 +103,7 @@ export default function App() {
     gitRevertFile, gitRevertAll,
   } = useReview();
   const { switching, pickWorkspace } = useWorkspace();
-  const { loadCurrentWorkspace, loadAllWorkspaces, currentWorkspace } = useStore();
+  const { loadCurrentWorkspace, currentWorkspace } = useStore();
 
   // Resizable widths for the two side panels (the wrapper width, including the
   // 8px float inset). Persisted + clamped by the hook.
@@ -112,9 +112,8 @@ export default function App() {
 
   useEffect(() => {
     loadCurrentWorkspace();
-    loadAllWorkspaces();
     ipc.getSettings().then(setSettings).catch(console.error);
-  }, [loadCurrentWorkspace, loadAllWorkspaces]);
+  }, [loadCurrentWorkspace]);
 
   return (
     <div style={appStyles.root}>

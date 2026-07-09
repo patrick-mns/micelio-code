@@ -25,13 +25,11 @@ export interface WorkspaceWithSessions {
 
 export interface WorkspaceSlice {
   currentWorkspace: Workspace | null;
-  allWorkspaces: Workspace[];
   workspacesWithSessions: WorkspaceWithSessions[];
   workspaceLoading: boolean;
   expandedWorkspaces: string[];
 
   loadCurrentWorkspace: () => Promise<Workspace | null>;
-  loadAllWorkspaces: () => Promise<Workspace[]>;
   loadWorkspacesWithSessions: () => Promise<void>;
   toggleExpandedWorkspace: (id: string) => void;
   createWorkspace: (name: string, folders: string[]) => Promise<Workspace>;
@@ -49,7 +47,6 @@ export const workspaceSlice: StateCreator<
   WorkspaceSlice
 > = (set, get) => ({
   currentWorkspace: null,
-  allWorkspaces: [],
   workspacesWithSessions: [],
   workspaceLoading: false,
   expandedWorkspaces: [],
@@ -65,17 +62,6 @@ export const workspaceSlice: StateCreator<
       return null;
     } finally {
       set({ workspaceLoading: false });
-    }
-  },
-
-  loadAllWorkspaces: async () => {
-    try {
-      const list = await invoke<Workspace[]>('list_all_workspaces');
-      set({ allWorkspaces: list });
-      return list;
-    } catch (e) {
-      console.error('Failed to list workspaces', e);
-      return [];
     }
   },
 

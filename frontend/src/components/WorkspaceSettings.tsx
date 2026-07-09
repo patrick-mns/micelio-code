@@ -9,9 +9,9 @@ import { fieldStyles, workspaceSettingsStyles } from '@/utils/theme-styles';
 export default function WorkspaceSettings() {
   const {
     currentWorkspace,
-    allWorkspaces,
+    workspacesWithSessions,
     workspaceLoading,
-    loadAllWorkspaces,
+    loadWorkspacesWithSessions,
     createWorkspace,
     switchWorkspace,
     addFolderToWorkspace,
@@ -26,12 +26,14 @@ export default function WorkspaceSettings() {
   const [addingFolder, setAddingFolder] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { loadAllWorkspaces(); }, [loadAllWorkspaces]);
+  useEffect(() => { loadWorkspacesWithSessions(); }, [loadWorkspacesWithSessions]);
 
-  // Sync editing name when current workspace changes (and when not actively editing)
+  // Sync editing name when current workspace changes — but never while the user
+  // is actively editing, or their in-progress typing would be clobbered when
+  // currentWorkspace's reference changes (it reloads on many events).
   useEffect(() => {
-    if (currentWorkspace) setEditingName(currentWorkspace.name);
-  }, [currentWorkspace]);
+    if (currentWorkspace && !isEditing) setEditingName(currentWorkspace.name);
+  }, [currentWorkspace, isEditing]);
 
   // Select all text when entering edit mode
   useEffect(() => {
@@ -158,11 +160,11 @@ export default function WorkspaceSettings() {
 
       {/* ── All workspaces ── */}
       <Section title="ALL WORKSPACES">
-        {allWorkspaces.length === 0 ? (
+        {workspacesWithSessions.length === 0 ? (
           <div style={fieldStyles.desc}>No workspaces found.</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {allWorkspaces.map((ws) => {
+            {workspacesWithSessions.map((ws) => {
               const isCurrent = ws.id === currentWorkspace.id;
               return (
                 <div
