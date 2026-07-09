@@ -97,6 +97,11 @@ export const workspaceSlice: StateCreator<
   },
 
   backgroundScan: () => {
+    // Don't start a second scan while one is running. Besides wasting work,
+    // scan_workspace resets the cancel flag on start, so a concurrent scan
+    // (e.g. React StrictMode double-invoking the mount effect) would undo an
+    // Esc cancellation and leave the overlay stuck.
+    if (get().scanning) return;
     const folders = get().currentWorkspace?.folders ?? [];
     // Nothing to do only when there are no folders AND no stale graph to clear.
     // (With no folders the scan simply empties the graph.)

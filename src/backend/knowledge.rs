@@ -40,6 +40,16 @@ pub fn extract_span(full: &str, span: Option<(usize, usize)>) -> String {
     }
 }
 
+/// Heuristic for minified / generated files (e.g. `*.min.css`, bundled JS):
+/// everything sits on one or a few enormous lines. Symbol spans in such files
+/// each cover the whole file, so per-symbol token counting degrades to
+/// O(symbols × filesize) and can freeze the scan. We index the file node but
+/// skip granular symbol extraction for them.
+pub fn is_minified(source: &str) -> bool {
+    const MAX_LINE_LEN: usize = 5_000;
+    source.lines().any(|l| l.len() > MAX_LINE_LEN)
+}
+
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum NodeKind {
     File,
@@ -560,8 +570,18 @@ impl KnowledgeGraph {
                             if let Ok(source) = fs::read_to_string(path) {
                                 // Count real tokens for this file
                                 self.set_tokens(id, count_tokens(&source));
+                                // Skip granular symbol extraction for minified /
+                                // generated files (one giant line). Their symbol
+                                // spans each cover the whole file, so per-symbol
+                                // token counting becomes O(symbols × filesize) —
+                                // this is what froze the scan on `*.min.css`.
+                                if is_minified(&source) {
+                                    continue;
+                                }
                                 for sym in crate::backend::symbols::extract(ext_plain, &source) {
-                                    if count >= MAX_SCAN_NODES {
+                                    if count >= MAX_SCAN_NODES
+                                        || cancel.load(std::sync::atomic::Ordering::Relaxed)
+                                    {
                                         break;
                                     }
                                     let sym_label = format!("{label}::{}", sym.name);
@@ -617,7 +637,7 @@ impl KnowledgeGraph {
                 .filter(|n| n.kind == NodeKind::File && n.attachment.is_some())
                 .count();
             if n_files.saturating_mul(n_symbols) <= 250_000 {
-                self.resolve_references(root);
+                self.resolve_references(root, cancel);
             }
         }
 
@@ -654,7 +674,7 @@ impl KnowledgeGraph {
 
     /// Adds `References` edges by scanning indexed file contents for
     /// mentions of known symbols (VSCode-like textual find-references).
-    fn resolve_references(&mut self, root: &Path) {
+    fn resolve_references(&mut self, root: &Path, cancel: &std::sync::atomic::AtomicBool) {
         // (symbol id, name, file label, span)
         let symbols: Vec<SymbolEntry> = self
             .nodes
@@ -680,6 +700,9 @@ impl KnowledgeGraph {
 
         let mut new_edges: Vec<(usize, usize)> = Vec::new();
         for (file_id, file_label) in &files {
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
             let Ok(source) = fs::read_to_string(root.join(file_label)) else {
                 continue;
             };
@@ -733,6 +756,16 @@ fn find_word(source: &str, word: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_minified_flags_long_lines_only() {
+        // Normal multi-line source is not minified.
+        let normal = "fn a() {}\nfn b() {}\n".repeat(500);
+        assert!(!is_minified(&normal));
+        // A single enormous line (e.g. *.min.css) is.
+        let minified = format!(".a{{color:red}}{}", "x".repeat(6000));
+        assert!(is_minified(&minified));
+    }
 
     #[test]
     fn content_hash_is_stable_and_distinguishes() {
