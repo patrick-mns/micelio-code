@@ -108,7 +108,12 @@ export const workspaceSlice: StateCreator<
       const ws = await invoke<Workspace>('create_workspace', { name, folders });
       set({ currentWorkspace: ws });
       await get().loadWorkspacesWithSessions();
+      await get().loadSessions();
       await get().refreshGraph();
+      // A fresh workspace starts with no sessions; clear the stale pointer so
+      // the chat drops the previous workspace's conversation.
+      const target = get().workspacesWithSessions.find((w) => w.id === ws.id);
+      get().setCurrentSession(target?.sessions.find((s) => s.active)?.id ?? null);
       return ws;
     } finally {
       set({ workspaceLoading: false });
@@ -123,6 +128,14 @@ export const workspaceSlice: StateCreator<
       await get().loadWorkspacesWithSessions();
       await get().loadSessions(); // Reload sessions to update the central sessions list immediately on switch workspace!
       await get().refreshGraph();
+      // The backend switched its active session to the new workspace's latest.
+      // Sync the frontend currentSession too, otherwise it stays pinned to the
+      // previous workspace's (now-unreachable) session and the chat never
+      // reloads — making it look like the switch had no effect.
+      const target = get().workspacesWithSessions.find((w) => w.id === ws.id);
+      const activeSession =
+        target?.sessions.find((s) => s.active)?.id ?? target?.sessions[0]?.id ?? null;
+      get().setCurrentSession(activeSession);
       return ws;
     } finally {
       set({ workspaceLoading: false });
@@ -169,11 +182,22 @@ export const workspaceSlice: StateCreator<
 
   deleteWorkspace: async (id) => {
     try {
+      // Capture this before reloading: loadWorkspacesWithSessions overwrites
+      // currentWorkspace with whatever the backend switched to, so checking
+      // after would never match the deleted id.
+      const wasCurrent = get().currentWorkspace?.id === id;
       await invoke('delete_workspace', { id });
       await get().loadWorkspacesWithSessions();
-      if (get().currentWorkspace?.id === id) {
+      if (wasCurrent) {
         await get().loadSessions();
         await get().refreshGraph();
+        const cur = get().currentWorkspace;
+        const target = cur
+          ? get().workspacesWithSessions.find((w) => w.id === cur.id)
+          : undefined;
+        get().setCurrentSession(
+          target?.sessions.find((s) => s.active)?.id ?? target?.sessions[0]?.id ?? null,
+        );
       }
     } catch (e) {
       console.error('Failed to delete workspace', e);
