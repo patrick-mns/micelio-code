@@ -407,6 +407,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let ctx = ToolContext {
             workspace_root: dir.clone(),
+            workspace_roots: vec![dir.clone()],
             model_name: String::new(),
             vision_model: String::new(),
             history_len: 0,
