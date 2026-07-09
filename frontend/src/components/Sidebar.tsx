@@ -186,14 +186,14 @@ export default function Sidebar({
 
       <div style={sidebarStyles.footer}>
         <button
-          className="ghost-btn"
+          className="btn btn-ghost"
           style={sidebarStyles.gearBtn}
           onClick={() => { setSettingsCategory('workspace'); setShowSettings(true); }}
           title="Workspace settings"
         >
           <FolderOpen size={15} />
         </button>
-        <button className="ghost-btn" style={sidebarStyles.gearBtn} onClick={onOpenSettings} title="All settings">
+        <button className="btn btn-ghost" style={sidebarStyles.gearBtn} onClick={onOpenSettings} title="All settings">
           <Gear size={17} />
         </button>
       </div>

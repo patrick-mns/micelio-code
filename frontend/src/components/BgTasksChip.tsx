@@ -15,7 +15,7 @@ interface BgTasksChipProps {
 export default function BgTasksChip({ running, active, onClick }: BgTasksChipProps) {
   return (
     <button
-      className="ghost-btn"
+      className="btn btn-ghost"
       style={{ ...bgTasksChipStyles.chip, color: active || running > 0 ? theme.text : theme.dim }}
       title={running > 0 ? `${running} background task${running === 1 ? '' : 's'} running` : 'Background tasks'}
       onClick={onClick}

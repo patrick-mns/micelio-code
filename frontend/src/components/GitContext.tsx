@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { gitContextStyles } from '@/utils/theme-styles';
-import { CaretDown, FolderOpen, GitBranch, Check } from '@phosphor-icons/react';
+import { CaretUpDown, FolderOpen, GitBranch, Check } from '@phosphor-icons/react';
 import { ipc } from '@/ipc';
 import { useStore } from '@/store';
 import { theme } from '@/theme';
@@ -87,14 +87,14 @@ export default function GitContext({ onPickWorkspace, refreshTick = 0 }: GitCont
       {folders.length > 0 && (
         <div ref={menuRef} style={{ position: 'relative' }}>
           <button
-            className="ghost-btn"
+            className="btn btn-ghost"
             style={gitContextStyles.folderBtn}
             onClick={() => setMenuOpen(!menuOpen)}
             title={currentFolder}
           >
             <FolderOpen size={14} />
             <span style={gitContextStyles.folderName}>{folderName}</span>
-            <CaretDown size={10} />
+            <CaretUpDown size={12} color={theme.dim} />
           </button>
 
           {menuOpen && (
@@ -103,24 +103,16 @@ export default function GitContext({ onPickWorkspace, refreshTick = 0 }: GitCont
                 const name = f.split('/').pop() || f.split('\\').pop() || f;
                 const isActive = f === currentFolder;
                 return (
-                  <div
+                  <button
                     key={f}
-                    className="menu-item"
+                    className={isActive ? 'role-item is-active' : 'role-item'}
                     onClick={() => switchFolder(f)}
-                    style={{
-                      ...gitContextStyles.folderItem,
-                      background: isActive ? theme.cardActive : 'transparent',
-                      color: isActive ? theme.accent : theme.textSoft,
-                    }}
-                    onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.background = theme.cardActive; e.currentTarget.style.color = theme.text; }}}
-                    onMouseLeave={(e) => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = theme.textSoft; }}}
+                    style={gitContextStyles.folderItem}
                   >
                     <FolderOpen size={13} color={isActive ? theme.accent : theme.faint} style={{ flexShrink: 0 }} />
-                    <span style={gitContextStyles.folderItemName}>
-                      {name}
-                    </span>
+                    <span style={gitContextStyles.folderItemName}>{name}</span>
                     {isActive && <Check size={12} color={theme.accent} weight="bold" />}
-                  </div>
+                  </button>
                 );
               })}
             </div>

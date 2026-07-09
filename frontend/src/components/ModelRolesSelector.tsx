@@ -137,7 +137,7 @@ export default function ModelRolesSelector() {
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button className="ghost-btn" style={modelRolesSelectorStyles.trigger} onClick={() => setOpen((o) => !o)} title="Model assignments">
+      <button className="btn btn-ghost" style={modelRolesSelectorStyles.trigger} onClick={() => setOpen((o) => !o)} title="Model assignments">
         <span style={modelRolesSelectorStyles.dots}>
           {roles.map((r) => (
             <span

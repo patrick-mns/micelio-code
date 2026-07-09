@@ -407,24 +407,28 @@ export const gitContextStyles: Record<string, CSSProperties> = {
     background: theme.card,
     borderRadius: "var(--radius-lg)",
   },
+  // Trigger + dropdown mirror the model selector (ModelRolesSelector) for a
+  // consistent "selector" language across the app.
   folderBtn: {
     display: 'flex', alignItems: 'center', gap: 6,
-    padding: '3px 8px', fontSize: 12.5, color: theme.text, borderRadius: 6,
+    height: 26, padding: '0 8px',
+    borderRadius: 'var(--radius-md)',
+    color: theme.textSoft, fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer',
   },
   folderName: {
-    maxWidth: 120, overflow: 'hidden',
-    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    maxWidth: 140, overflow: 'hidden',
+    textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500,
   },
   folderDropdown: {
-    position: 'absolute', top: '100%', left: 0,
-    marginTop: 4, background: theme.bgDeep,
-    border: `1px solid ${theme.border}`, borderRadius: 8,
-    padding: 4, minWidth: 180, zIndex: 100,
+    position: 'absolute', bottom: '100%', left: 0,
+    marginBottom: 6, background: theme.bg,
+    border: `1px solid ${theme.border}`, borderRadius: 'var(--radius-lg)',
+    padding: 6, minWidth: 200, zIndex: 100,
   },
   folderItem: {
     display: 'flex', alignItems: 'center', gap: 8,
-    padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
-    fontSize: 12.5,
+    width: '100%', padding: '6px 9px', borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer', fontSize: 12.5, textAlign: 'left', border: 'none',
   },
   folderItemName: {
     flex: 1, overflow: 'hidden',

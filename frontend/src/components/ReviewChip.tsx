@@ -16,7 +16,7 @@ interface ReviewChipProps {
 export default function ReviewChip({ pendingCount, active, onClick }: ReviewChipProps) {
   return (
     <button
-      className="ghost-btn"
+      className="btn btn-ghost"
       style={{
         ...reviewPanelStyles.chip,
         color: active || pendingCount > 0 ? theme.text : theme.dim,
@@ -92,13 +92,13 @@ function FileCard({ file, onRevert }: FileCardProps) {
         <div style={reviewPanelStyles.cardHeadRight}>
           {stats.adds > 0 && <span style={{ color: theme.success, fontWeight: 600, fontSize: 11.5 }}>+{stats.adds}</span>}
           {stats.removes > 0 && <span style={{ color: theme.error, fontWeight: 600, fontSize: 11.5 }}> -{stats.removes}</span>}
-          <button className="ghost-btn" onClick={() => onRevert(file.path)}
+          <button className="btn btn-ghost" onClick={() => onRevert(file.path)}
             style={{ ...reviewPanelStyles.actionBtn, color: theme.warn }}
             title="Revert file">
             <span>Revert</span>
           </button>
           <button
-            className="ghost-btn"
+            className="btn btn-ghost"
             onClick={() => setExpanded(!expanded)}
             style={reviewPanelStyles.collapseBtn}
             title={expanded ? 'Collapse' : 'Expand'}
@@ -192,7 +192,7 @@ export function ReviewPanel({
       {/* Bottom bar */}
       {gitFiles.length > 0 && (
         <div style={reviewPanelStyles.bottomBar}>
-          <button className="ghost-btn" onClick={onRevertAll} style={{ ...reviewPanelStyles.bottomAction, color: theme.warn }}>
+          <button className="btn btn-ghost" onClick={onRevertAll} style={{ ...reviewPanelStyles.bottomAction, color: theme.warn }}>
             Revert all
           </button>
         </div>
