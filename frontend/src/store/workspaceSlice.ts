@@ -31,6 +31,9 @@ export interface WorkspaceSlice {
 
   loadCurrentWorkspace: () => Promise<Workspace | null>;
   loadWorkspacesWithSessions: () => Promise<void>;
+  /** Rebuild the graph for the current workspace's folders in the background
+   *  (shows the scan overlay, non-blocking). No-op when there are no folders. */
+  backgroundScan: () => void;
   toggleExpandedWorkspace: (id: string) => void;
   createWorkspace: (name: string, folders: string[]) => Promise<Workspace>;
   switchWorkspace: (id: string) => Promise<Workspace>;
@@ -86,6 +89,18 @@ export const workspaceSlice: StateCreator<
     }
   },
 
+  backgroundScan: () => {
+    const folders = get().currentWorkspace?.folders ?? [];
+    // Nothing to do only when there are no folders AND no stale graph to clear.
+    // (With no folders the scan simply empties the graph.)
+    if (folders.length === 0 && get().graphNodes.length === 0) return;
+    get().setScanning(true);
+    invoke<void>('scan_workspace')
+      .then(() => get().refreshGraph())
+      .catch((e) => console.error('background scan failed', e))
+      .finally(() => get().setScanning(false));
+  },
+
   toggleExpandedWorkspace: (id) =>
     set((s) => ({
       expandedWorkspaces: s.expandedWorkspaces.includes(id)
@@ -105,6 +120,9 @@ export const workspaceSlice: StateCreator<
       // the chat drops the previous workspace's conversation.
       const target = get().workspacesWithSessions.find((w) => w.id === ws.id);
       get().setCurrentSession(target?.sessions.find((s) => s.active)?.id ?? null);
+      // Build the graph in the background so creation returns instantly instead
+      // of freezing on a synchronous scan of the chosen folder(s).
+      get().backgroundScan();
       return ws;
     } finally {
       set({ workspaceLoading: false });
@@ -127,6 +145,9 @@ export const workspaceSlice: StateCreator<
       const activeSession =
         target?.sessions.find((s) => s.active)?.id ?? target?.sessions[0]?.id ?? null;
       get().setCurrentSession(activeSession);
+      // The switch loads the workspace's saved graph. If it has none yet (never
+      // scanned), build it in the background.
+      if (get().graphNodes.length === 0) get().backgroundScan();
       return ws;
     } finally {
       set({ workspaceLoading: false });
@@ -138,7 +159,9 @@ export const workspaceSlice: StateCreator<
       const ws = await invoke<Workspace>('add_folder_to_workspace', { folderPath: path });
       set({ currentWorkspace: ws });
       await get().loadWorkspacesWithSessions();
-      await get().refreshGraph();
+      // Folders changed → rebuild the graph in the background (backend no
+      // longer scans inline, so this won't freeze on a large folder).
+      get().backgroundScan();
       return ws;
     } catch (e) {
       console.error('Failed to add folder', e);
@@ -151,7 +174,7 @@ export const workspaceSlice: StateCreator<
       const ws = await invoke<Workspace>('remove_folder_from_workspace', { folderPath: path });
       set({ currentWorkspace: ws });
       await get().loadWorkspacesWithSessions();
-      await get().refreshGraph();
+      get().backgroundScan();
       return ws;
     } catch (e) {
       console.error('Failed to remove folder', e);

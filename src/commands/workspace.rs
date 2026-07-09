@@ -136,22 +136,9 @@ pub async fn add_folder_to_workspace(
         *state.workspace_root.lock().unwrap() = path.clone();
     }
 
-    // Rescan everything so all nodes have consistent prefixes (especially
-    // when going from 1 → 2+ folders where the single-folder prefix flips on).
-    let mut graph = crate::backend::knowledge::KnowledgeGraph::new();
-    let multi = ws.folders.len() > 1;
-    for folder in &ws.folders {
-        let prefix = if multi {
-            folder.file_name().map(|n| n.to_string_lossy().to_string())
-        } else {
-            None
-        };
-        graph.scan_workspace(folder, prefix).map_err(|e| format!("scan error: {e}"))?;
-    }
-    let graph_path = ws.dir().join("graph.json");
-    graph.save(&graph_path).map_err(|e| format!("save graph: {e}"))?;
-    *state.graph.lock().unwrap() = graph;
-
+    // The graph is rebuilt by a background scan the frontend triggers after
+    // this returns (see backgroundScan) — we don't scan inline so adding a
+    // large folder doesn't freeze the UI.
     Ok(ws)
 }
 
@@ -175,21 +162,8 @@ pub async fn remove_folder_from_workspace(
     let new_root = ws.folders.first().cloned().unwrap_or_else(|| ws.dir());
     *state.workspace_root.lock().unwrap() = new_root;
 
-    // Trigger full rescan on remaining folders
-    let mut graph = crate::backend::knowledge::KnowledgeGraph::new();
-    let multi_folder = ws.folders.len() > 1;
-    for folder in &ws.folders {
-        let prefix = if multi_folder {
-            folder.file_name().map(|n| n.to_string_lossy().to_string())
-        } else {
-            None
-        };
-        let _ = graph.scan_workspace(folder, prefix);
-    }
-    let graph_path = ws.dir().join("graph.json");
-    let _ = graph.save(&graph_path);
-    *state.graph.lock().unwrap() = graph;
-
+    // The frontend triggers a background rescan of the remaining folders after
+    // this returns, so removing a folder doesn't block on a synchronous scan.
     Ok(ws)
 }
 
@@ -267,25 +241,11 @@ async fn switch_workspace_internal(state: &State<'_, AppState>, ws: &Workspace) 
     let graph_path = ws_dir.join("graph.json");
     let sessions_db_path = ws_dir.join("sessions.db");
 
-    // 2. Load or create graph
-    let graph = match crate::backend::knowledge::KnowledgeGraph::load(&graph_path) {
-        Ok(g) if g.total_count() > 0 => g,
-        _ => {
-            let mut g = crate::backend::knowledge::KnowledgeGraph::new();
-            // Scan whichever folders are in the workspace
-            let multi_folder = ws.folders.len() > 1;
-            for folder in &ws.folders {
-                let prefix = if multi_folder {
-                    folder.file_name().map(|n| n.to_string_lossy().to_string())
-                } else {
-                    None
-                };
-                let _ = g.scan_workspace(folder, prefix);
-            }
-            let _ = g.save(&graph_path);
-            g
-        }
-    };
+    // 2. Load the saved graph, or start empty. We deliberately DON'T scan here:
+    // scanning a large folder can take many seconds and would block the whole
+    // switch/create call (freezing the UI on "Opening…"). The frontend kicks
+    // off a background scan (with progress + cancel + overlay) right after.
+    let graph = crate::backend::knowledge::KnowledgeGraph::load(&graph_path).unwrap_or_default();
 
     // 3. Setup sessions db
     let store = crate::backend::sessions::SessionStore::open(&sessions_db_path)
