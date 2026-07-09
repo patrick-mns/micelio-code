@@ -4,7 +4,7 @@
 //! Tauri (event emission + `AppState`); `commands::chat` keeps only the thin
 //! `#[tauri::command]` entry points and persistence helpers.
 
-use crate::backend::llm::{self, Message, StreamEvent};
+use crate::backend::llm::{self, Message, StreamEvent, ToolResultContent, ELIDED_MARKER_LEN};
 use crate::backend::prompt;
 use crate::backend::tools;
 use crate::AppState;
@@ -349,9 +349,25 @@ pub fn run_agent_loop(
 
         // Retry-for-tool: the user asked for a file/workspace change but the
         // model answered with nothing — nudge it to use a tool, once.
-        if needs_tool && !retried_for_tool && content.is_empty() {
-            history.push(Message::system(prompt::NEEDS_TOOL));
-            retried_for_tool = true;
+        if needs_tool && content.is_empty() {
+            if !retried_for_tool {
+                history.push(Message::system(prompt::NEEDS_TOOL));
+                retried_for_tool = true;
+                continue;
+            }
+            // Second consecutive empty response after NEEDS_TOOL: the model
+            // ignored the nudge.  Treat as a tool error so that the reflection
+            // and hard-stop machinery fires instead of silently finishing.
+            consecutive_errors += 1;
+            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                let summary =
+                    force_stop_summary(&app, provider, &model, &mut history, &session_id_ref);
+                finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
+                return;
+            }
+            if consecutive_errors >= REFLEXION_AFTER_ERRORS {
+                history.push(Message::system(prompt::REFLEXION));
+            }
             continue;
         }
 
@@ -480,6 +496,9 @@ pub fn run_tool_calls(
     ));
 
     let mut summaries = Vec::with_capacity(calls.len());
+    // Single boolean: true if ANY tool in this parallel batch errored.
+    // The caller increments `consecutive_errors` at most once per round,
+    // so parallel failures don't inflate the count.
     let mut any_error = false;
     for call in calls {
         let (summary, is_error, touched) = execute_tool_call(
@@ -601,7 +620,7 @@ fn execute_tool_call(
     let review_on = (is_file_mod || is_legacy_mod)
         && app.state::<AppState>().review.lock().unwrap().review_mode;
 
-    let (is_error, result, touched) = if review_on {
+    let (is_error, tool_content, touched) = if review_on {
         let path = tools::get_string_field(&call.arguments, "path")
             .unwrap_or_else(|| "unknown".into());
         let full_path = workspace_root.join(&path);
@@ -619,7 +638,8 @@ fn execute_tool_call(
                         "stream_tool",
                         serde_json::json!({ "session_id": session_id, "summary": summary }),
                     );
-                    history.push(Message::tool(&call.name, &format!("error: {e}")));
+                    let tc = ToolResultContent::Full(format!("error: {e}"));
+                    history.push(Message::tool_with_content(&call.name, tc));
                     return (summary, true, None);
                 }
             }
@@ -632,7 +652,8 @@ fn execute_tool_call(
                         "stream_tool",
                         serde_json::json!({ "session_id": session_id, "summary": summary }),
                     );
-                    history.push(Message::tool(&call.name, &format!("error: {e}")));
+                    let tc = ToolResultContent::Full(format!("error: {e}"));
+                    history.push(Message::tool_with_content(&call.name, tc));
                     return (summary, true, None);
                 }
             }
@@ -685,18 +706,27 @@ fn execute_tool_call(
             match std::fs::write(&full_path, &proposed) {
                 Ok(()) => {
                     let _ = app.emit("review_changed", serde_json::json!({}));
-                    (false, format!("`{path}` updated and applied."), Some(path))
+                    (
+                        false,
+                        ToolResultContent::Full(format!("`{path}` updated and applied.")),
+                        Some(path),
+                    )
                 }
                 Err(e) => (
                     true,
-                    format!("error: failed to write {}: {e}", full_path.display()),
+                    ToolResultContent::Full(format!(
+                        "error: failed to write {}: {e}",
+                        full_path.display()
+                    )),
                     None,
                 ),
             }
         } else {
             (
                 false,
-                format!("`{path}` change was rejected by the user — the file was not modified."),
+                ToolResultContent::Full(format!(
+                    "`{path}` change was rejected by the user — the file was not modified."
+                )),
                 None,
             )
         }
@@ -707,16 +737,19 @@ fn execute_tool_call(
             None
         };
         match tools::run(&call.name, &call.arguments, &ctx) {
-            Ok(r) => (false, truncate_for_context(&r.content), touched),
-            Err(e) => (true, format!("error: {e}"), None),
+            Ok(r) => {
+                let tc = truncate_for_context(&r.content);
+                (false, tc, touched)
+            }
+            Err(e) => (true, ToolResultContent::Full(format!("error: {e}")), None),
         }
     };
-    let summary = format!("{} completed\n{}", call.name, result);
+    let summary = format!("{} completed\n{}", call.name, tool_content.render());
     let _ = app.emit(
         "stream_tool",
         serde_json::json!({ "session_id": session_id, "summary": summary }),
     );
-    history.push(Message::tool(&call.name, &result));
+    history.push(Message::tool_with_content(&call.name, tool_content));
     (summary, is_error, touched)
 }
 
@@ -886,27 +919,27 @@ fn spawn_auto_summary(app: &AppHandle, workspace_root: std::path::PathBuf, files
 /// Cap a single tool result for context: keep the head and tail with a clear
 /// elision marker in between, so neither a huge file read nor a chatty command
 /// can blow the window. Char-based on UTF-8 boundaries.
-fn truncate_for_context(s: &str) -> String {
+/// Returns a [`ToolResultContent`] instead of a raw string so the caller can
+/// avoid re-allocating the full content on compaction.
+fn truncate_for_context(s: &str) -> ToolResultContent {
     if s.len() <= TOOL_RESULT_MAX_CHARS {
-        return s.to_string();
+        return ToolResultContent::Full(s.to_string());
     }
     let head_len = TOOL_RESULT_MAX_CHARS * 3 / 4;
     let tail_len = TOOL_RESULT_MAX_CHARS - head_len;
     let head_end = floor_char_boundary(s, head_len);
     let tail_start = ceil_char_boundary(s, s.len() - tail_len);
-    let elided = s.len() - head_end - (s.len() - tail_start);
-    format!(
-        "{}\n\n[... {} chars elided to save context ...]\n\n{}",
-        &s[..head_end],
-        elided,
-        &s[tail_start..],
-    )
+    ToolResultContent::Truncated {
+        head: s[..head_end].to_string(),
+        tail: s[tail_start..].to_string(),
+    }
 }
 
-/// Shrink `history` in place when it exceeds the token budget by eliding the
-/// content of older tool results. Messages are preserved (so OpenAI-style
-/// tool_call/result pairing stays intact) — only the bulky `content` of
-/// tool-role messages beyond the most recent few is replaced with a marker.
+/// Shrink `history` in place when it exceeds the token budget by replacing the
+/// content of older tool results with `ToolResultContent::Elided`.  Messages are
+/// preserved (so OpenAI-style tool_call/result pairing stays intact) — only the
+/// bulky `content` of tool-role messages beyond the most recent few is replaced
+/// with a zero-allocation marker.
 fn compact_history(history: &mut [Message]) {
     let total: usize = history
         .iter()
@@ -927,10 +960,16 @@ fn compact_history(history: &mut [Message]) {
     let elide_until = tool_indices.len() - KEEP_RECENT_TOOL_RESULTS;
     for &idx in &tool_indices[..elide_until] {
         let m = &mut history[idx];
-        if m.content.starts_with("[elided") {
+        // Already compacted — skip the cheap path.
+        if matches!(m.tool_content, Some(ToolResultContent::Elided)) {
             continue;
         }
-        m.content = format!("[elided: {} chars of earlier tool output]", m.content.len());
+        // Short messages (< marker overhead) aren't worth replacing.
+        if m.content.len() <= ELIDED_MARKER_LEN {
+            continue;
+        }
+        m.tool_content = Some(ToolResultContent::Elided);
+        m.content = "[elided]".into();
     }
 }
 

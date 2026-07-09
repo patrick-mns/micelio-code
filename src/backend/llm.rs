@@ -52,6 +52,39 @@ pub struct ModelChoice {
     pub vision: bool,
 }
 
+/// Structured representation of a tool-result payload, avoiding the large
+/// concatenated strings that the old `"[... N chars elided ...]"` pattern
+/// allocated.  `Message::content` is kept as the rendered (serialisable)
+/// string; this enum carries the structured form so compaction and truncation
+/// can drop or rearrange data without allocating a giant blob.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum ToolResultContent {
+    /// The full, untruncated tool output.
+    Full(String),
+    /// Head and tail of a truncated result (no middle allocated).
+    Truncated { head: String, tail: String },
+    /// Content was elided during compaction – nothing kept.
+    Elided,
+}
+
+impl ToolResultContent {
+    /// Render the structured content back into a single display string,
+    /// matching the format providers and the frontend expect.
+    pub fn render(&self) -> String {
+        match self {
+            ToolResultContent::Full(s) => s.clone(),
+            ToolResultContent::Truncated { head, tail } => {
+                format!("{head}\n\n[...]\n\n{tail}")
+            }
+            ToolResultContent::Elided => "[elided]".into(),
+        }
+    }
+}
+
+/// Estimated byte overhead of an elided tool result (used by `compact_history`
+/// to decide when to skip already-short messages).
+pub const ELIDED_MARKER_LEN: usize = 9; // "[elided]" plus small slack
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Message {
     pub role: String,
@@ -61,6 +94,11 @@ pub struct Message {
     /// Kept as a string so session persistence stays format-stable.
     pub tool_calls_json: Option<String>,
     pub tool_name: Option<String>,
+    /// Structured tool-result content (populated for tool-role messages during
+    /// the live agent loop).  Skipped during serde so old persisted sessions
+    /// deserialise as `None` – callers should fall back to `self.content`.
+    #[serde(skip)]
+    pub tool_content: Option<ToolResultContent>,
 }
 
 impl Message {
@@ -70,6 +108,7 @@ impl Message {
             content: content.into(),
             tool_calls_json: None,
             tool_name: None,
+            tool_content: None,
         }
     }
     pub fn user(content: &str) -> Self {
@@ -78,6 +117,7 @@ impl Message {
             content: content.into(),
             tool_calls_json: None,
             tool_name: None,
+            tool_content: None,
         }
     }
     pub fn assistant(content: String) -> Self {
@@ -86,6 +126,7 @@ impl Message {
             content,
             tool_calls_json: None,
             tool_name: None,
+            tool_content: None,
         }
     }
     pub fn assistant_with_tool_call(content: String, tool_calls_json: String) -> Self {
@@ -94,6 +135,7 @@ impl Message {
             content,
             tool_calls_json: Some(tool_calls_json),
             tool_name: None,
+            tool_content: None,
         }
     }
     pub fn tool(name: &str, content: &str) -> Self {
@@ -102,6 +144,19 @@ impl Message {
             content: content.into(),
             tool_calls_json: None,
             tool_name: Some(name.into()),
+            tool_content: None,
+        }
+    }
+    /// Build a tool message carrying structured content that the compaction
+    /// system can efficiently manipulate.
+    pub fn tool_with_content(name: &str, tc: ToolResultContent) -> Self {
+        let rendered = tc.render();
+        Self {
+            role: "tool".into(),
+            content: rendered,
+            tool_calls_json: None,
+            tool_name: Some(name.into()),
+            tool_content: Some(tc),
         }
     }
 }
@@ -344,6 +399,7 @@ mod tests {
         let plain = Message::assistant("hi".into());
         assert_eq!(plain.role, "assistant");
         assert!(plain.tool_calls_json.is_none());
+        assert!(plain.tool_content.is_none());
 
         let with_call = Message::assistant_with_tool_call("".into(), "[{}]".into());
         assert_eq!(with_call.tool_calls_json.as_deref(), Some("[{}]"));
@@ -351,6 +407,43 @@ mod tests {
         let tool = Message::tool("search", "results");
         assert_eq!(tool.role, "tool");
         assert_eq!(tool.tool_name.as_deref(), Some("search"));
+        assert!(tool.tool_content.is_none());
+    }
+
+    #[test]
+    fn tool_with_content_roundtrip() {
+        let tc = ToolResultContent::Truncated {
+            head: "hello".into(),
+            tail: "world".into(),
+        };
+        let msg = Message::tool_with_content("search", tc);
+        assert_eq!(msg.role, "tool");
+        assert_eq!(msg.tool_name.as_deref(), Some("search"));
+        assert!(msg.tool_content.is_some());
+        assert_eq!(msg.content, "hello\n\n[...]\n\nworld");
+    }
+
+    #[test]
+    fn tool_result_content_render() {
+        assert_eq!(ToolResultContent::Full("data".into()).render(), "data");
+        assert_eq!(
+            ToolResultContent::Truncated {
+                head: "a".into(),
+                tail: "b".into()
+            }
+            .render(),
+            "a\n\n[...]\n\nb"
+        );
+        assert_eq!(ToolResultContent::Elided.render(), "[elided]");
+    }
+
+    #[test]
+    fn tool_content_skipped_in_serde() {
+        let msg = Message::tool_with_content("ls", ToolResultContent::Full("ok".into()));
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: Message = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.content, "ok");
+        assert!(back.tool_content.is_none(), "tool_content must be skipped by serde");
     }
 
     #[test]
