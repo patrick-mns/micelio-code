@@ -233,6 +233,10 @@ export default function Chat() {
   // ── Image attachment ───────────────────────────────────────────────────────
   const attachImage = useCallback((file: File | null) => {
     if (!file || !file.type.startsWith('image/')) return;
+    // Capture the session at call time (synchronous) so the async reader.onload
+    // writes to the right session even if the user switches tabs before the read
+    // finishes.
+    const sessionAtCall = viewingSession;
     const reader = new FileReader();
     reader.onload = async () => {
       const dataUrl = String(reader.result);
@@ -241,11 +245,11 @@ export default function Chat() {
       const name = file.name || `image.${ext}`;
       try {
         const path = await ipc.saveAttachment(b64, ext);
-        setAttachment({ path, name, preview: dataUrl });
+        useStore.getState().setDraftAttachment(sessionAtCall, { path, name, preview: dataUrl });
       } catch (e) { console.error('attach failed', e); }
     };
     reader.readAsDataURL(file);
-  }, []);
+  }, [viewingSession]);
 
   const onPaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
