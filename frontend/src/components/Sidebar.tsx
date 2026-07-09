@@ -8,6 +8,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 import { ipc } from '@/ipc';
 import { useStore, type SessionBrief } from '@/store';
 import { theme } from '@/theme';
+import { usePlatform } from '@/hooks/usePlatform';
 import type { SessionInfo } from '@/types';
 
 interface SidebarProps {
@@ -38,6 +39,8 @@ export default function Sidebar({
   const loadSessionModels = async (id: string) => {
     try { setSessionModels(id, await ipc.getSessionModels(id)); } catch {}
   };
+
+  const platform = usePlatform();
 
   useEffect(() => { loadWorkspacesWithSessions(); }, [loadWorkspacesWithSessions]);
 
@@ -99,7 +102,7 @@ export default function Sidebar({
   return (
     <div style={sidebarStyles.root}>
       {/* Reserved gap for mac traffic-light buttons */}
-      <div style={sidebarStyles.trafficGap} data-tauri-drag-region />
+      {platform.isMac && <div style={sidebarStyles.trafficGap} data-tauri-drag-region />}
 
       {/* Workspaces → sessions tree */}
       <div style={sidebarStyles.sessionList}>

@@ -8,6 +8,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 pub use backend::knowledge::KnowledgeGraph;
+use tauri::Manager;
 use backend::sessions::SessionStore;
 
 /// The model assigned to each role. Grouped behind a single lock because the
@@ -207,6 +208,16 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             backend::tools::bg::set_app_handle(app.handle().clone());
+
+            // Remove native window decorations on Windows/Linux so the app can
+            // draw its own title-bar buttons (minimize/maximize/close) inside the
+            // custom header, matching the macOS traffic-light experience.
+            if cfg!(target_os = "windows") || cfg!(target_os = "linux") {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _: Result<(), _> = window.set_decorations(false);
+                }
+            }
+
             Ok(())
         })
         .manage(AppState {

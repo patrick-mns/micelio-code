@@ -87,7 +87,7 @@ export default function EditApprovalCard({ request, onAccept, onReject }: EditAp
         </div>
 
         <div style={questionCardStyles.actions}>
-          <button onClick={onReject} className="btn btn-sm">
+          <button onClick={onReject} className="btn btn-sm btn-ghost">
             <X size={12} weight="bold" /> Reject
           </button>
           <button onClick={onAccept} className="btn btn-sm btn-solid">
