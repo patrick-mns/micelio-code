@@ -21,9 +21,11 @@ import { usePanelResize } from '@/hooks/usePanelResize';
 import { useBgTasks } from '@/hooks/useBgTasks';
 import { useReview } from '@/hooks/useReview';
 import { useWorkspace } from '@/hooks/useWorkspace';
+import { usePlatform } from '@/hooks/usePlatform';
 import { ipc } from '@/ipc';
 import type { TabId } from '@/store/uiSlice';
 import { appStyles } from '@/utils/theme-styles';
+import WindowControls from '@/components/WindowControls';
 
 // Thin draggable strip rendered in the gap between two side panels. Lives in
 // the flex flow (not inside a panel), so it never overlaps a panel's scrollbar.
@@ -99,6 +101,7 @@ export default function App() {
   }, []);
 
   const { tasks: bgTasks, runningCount, stop: stopBg, clear: clearBg } = useBgTasks();
+  const platform = usePlatform();
   const {
     status: reviewStatus,
     gitRevertFile, gitRevertAll,
@@ -138,10 +141,14 @@ export default function App() {
         <div style={appStyles.content}>
           {/* Header over the content area only. When the sidebar is closed it
               reserves the traffic-light gap; otherwise the sidebar does. */}
-          <div style={appStyles.header} data-tauri-drag-region>
-            <div style={appStyles.headerLeft} data-tauri-drag-region>
-              {!sidebarOpen && <div style={appStyles.trafficGap} />}
+          <div style={{ ...appStyles.header, height: platform.isMac ? 52 : 38, paddingInline: platform.isMac ? 12 : 0 }}>
+            {/* On macOS the whole header is draggable (traffic lights float over
+                it via the gap); on Windows/Linux only the center span is draggable
+                so the window-control buttons remain clickable. */}
 
+            {/* --- Left --- */}
+            <div style={appStyles.headerLeft} data-tauri-drag-region>
+              {platform.isMac && !sidebarOpen && <div style={appStyles.trafficGap} />}
               <button
                 className="icon-btn"
                 onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -151,6 +158,7 @@ export default function App() {
               </button>
             </div>
 
+            {/* --- Center (draggable on all platforms) --- */}
             <div style={appStyles.center} data-tauri-drag-region>
               <div className="seg-track" style={{ visibility: currentWorkspace ? 'visible' : 'hidden' }}>
                 {TABS.map(({ id, label, Icon }) => {
@@ -169,8 +177,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* Right: context actions for the current workspace. */}
-            <div style={appStyles.headerRight} data-tauri-drag-region>
+            {/* --- Right --- */}
+            <div style={appStyles.headerRight}>
               <button
                 className="btn btn-icon btn-ghost"
                 style={{ color: aboutOpen ? theme.text : theme.dim }}
@@ -190,9 +198,9 @@ export default function App() {
               <BgTasksChip running={runningCount} active={rightPanel === 'bg'} onClick={() => setRightPanel((p) => (p === 'bg' ? null : 'bg'))} />
               <ReviewChip pendingCount={reviewStatus.pending_count} active={rightPanel === 'review'} onClick={() => setRightPanel((p) => (p === 'review' ? null : 'review'))} />
               <OpenInButton />
+              {platform.showWindowControls && <WindowControls />}
             </div>
           </div>
-
           <div style={appStyles.view}>
             {/* No workspace yet → onboarding. Wait for the initial load so
                 returning users don't flash it. */}
