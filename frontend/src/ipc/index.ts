@@ -51,6 +51,11 @@ export const ipc = {
   getOpenrouterKey: () => invoke<string>('get_openrouter_key'),
   saveOpenrouterKey: (key: string) => invoke<void>('save_openrouter_key', { key }),
   checkOpenrouterKey: (key: string) => invoke<OpenRouterStatus>('check_openrouter_key', { key }),
+  getLitellmKey: () => invoke<string>('get_litellm_key'),
+  saveLitellmKey: (key: string) => invoke<void>('save_litellm_key', { key }),
+  checkLitellmKey: (key: string) => invoke<OpenRouterStatus>('check_litellm_key', { key }),
+  getLitellmBaseUrl: () => invoke<string>('get_litellm_base_url'),
+  saveLitellmBaseUrl: (url: string) => invoke<void>('save_litellm_base_url', { url }),
   getGitContext: () => invoke<GitContext>('get_git_context'),
   getVersion: () => invoke<string>('get_version'),
 
@@ -67,6 +72,9 @@ export const ipc = {
   getSessionModels: (sessionId: string) => invoke<SessionModels>('get_session_models', { sessionId }),
   setSessionModel: (sessionId: string, role: string, model: string) =>
     invoke<void>('set_session_model', { sessionId, role, model }),
+
+  // Workspace root management (switch active folder in multi-root workspace)
+  setWorkspaceRoot: (path: string) => invoke<void>('set_active_root', { path }),
 
   // Native folder picker → returns the chosen path (or null if cancelled).
   pickFolder: (defaultPath?: string) =>

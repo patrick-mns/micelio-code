@@ -1,11 +1,8 @@
 import React from 'react';
 import { ipc } from '@/ipc';
 import { useStore } from '@/store';
-import { theme } from '@/theme';
 import Section from './Section';
 import Toggle from './Toggle';
-import ThemeSelect from './ThemeSelect';
-import { toggleStyles } from '@/utils/theme-styles';
 
 export default function ChatSettings() {
   const { prefs, setPref, settings, setSettings } = useStore();
@@ -21,16 +18,6 @@ export default function ChatSettings() {
   };
 
   return (
-    <>
-    <Section title="APPEARANCE">
-      <div style={toggleStyles.row}>
-        <div style={{ flex: 1 }}>
-          <div style={toggleStyles.label}>Theme</div>
-          <div style={toggleStyles.desc}>Follow the system, or force dark / light</div>
-        </div>
-        <ThemeSelect />
-      </div>
-    </Section>
     <Section title="CHAT">
       <Toggle label="Stream responses" desc="Show tokens as they arrive" value={prefs.streamEnabled} onChange={(v) => setPref('streamEnabled', v)} />
       <Toggle label="Auto-compact context" desc="Summarize old messages near the window limit" value={prefs.autoCompact} onChange={(v) => setPref('autoCompact', v)} />
@@ -49,6 +36,5 @@ export default function ChatSettings() {
       <Toggle label="Show thinking" desc="Display the model's reasoning blocks" value={prefs.showThinking} onChange={(v) => setPref('showThinking', v)} />
       <Toggle label="Show tool results" desc="Display tool call output in the transcript" value={prefs.showTools} onChange={(v) => setPref('showTools', v)} />
     </Section>
-    </>
   );
 }

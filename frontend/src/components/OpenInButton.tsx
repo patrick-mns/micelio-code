@@ -15,6 +15,9 @@ function iconFor(kind: string, size = 15): ReactNode {
 
 // Split button in the titlebar: the main half opens the workspace in the last
 // used app; the caret opens a menu of all auto-detected apps.
+//
+// HIDDEN — return null below. Kept as reference until the compact SVG-opener-icon
+// version replaces the generic phosphor icons (see BACKLOG.md).
 export default function OpenInButton() {
   const [openers, setOpeners] = useState<Opener[]>([]);
   const [current, setCurrent] = useState<string | null>(null); // opener id
@@ -39,6 +42,8 @@ export default function OpenInButton() {
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
   }, [menuOpen]);
+
+  return null; // HIDDEN — see comment at top
 
   if (openers.length === 0 || !current) return null;
   const active = openers.find((o) => o.id === current) ?? openers[0];

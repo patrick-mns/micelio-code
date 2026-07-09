@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { modelRolesSelectorStyles } from '@/utils/theme-styles';
-import { ChatCircle, FileText, Eye, MagnifyingGlass, Check, CaretRight, CaretUpDown, type Icon } from '@phosphor-icons/react';
+import { ChatCircle, FileText, Eye, MagnifyingGlass, Check, CaretRight, CaretDown, CaretUpDown, type Icon } from '@phosphor-icons/react';
 import { ipc } from '@/ipc';
 import { useStore } from '@/store';
 import { theme } from '@/theme';
@@ -60,6 +60,7 @@ export default function ModelRolesSelector() {
   const [open, setOpen] = useState(false);
   const [openRole, setOpenRole] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const ref = useRef<HTMLDivElement | null>(null);
 
   // Load models for the current session (or globals if no session / no pin).
@@ -137,7 +138,7 @@ export default function ModelRolesSelector() {
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button className="ghost-btn" style={modelRolesSelectorStyles.trigger} onClick={() => setOpen((o) => !o)} title="Model assignments">
+      <button className="btn btn-ghost" style={modelRolesSelectorStyles.trigger} onClick={() => setOpen((o) => !o)} title="Model assignments">
         <span style={modelRolesSelectorStyles.dots}>
           {roles.map((r) => (
             <span
@@ -208,10 +209,22 @@ export default function ModelRolesSelector() {
                       ) : groups.map((g) => (
                         <div key={g.provider}>
                           <div style={modelRolesSelectorStyles.groupHead}>
+                            <button
+                              onClick={() => setCollapsed((c) => ({ ...c, [g.provider]: !c[g.provider] }))}
+                              style={{
+                                background: 'none', border: 'none', cursor: 'pointer', padding: 0, margin: 0,
+                                display: 'flex', alignItems: 'center', color: theme.faint, fontSize: 10,
+                                transform: collapsed[g.provider] ? 'rotate(-90deg)' : 'rotate(0deg)',
+                                transition: 'transform .15s',
+                              }}
+                              title={collapsed[g.provider] ? 'Expand' : 'Collapse'}
+                            >
+                              <CaretDown size={11} weight="bold" />
+                            </button>
                             <span style={{ ...modelRolesSelectorStyles.tag, ...tagStyle(providerIdx[g.provider] ?? 0) }}>{g.provider}</span>
                             <span style={modelRolesSelectorStyles.groupCount}>{g.items.length}</span>
                           </div>
-                          {g.items.map((m) => {
+                          {!collapsed[g.provider] && g.items.map((m) => {
                             const sel = m.name === r.model;
                             return (
                               <button

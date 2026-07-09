@@ -29,11 +29,13 @@ export default function AdvancedSettings() {
   const isAvailable = update.status === 'available';
 
   return (
+    <>
     <Section title="ADVANCED">
       <Toggle label="Debug logging" desc="Print raw model requests/responses to stdout" value={prefs.debug} onChange={(v) => setPref('debug', v)} />
+    </Section>
 
-      <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <h4 style={{ margin: 0, fontSize: 12.5, color: theme.text, fontWeight: 500, letterSpacing: '0.3px' }}>SOFTWARE UPDATE</h4>
+    <Section title="SOFTWARE UPDATE">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <p style={{ margin: 0, fontSize: 12.5, color: theme.textSoft }}>
           Check for the latest version of Micelio Code manually.
         </p>
@@ -102,5 +104,6 @@ export default function AdvancedSettings() {
 
       {modalOpen && <UpdateModal onClose={() => setModalOpen(false)} />}
     </Section>
+    </>
   );
 }

@@ -1,18 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { ChatCircle, Cloud, Wrench, X, type Icon } from '@phosphor-icons/react';
+import { ChatCircle, Cloud, FolderOpen, Wrench, Palette, X, type Icon } from '@phosphor-icons/react';
 import { theme } from '@/theme';
+import AppearanceSettings from './AppearanceSettings';
 import ChatSettings from './ChatSettings';
 import ProviderSettings from './ProviderSettings';
+import WorkspaceSettings from './WorkspaceSettings';
 import AdvancedSettings from './AdvancedSettings';
 import { settingsModalStyles as modalStyles } from '@/utils/theme-styles';
 import { ipc } from '@/ipc';
 
-type CategoryId = 'chat' | 'providers' | 'advanced';
+import { useStore } from '@/store';
+import type { SettingsCategoryId } from '@/store/uiSlice';
 
-const CATEGORIES: { id: CategoryId; label: string; Icon: Icon }[] = [
-  { id: 'chat', label: 'Chat', Icon: ChatCircle },
-  { id: 'providers', label: 'Providers', Icon: Cloud },
-  { id: 'advanced', label: 'Advanced', Icon: Wrench },
+const CATEGORIES: { id: SettingsCategoryId; label: string; Icon: Icon; Panel: React.ComponentType }[] = [
+  { id: 'appearance', label: 'Appearance', Icon: Palette, Panel: AppearanceSettings },
+  { id: 'chat', label: 'Chat', Icon: ChatCircle, Panel: ChatSettings },
+  { id: 'providers', label: 'Providers', Icon: Cloud, Panel: ProviderSettings },
+  { id: 'workspace', label: 'Workspace', Icon: FolderOpen, Panel: WorkspaceSettings },
+  { id: 'advanced', label: 'Advanced', Icon: Wrench, Panel: AdvancedSettings },
 ];
 
 interface SettingsProps {
@@ -20,8 +25,9 @@ interface SettingsProps {
 }
 
 export default function Settings({ onClose }: SettingsProps) {
-  const [category, setCategory] = useState<CategoryId>('chat');
+  const { settingsCategory: category, setSettingsCategory: setCategory } = useStore();
   const [version, setVersion] = useState('');
+  const active = CATEGORIES.find((c) => c.id === category) ?? CATEGORIES[0];
 
   useEffect(() => {
     ipc.getVersion().then(setVersion).catch(() => {});
@@ -54,12 +60,15 @@ export default function Settings({ onClose }: SettingsProps) {
 
         {/* Content */}
         <div style={modalStyles.content}>
-          <button onClick={onClose} className="close-btn" style={modalStyles.closeBtn}>
-            <X size={15} />
-          </button>
-          {category === 'chat' && <ChatSettings />}
-          {category === 'providers' && <ProviderSettings />}
-          {category === 'advanced' && <AdvancedSettings />}
+          <div style={modalStyles.header}>
+            <span style={modalStyles.headerTitle}>{active.label}</span>
+            <button onClick={onClose} className="close-btn" title="Close">
+              <X size={15} />
+            </button>
+          </div>
+          <div style={modalStyles.body}>
+            <active.Panel />
+          </div>
         </div>
       </div>
     </div>

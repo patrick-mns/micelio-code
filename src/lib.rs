@@ -27,6 +27,9 @@ pub struct ModelRoles {
 pub struct AppState {
     pub graph: Mutex<KnowledgeGraph>,
     pub workspace_root: Mutex<std::path::PathBuf>,
+    /// The workspace currently loaded in memory, or `None` when the app has no
+    /// workspaces yet (fresh install / all deleted) and is showing onboarding.
+    pub current_workspace: Mutex<Option<backend::workspace::Workspace>>,
     /// Per-role model assignments (chat / summarize / vision).
     pub models: Mutex<ModelRoles>,
     pub sessions: Mutex<SessionStore>,
@@ -132,15 +135,33 @@ fn ensure_cli_path() {
 pub fn run() {
     ensure_cli_path();
 
-    let workspace_root = backend::config::last_workspace().unwrap_or_else(|| {
-        // Use the app's own data directory under ~/.micelio/workspace-root/ as a
-        // safe fallback when no workspace was ever picked.  This avoids touching
-        // ~/Documents/ (or another TCC-guarded path) on every launch, which would
-        // otherwise trigger repeated macOS permission prompts.
-        let fallback = backend::config::app_data_dir().join("workspace-root");
-        let _ = std::fs::create_dir_all(&fallback);
-        fallback
-    });
+    // Load the existing workspaces, if any. We no longer auto-create a default
+    // "workspace-root" on first launch — a fresh install starts with NO
+    // workspace and the UI shows an onboarding screen where the user creates
+    // their first one. Returning users reopen the workspace they last visited
+    // (matched by its first folder), falling back to the first available.
+    let current_workspace: Option<backend::workspace::Workspace> = {
+        let all = backend::workspace::list_workspaces();
+        let by_last = backend::config::last_workspace()
+            .and_then(|last| all.iter().find(|w| w.folders.first() == Some(&last)).cloned());
+        by_last.or_else(|| all.into_iter().next())
+    };
+
+    // Runtime structures fall back to safe empties when there's no workspace.
+    // The main UI is gated behind having a workspace, so these placeholders are
+    // never actually exercised until the user creates or opens one.
+    let data_dir = current_workspace
+        .as_ref()
+        .map(|w| w.dir())
+        .unwrap_or_else(|| backend::config::app_data_dir().join("_no_workspace"));
+    let _ = std::fs::create_dir_all(&data_dir);
+
+    // O workspace_root em memória (onde as tools buscam hoje) será o primeiro folder do workspace,
+    // ou a pasta de dados de fallback caso não haja workspace/folders ainda.
+    let workspace_root = current_workspace
+        .as_ref()
+        .and_then(|w| w.folders.first().cloned())
+        .unwrap_or_else(|| data_dir.clone());
 
     let model = backend::config::last_model().unwrap_or_else(|| "claude-sonnet-4-6".to_string());
 
@@ -151,18 +172,23 @@ pub fn run() {
     // picks a model for it.
     let vision_model = backend::config::vision_model().unwrap_or_default();
 
-    let graph_path = workspace_root.join(".micelio/graph.json");
-    let graph = backend::knowledge::KnowledgeGraph::load(&graph_path)
-        .unwrap_or_else(|_| backend::knowledge::KnowledgeGraph::new());
+    // graph.json e sessions.db agora residem no diretório do workspace!
+    // Load the saved graph, or start empty. We deliberately DON'T scan here:
+    // scanning a large folder would block startup and the window would never
+    // appear. When the graph is empty, the frontend kicks off a background scan
+    // (with progress + cancel + overlay) right after it loads the workspace.
+    let graph_path = data_dir.join("graph.json");
+    let graph = backend::knowledge::KnowledgeGraph::load(&graph_path).unwrap_or_default();
 
-    backend::config::ensure_gitignore(&workspace_root);
-    let sessions = SessionStore::open(&workspace_root.join(".micelio/sessions.db"))
+    if let Some(first_folder) = current_workspace.as_ref().and_then(|w| w.folders.first()) {
+        backend::config::ensure_gitignore(first_folder);
+    }
+
+    let sessions = SessionStore::open(&data_dir.join("sessions.db"))
         .expect("open session store");
     let current_session = match sessions.latest_session_id() {
         Ok(Some(id)) => id,
-        _ => sessions
-            .create_session("New session", &model)
-            .unwrap_or_default(),
+        _ => "".to_string(), // Allow absolutely no sessions on brand new workspace
     };
     let resumed_history: Vec<backend::llm::Message> = sessions
         .load_history(&current_session)
@@ -186,6 +212,7 @@ pub fn run() {
         .manage(AppState {
             graph: Mutex::new(graph),
             workspace_root: Mutex::new(workspace_root),
+            current_workspace: Mutex::new(current_workspace),
             models: Mutex::new(ModelRoles {
                 chat: model,
                 summarize: summarize_model,
@@ -234,10 +261,25 @@ pub fn run() {
             commands::settings::get_openrouter_key,
             commands::settings::save_openrouter_key,
             commands::settings::check_openrouter_key,
+            commands::settings::get_litellm_key,
+            commands::settings::save_litellm_key,
+            commands::settings::check_litellm_key,
+            commands::settings::get_litellm_base_url,
+            commands::settings::save_litellm_base_url,
             commands::settings::get_git_context,
             commands::settings::get_version,
             commands::settings::set_auto_summarize,
             commands::settings::set_show_cost,
+            commands::workspace::get_current_workspace,
+            commands::workspace::list_all_workspaces,
+            commands::workspace::set_active_root,
+            commands::workspace::list_all_workspaces_with_sessions,
+            commands::workspace::create_workspace,
+            commands::workspace::switch_workspace,
+            commands::workspace::add_folder_to_workspace,
+            commands::workspace::remove_folder_from_workspace,
+            commands::workspace::rename_workspace,
+            commands::workspace::delete_workspace,
             commands::sessions::list_sessions,
             commands::sessions::new_session,
             commands::sessions::switch_session,

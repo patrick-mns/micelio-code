@@ -407,24 +407,32 @@ export const gitContextStyles: Record<string, CSSProperties> = {
     background: theme.card,
     borderRadius: "var(--radius-lg)",
   },
-  repoBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 5,
-    padding: '3px 7px',
-    marginLeft: -3,
-    border: 'none',
-    borderRadius: "var(--radius-sm)",
-    cursor: 'pointer',
-    fontSize: 11.5,
-    fontWeight: 500,
-    fontFamily: 'inherit',
+  // Trigger + dropdown mirror the model selector (ModelRolesSelector) for a
+  // consistent "selector" language across the app.
+  folderBtn: {
+    display: 'flex', alignItems: 'center', gap: 6,
+    height: 26, padding: '0 8px',
+    borderRadius: 'var(--radius-md)',
+    color: theme.textSoft, fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer',
   },
-  repoName: {
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-    maxWidth: 140,
+  folderName: {
+    maxWidth: 140, overflow: 'hidden',
+    textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500,
+  },
+  folderDropdown: {
+    position: 'absolute', bottom: '100%', left: 0,
+    marginBottom: 6, background: theme.bg,
+    border: `1px solid ${theme.border}`, borderRadius: 'var(--radius-lg)',
+    padding: 6, minWidth: 200, zIndex: 100,
+  },
+  folderItem: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    width: '100%', padding: '6px 9px', borderRadius: 'var(--radius-sm)',
+    cursor: 'pointer', fontSize: 12.5, textAlign: 'left', border: 'none',
+  },
+  folderItemName: {
+    flex: 1, overflow: 'hidden',
+    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
   branch: {
     display: 'flex',
@@ -666,9 +674,9 @@ export const sidebarStyles: Record<string, CSSProperties> = {
   trafficGap: { height: 38, flexShrink: 0 },
   newBtn: {
     display: 'flex', alignItems: 'center', gap: 8,
-    margin: '6px 6px 8px', padding: '0 10px', height: 34,
-    border: 'none', borderRadius: 9, cursor: 'pointer',
-    fontSize: 13, fontFamily: 'inherit',
+    padding: '8px 14px', margin: '0 6px 8px 6px',
+    borderRadius: 8, cursor: 'pointer', fontSize: 12.5,
+    color: theme.faint, border: 'none', fontFamily: 'inherit',
   },
   list: { flex: 1, overflowY: 'auto', padding: '0 6px 8px' },
   empty: { color: theme.faint, fontSize: 12, padding: '12px 10px' },
@@ -697,6 +705,41 @@ export const sidebarStyles: Record<string, CSSProperties> = {
   gearBtn: {
     width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
     border: 'none', borderRadius: "var(--radius-md)", cursor: 'pointer', flexShrink: 0,
+  },
+  wsHeader: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '8px 14px', margin: '0 6px', borderRadius: 8, cursor: 'pointer',
+  },
+  wsName: {
+    flex: 1, fontSize: 12.5,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  wsChevron: {
+    flexShrink: 0, display: 'flex', alignItems: 'center', color: theme.faint,
+  },
+  wsCount: {
+    marginLeft: 'auto', fontSize: 11, color: theme.faint,
+  },
+  sessionList: {
+    flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '4px 0',
+  },
+  sessionRow: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '6px 14px', margin: '0 6px', borderRadius: 8, cursor: 'pointer',
+    fontSize: 12.5,
+  },
+  updateBar: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '0 10px', margin: '0 6px 4px 6px', height: 34,
+    borderRadius: 9, cursor: 'pointer', transition: 'all 0.15s ease-in-out', userSelect: 'none',
+  },
+  updateLabel: {
+    flex: 1, fontSize: 13, fontWeight: 400,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  updateDot: {
+    width: 5, height: 5, borderRadius: '50%',
+    background: theme.accent, boxShadow: `0 0 6px ${theme.accent}`,
   },
 };
 
@@ -852,8 +895,14 @@ export const settingsModalStyles: Record<string, CSSProperties> = {
   sidebar: { width: 176, background: theme.bgDeep, padding: '16px 8px 12px 14px', display: 'flex', flexDirection: 'column', gap: 2, borderRight: `1px solid ${theme.card}` },
   sidebarTitle: { fontSize: 15, fontWeight: 600, color: theme.text, marginBottom: 14, paddingLeft: 4 },
   // nav items use .menu-item (buttons.css)
-  content: { flex: 1, padding: '14px 20px', position: 'relative', overflowY: 'auto' },
-  closeBtn: { position: 'absolute', top: 12, right: 12 },
+  content: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
+  header: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    height: 48, padding: '0 12px 0 20px', flexShrink: 0,
+    borderBottom: `1px solid ${theme.card}`,
+  },
+  headerTitle: { fontSize: 14, fontWeight: 600, color: theme.text },
+  body: { flex: 1, overflowY: 'auto', padding: '18px 20px' },
 };
 
 // ThemeSelect uses .seg-track/.seg-btn (buttons.css).

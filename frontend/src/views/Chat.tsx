@@ -122,16 +122,26 @@ export default function Chat() {
     if (attachedRef.current) return;
     attachedRef.current = true;
 
-    ipc.onStreamContent(({ session_id, delta }) => pushTo(session_id, 'content', delta));
-    ipc.onStreamThinking(({ session_id, delta }) => pushTo(session_id, 'thinking', delta));
+    ipc.onStreamContent(({ session_id, delta }) => {
+      pushTo(session_id, 'content', delta);
+      useStore.getState().setAgentStatus(session_id, 'running');
+    });
+    ipc.onStreamThinking(({ session_id, delta }) => {
+      pushTo(session_id, 'thinking', delta);
+      useStore.getState().setAgentStatus(session_id, 'running');
+    });
     ipc.onStreamTool(({ session_id, summary }) => pushTo(session_id, 'tools', summary));
     ipc.onStreamDone(({ session_id }) => finishStream(session_id));
     ipc.onStreamError(({ session_id, error }) => errorStream(session_id, error));
     ipc.onAskUser(({ session_id, args }) => {
       const qs = parseQuestions(args);
       if (qs.length) setPendingAsk(qs);
+      useStore.getState().setAgentStatus(session_id, 'awaiting_input');
     });
-    ipc.onReviewRequest((req) => setPendingEdit(req));
+    ipc.onReviewRequest((req) => {
+      setPendingEdit(req);
+      useStore.getState().setAgentStatus(req.session_id, 'awaiting_input');
+    });
     ipc.onStreamUsage(({ session_id, ...u }) => {
       if (streamsRef.current[session_id]) streamsRef.current[session_id].usage = u;
     });
@@ -177,6 +187,8 @@ export default function Chat() {
     setStreamsBySession((prev) => { const n = { ...prev }; delete n[sessionId]; return n; });
     store.setStreamingSession(null);
     store.setLoading(false);
+    // Only set 'complete' if not canceled (cancel already set 'idle')
+    if (s && !s.canceled) store.setAgentStatus(sessionId, 'complete');
   }
 
   function errorStream(sessionId: string, msg: string) {
@@ -185,6 +197,7 @@ export default function Chat() {
     delete streamsRef.current[sessionId];
     setStreamsBySession((prev) => { const n = { ...prev }; delete n[sessionId]; return n; });
     store.setLoading(false);
+    store.setAgentStatus(sessionId, 'error');
   }
 
   // ── Elapsed timer ──────────────────────────────────────────────────────────
@@ -220,6 +233,10 @@ export default function Chat() {
   // ── Image attachment ───────────────────────────────────────────────────────
   const attachImage = useCallback((file: File | null) => {
     if (!file || !file.type.startsWith('image/')) return;
+    // Capture the session at call time (synchronous) so the async reader.onload
+    // writes to the right session even if the user switches tabs before the read
+    // finishes.
+    const sessionAtCall = viewingSession;
     const reader = new FileReader();
     reader.onload = async () => {
       const dataUrl = String(reader.result);
@@ -228,11 +245,11 @@ export default function Chat() {
       const name = file.name || `image.${ext}`;
       try {
         const path = await ipc.saveAttachment(b64, ext);
-        setAttachment({ path, name, preview: dataUrl });
+        useStore.getState().setDraftAttachment(sessionAtCall, { path, name, preview: dataUrl });
       } catch (e) { console.error('attach failed', e); }
     };
     reader.readAsDataURL(file);
-  }, []);
+  }, [viewingSession]);
 
   const onPaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
@@ -248,6 +265,18 @@ export default function Chat() {
   const send = useCallback(async () => {
     const content = input.trim();
     if ((!content && !attachment) || streaming != null) return;
+
+    let activeSession = viewingSession;
+    if (!activeSession) {
+      try {
+        const nextId = await ipc.newSession();
+        await useStore.getState().loadSessions();
+        activeSession = nextId;
+      } catch (e) {
+        console.error('Failed to auto-create session', e);
+        return;
+      }
+    }
 
     // /summarize [n] shortcut
     const sm = content.match(/^\/summarize(?:\s+(\d+))?$/i);
@@ -267,36 +296,39 @@ export default function Chat() {
       ? `${content ? '\n\n' : ''}[The user attached an image at ${att.path}. Use the vision tool with this path to view it before answering.]`
       : '');
 
-    addMessage(viewingSession, { role: 'user', content, attachment: att ? { name: att.name, preview: att.preview } : undefined });
+    addMessage(activeSession, { role: 'user', content, attachment: att ? { name: att.name, preview: att.preview } : undefined });
     setLoading(true);
 
     const buf: StreamSession = { thinking: '', parts: [], startedAt: Date.now() };
-    streamsRef.current[viewingSession] = buf;
-    setStreamsBySession((prev) => ({ ...prev, [viewingSession]: buf }));
-    setStreamingSession(viewingSession);
+    streamsRef.current[activeSession] = buf;
+    setStreamsBySession((prev) => ({ ...prev, [activeSession]: buf }));
+    setStreamingSession(activeSession);
+    useStore.getState().setAgentStatus(activeSession, 'running');
 
     try {
       const sessionId = await ipc.startChatStream(sentContent);
       setGitRefreshTick((t) => t + 1);
-      if (sessionId && sessionId !== viewingSession) {
-        streamsRef.current[sessionId] = streamsRef.current[viewingSession];
-        delete streamsRef.current[viewingSession];
-        setStreamsBySession((prev) => { const n = { ...prev }; n[sessionId] = n[viewingSession]; delete n[viewingSession]; return n; });
-        const fromMsgs = useStore.getState().messagesBySession[viewingSession] ?? [];
+      if (sessionId && sessionId !== activeSession) {
+        streamsRef.current[sessionId] = streamsRef.current[activeSession];
+        delete streamsRef.current[activeSession];
+        setStreamsBySession((prev) => { const n = { ...prev }; n[sessionId] = n[activeSession]; delete n[activeSession]; return n; });
+        const fromMsgs = useStore.getState().messagesBySession[activeSession] ?? [];
         setMessages(sessionId, fromMsgs);
         setCurrentSession(sessionId);
       }
-      setStreamingSession(sessionId ?? viewingSession);
+      setStreamingSession(sessionId ?? activeSession);
     } catch (e) {
-      addMessage(viewingSession, { role: 'assistant', content: `Error: ${String(e)}` });
-      delete streamsRef.current[viewingSession];
-      setStreamsBySession((prev) => { const n = { ...prev }; delete n[viewingSession]; return n; });
+      addMessage(activeSession, { role: 'assistant', content: `Error: ${String(e)}` });
+      delete streamsRef.current[activeSession];
+      setStreamsBySession((prev) => { const n = { ...prev }; delete n[activeSession]; return n; });
       setLoading(false);
+      useStore.getState().setAgentStatus(activeSession, 'error');
     }
   }, [input, attachment, streaming, viewingSession]);
 
   const cancel = useCallback(async () => {
     if (streamsRef.current[viewingSession]) streamsRef.current[viewingSession].canceled = true;
+    useStore.getState().setAgentStatus(viewingSession, 'idle');
     await ipc.stopChatStream().catch(console.error);
   }, [viewingSession]);
 
@@ -308,24 +340,28 @@ export default function Chat() {
   // ── QuestionCard ───────────────────────────────────────────────────────────
   const answerAsk = useCallback(async (answer: string) => {
     setPendingAsk(null);
+    useStore.getState().setAgentStatus(viewingSession, 'running');
     await ipc.answerQuestion(answer).catch(console.error);
-  }, []);
+  }, [viewingSession]);
 
   const cancelAsk = useCallback(async () => {
     setPendingAsk(null);
+    useStore.getState().setAgentStatus(viewingSession, 'idle');
     await ipc.stopChatStream().catch(console.error);
-  }, []);
+  }, [viewingSession]);
 
   // ── EditApprovalCard ────────────────────────────────────────────────────────
   const acceptEdit = useCallback(async () => {
     setPendingEdit(null);
+    useStore.getState().setAgentStatus(viewingSession, 'running');
     await ipc.answerEditReview(true).catch(console.error);
-  }, []);
+  }, [viewingSession]);
 
   const rejectEdit = useCallback(async () => {
     setPendingEdit(null);
+    useStore.getState().setAgentStatus(viewingSession, 'running');
     await ipc.answerEditReview(false).catch(console.error);
-  }, []);
+  }, [viewingSession]);
 
   // ── Slash commands ─────────────────────────────────────────────────────────
   const showPalette = input.startsWith('/') && !input.includes(' ');

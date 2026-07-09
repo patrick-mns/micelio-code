@@ -7,14 +7,18 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
         .or_else(|| super::get_string_field(arguments, "query"))
         .ok_or_else(|| "tool call missing `pattern`".to_string())?;
 
-    let output = no_window_cmd("rg")
-        .arg("--line-number")
+    let mut cmd = no_window_cmd("rg");
+    cmd.arg("--line-number")
         .arg("--hidden")
         .arg("--glob")
         .arg("!.git")
-        .arg(&query)
-        .arg(&context.workspace_root)
-        .output()
+        .arg(&query);
+
+    for root in &context.workspace_roots {
+        cmd.arg(root);
+    }
+
+    let output = cmd.output()
         .map_err(|e| format!("failed to run rg: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);

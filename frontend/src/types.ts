@@ -196,6 +196,9 @@ export interface Opener {
   kind: string; // "editor" | "terminal" | "finder"
 }
 
+// ── Agent status shown in the sidebar dot ────────────────────────────────────
+export type AgentStatus = 'idle' | 'running' | 'awaiting_input' | 'error' | 'complete';
+
 // ── Event payloads (src/commands/agent.rs, graph.rs emit calls) ──────────────
 export interface StreamDelta {
   session_id: string;

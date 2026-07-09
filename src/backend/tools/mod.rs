@@ -13,6 +13,7 @@ use std::path::PathBuf;
 #[derive(Clone)]
 pub struct ToolContext {
     pub workspace_root: PathBuf,
+    pub workspace_roots: Vec<PathBuf>,
     pub model_name: String,
     /// Vision-role model for this session (empty = unassigned). Used by the
     /// `vision` tool so each session can target its own image model.
@@ -21,6 +22,38 @@ pub struct ToolContext {
     pub show_tools: bool,
     pub debug: bool,
     pub graph_json: String,
+}
+
+impl ToolContext {
+    pub fn resolve_path(&self, arg: &str) -> PathBuf {
+        let path = std::path::Path::new(arg);
+        if path.is_absolute() {
+            return path.to_path_buf();
+        }
+
+        // Resolve by the root whose prefix produces the shortest relative path.
+        // This avoids the ambiguity of `exists()` when the same relative path
+        // happens to exist under multiple roots.
+        let mut best: Option<(usize, &PathBuf)> = None;
+        for root in &self.workspace_roots {
+            let candidate = root.join(path);
+            // Only consider roots that actually contain the file.
+            if candidate.exists() {
+                let depth = root.components().count();
+                best = match best {
+                    Some((prev_depth, _)) if depth >= prev_depth => best,
+                    _ => Some((depth, root)),
+                };
+            }
+        }
+
+        if let Some((_, root)) = best {
+            return root.join(path);
+        }
+
+        // Brand-new file (or non-existent path): land in the primary root
+        self.workspace_root.join(path)
+    }
 }
 
 #[derive(Debug)]
@@ -52,7 +85,7 @@ fn inject_action(args: &str, action: &str) -> String {
 /// Normalize a tool name that may contain stuttering/repetition (e.g.
 /// `filefilefilefile` or `read_fileread_file`) by looking for a known tool
 /// name as a substring. Falls back to the original name if nothing matches.
-pub fn normalize_tool_name<'a>(name: &'a str) -> &'a str {
+pub fn normalize_tool_name(name: &str) -> &str {
     const KNOWN: &[&str] = &[
         // Longest first so `context_node` matches before `context`, etc.
         "context_node",
@@ -311,8 +344,10 @@ mod tests {
     use super::*;
 
     fn ctx() -> ToolContext {
+        let root = PathBuf::from("/tmp");
         ToolContext {
-            workspace_root: PathBuf::from("/tmp"),
+            workspace_root: root.clone(),
+            workspace_roots: vec![root],
             model_name: String::new(),
             vision_model: String::new(),
             history_len: 0,

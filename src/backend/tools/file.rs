@@ -83,7 +83,7 @@ fn read(path: &str, arguments: &str, context: &ToolContext) -> Result<FileResult
         ));
     }
 
-    let full_path = context.workspace_root.join(path);
+    let full_path = context.resolve_path(path);
 
     // If the path is a directory, list its contents instead of failing.
     if full_path.is_dir() {
@@ -192,7 +192,7 @@ pub fn resolve_write_content(arguments: &str) -> Result<String, String> {
 
 fn write(path: &str, arguments: &str, context: &ToolContext) -> Result<FileResult, String> {
     let content = resolve_write_content(arguments)?;
-    let full_path = context.workspace_root.join(path);
+    let full_path = context.resolve_path(path);
 
     fs::write(&full_path, &content)
         .map_err(|e| format!("failed to write {}: {e}", full_path.display()))?;
@@ -252,7 +252,7 @@ pub fn resolve_edit_content(
 }
 
 fn edit(path: &str, arguments: &str, context: &ToolContext) -> Result<FileResult, String> {
-    let full_path = context.workspace_root.join(path);
+    let full_path = context.resolve_path(path);
     let before_content = fs::read_to_string(&full_path)
         .map_err(|e| format!("failed to read {}: {e}", full_path.display()))?;
 
@@ -407,6 +407,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let ctx = ToolContext {
             workspace_root: dir.clone(),
+            workspace_roots: vec![dir.clone()],
             model_name: String::new(),
             vision_model: String::new(),
             history_len: 0,

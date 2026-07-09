@@ -2,6 +2,7 @@
 import type { StateCreator } from 'zustand';
 import type { TreemapNode } from '@/types';
 import type { AppState } from './index';
+import { invoke } from '@tauri-apps/api/core';
 
 export interface GraphSlice {
   graphNodes: TreemapNode[];
@@ -11,6 +12,7 @@ export interface GraphSlice {
   setScanning: (scanning: boolean) => void;
   setSelectedNode: (selectedNode: TreemapNode | null) => void;
   setNodeSummary: (id: number, summary: string) => void;
+  refreshGraph: () => Promise<void>;
 }
 
 export const graphSlice: StateCreator<AppState, [], [], GraphSlice> = (set) => ({
@@ -23,6 +25,15 @@ export const graphSlice: StateCreator<AppState, [], [], GraphSlice> = (set) => (
   setScanning: (scanning) => set({ scanning }),
 
   setSelectedNode: (selectedNode) => set({ selectedNode }),
+
+  refreshGraph: async () => {
+    try {
+      const nodes = await invoke<TreemapNode[]>('get_graph');
+      set({ graphNodes: nodes });
+    } catch (e) {
+      console.error('Failed to refresh graph', e);
+    }
+  },
 
   // Persist a freshly generated summary into the in-memory graph (the backend
   // already saved it to graph.json) so reopening the node shows it without an

@@ -253,7 +253,6 @@ pub async fn set_session_model(
 
 #[tauri::command]
 pub async fn delete_session(state: State<'_, AppState>, id: String) -> Result<String, String> {
-    let model = state.chat_model();
     let store = state.sessions.lock().unwrap();
     store.delete_session(&id)?;
 
@@ -277,7 +276,7 @@ pub async fn delete_session(state: State<'_, AppState>, id: String) -> Result<St
                     .insert(latest.clone(), hist);
                 latest
             }
-            None => store.create_session("New session", &model)?,
+            None => "".to_string(), // Keep empty if no sessions are left!
         };
         *current = next.clone();
         return Ok(next);

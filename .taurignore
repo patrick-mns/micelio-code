@@ -13,3 +13,8 @@ frontend/node_modules/
 frontend/dist/
 target/
 dist/
+
+# Arquivos temporários que o Vite gera ao processar o vite.config.js
+# (ex: vite.config.js.timestamp-1783539150120-7a4d6a5e4f966.mjs).
+# Sem isto, o watcher do `tauri dev` reinicia o app em loop.
+*.timestamp-*.mjs

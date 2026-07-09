@@ -151,20 +151,44 @@ export function drawTreemap(
         ctx.font = `600 ${fontSize}px -apple-system, sans-serif`;
         ctx.fillStyle = getTextColor('label');
         const label = fitLabel(shortName(node.data.name), iw, fontSize);
-        if (ih > 32) {
+        const pct = totalLeafArea > 0
+          ? ((node.x1 - node.x0) * (node.y1 - node.y0)) / totalLeafArea * 100
+          : 0;
+        const pctStr = pct >= 10 ? `${pct.toFixed(0)}%` : `${pct.toFixed(1)}%`;
+        const tok = node.data.tokens ?? 0;
+        const tokStr = tok >= 1000 ? `~${(tok/1000).toFixed(1)}k tok` : `${tok} tok`;
+        if (ih > 58 && tok > 0) {
+          // Three lines: label + tokens (just above %) + BIG percentage
           ctx.fillText(label, ix + 5, iy + 4 + fontSize);
-          const pct = totalLeafArea > 0
-            ? ((node.x1 - node.x0) * (node.y1 - node.y0)) / totalLeafArea * 100
-            : 0;
-          const pctStr = pct >= 10 ? `${pct.toFixed(0)}%` : `${pct.toFixed(1)}%`;
-          const pctSize = Math.max(8, fontSize * 0.85);
-          ctx.font = `${pctSize}px -apple-system, sans-serif`;
+          const pctSize = Math.max(16, Math.min(Math.floor(iw * 0.20), Math.floor((ih - fontSize - 14) * 0.75)));
+          const tokSize = Math.max(10, Math.min(13, Math.floor(pctSize * 0.38)));
+          ctx.font = `500 ${tokSize}px -apple-system, sans-serif`;
           ctx.fillStyle = getTextColor('pct');
-          ctx.fillText(pctStr, ix + 5, iy + ih - 5);
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(tokStr, ix + 5, iy + ih - 4 - pctSize - 4);
+          ctx.textBaseline = 'alphabetic';
+          ctx.font = `700 ${pctSize}px -apple-system, sans-serif`;
+          ctx.fillStyle = getTextColor('label');
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(pctStr, ix + 5, iy + ih - 4);
+          ctx.textBaseline = 'alphabetic';
+        } else if (ih > 42) {
+          // Two lines: label on top, BIG percentage below
+          ctx.fillText(label, ix + 5, iy + 4 + fontSize);
+          const pctSize = Math.max(16, Math.min(Math.floor(iw * 0.22), Math.floor((ih - fontSize - 14) * 0.85)));
+          ctx.font = `700 ${pctSize}px -apple-system, sans-serif`;
+          ctx.fillStyle = getTextColor('label');
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(pctStr, ix + 5, iy + ih - 4);
+          ctx.textBaseline = 'alphabetic';
         } else {
+          // Tight fit — big % centered, no label
+          const pctSize = Math.max(14, Math.min(Math.floor(iw * 0.20), Math.floor(ih * 0.5)));
+          ctx.font = `700 ${pctSize}px -apple-system, sans-serif`;
+          ctx.fillStyle = getTextColor('label');
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(label, ix + iw / 2, iy + ih / 2);
+          ctx.fillText(pctStr, ix + iw / 2, iy + ih / 2);
           ctx.textAlign = 'left';
           ctx.textBaseline = 'alphabetic';
         }

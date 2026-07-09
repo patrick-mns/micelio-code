@@ -28,6 +28,7 @@ export const fmtTsFull = (sec: number): string =>
 // ── Palettes & constants ──────────────────────────────────────────────────────
 export const PROVIDER_COLORS: Record<string, string> = {
   openrouter: '#a78bfa',
+  litellm:    '#f0883e',
   ollama:     '#3fb950',
   unknown:    '#8c8a82',
 };

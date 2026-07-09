@@ -176,7 +176,7 @@ pub async fn set_workspace(state: State<'_, AppState>, path: String) -> Result<u
         Ok(g) if g.total_count() > 0 => g,
         _ => {
             let mut g = crate::backend::knowledge::KnowledgeGraph::new();
-            g.scan_workspace(&root)?;
+            g.scan_workspace(&root, None)?;
             g
         }
     };
@@ -266,6 +266,56 @@ pub async fn check_openrouter_key(key: String) -> Result<OpenRouterStatus, Strin
             error: e.to_string(),
         }),
     }
+}
+
+// ── LiteLLM ─────────────────────────────────────────────────────────────────
+
+/// Returns the currently saved LiteLLM API key (empty if none).
+#[tauri::command]
+pub async fn get_litellm_key() -> Result<String, String> {
+    Ok(config::litellm_key().unwrap_or_default())
+}
+
+/// Persists the LiteLLM API key. Pass an empty string to clear it.
+#[tauri::command]
+pub async fn save_litellm_key(key: String) -> Result<(), String> {
+    config::save_litellm_key(&key);
+    Ok(())
+}
+
+/// Validate a LiteLLM API key by saving it and testing it against the
+/// models endpoint. Returns the count of available models on success, or the
+/// error message on failure.
+#[tauri::command]
+pub async fn check_litellm_key(key: String) -> Result<OpenRouterStatus, String> {
+    config::save_litellm_key(&key);
+
+    let provider = llm::provider(llm::ProviderKind::LiteLLM);
+    match provider.list_models() {
+        Ok(models) => Ok(OpenRouterStatus {
+            ok: true,
+            count: models.len(),
+            error: String::new(),
+        }),
+        Err(e) => Ok(OpenRouterStatus {
+            ok: false,
+            count: 0,
+            error: e.to_string(),
+        }),
+    }
+}
+
+/// Returns the currently saved LiteLLM base URL (empty = default).
+#[tauri::command]
+pub async fn get_litellm_base_url() -> Result<String, String> {
+    Ok(config::litellm_base_url())
+}
+
+/// Persists the LiteLLM base URL. Pass an empty string to reset to default.
+#[tauri::command]
+pub async fn save_litellm_base_url(url: String) -> Result<(), String> {
+    config::save_litellm_base_url(&url);
+    Ok(())
 }
 
 #[derive(Serialize)]

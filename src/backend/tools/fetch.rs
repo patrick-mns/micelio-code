@@ -192,8 +192,10 @@ mod tests {
 
     #[test]
     fn rejects_non_http_schemes() {
+        let root = std::path::PathBuf::from("/tmp");
         let ctx = ToolContext {
-            workspace_root: std::path::PathBuf::from("/tmp"),
+            workspace_root: root.clone(),
+            workspace_roots: vec![root],
             model_name: String::new(),
             vision_model: String::new(),
             history_len: 0,

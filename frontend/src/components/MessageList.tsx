@@ -48,7 +48,12 @@ export default function MessageList({ messages, renderedMessages, hoveredKey, se
       <div style={colStyle}>
         {messages.length === 0 && !streaming && (
           <div style={styles.empty}>
-            <div style={styles.emptyText}>How can I help you today?</div>
+            <div style={{ ...styles.emptyText, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+              <div>How can I help you today?</div>
+              <span style={{ fontSize: 12, opacity: 0.65, fontWeight: 'normal' }}>
+                Type below or click New Session to begin.
+              </span>
+            </div>
           </div>
         )}
 

@@ -8,6 +8,7 @@ import SystemPromptModal from '@/components/SystemPromptModal';
 import AboutModal from '@/components/AboutModal';
 import UpdateModal from '@/components/UpdateModal';
 import Sidebar from '@/components/Sidebar';
+import Onboarding from '@/components/Onboarding';
 import ScanOverlay from '@/components/ScanOverlay';
 import OpenInButton from '@/components/OpenInButton';
 import BgTasksChip, { BgTasksPanel } from '@/components/BgTasksChip';
@@ -103,6 +104,10 @@ export default function App() {
     gitRevertFile, gitRevertAll,
   } = useReview();
   const { switching, pickWorkspace } = useWorkspace();
+  const { loadCurrentWorkspace, currentWorkspace } = useStore();
+  // Gate the main UI behind having a workspace, but only after the initial load
+  // resolves — otherwise returning users would flash the onboarding screen.
+  const [wsReady, setWsReady] = useState(false);
 
   // Resizable widths for the two side panels (the wrapper width, including the
   // 8px float inset). Persisted + clamped by the hook.
@@ -110,8 +115,9 @@ export default function App() {
   const bgResize = usePanelResize({ storageKey: 'bgPanelWidth', defaultWidth: 328, min: 268, side: 'right' });
 
   useEffect(() => {
+    loadCurrentWorkspace().finally(() => setWsReady(true));
     ipc.getSettings().then(setSettings).catch(console.error);
-  }, []);
+  }, [loadCurrentWorkspace]);
 
   return (
     <div style={appStyles.root}>
@@ -120,7 +126,7 @@ export default function App() {
       <div style={appStyles.body}>
         <AnimatedPanel open={sidebarOpen} side="left" width={sidebarResize.width} resizing={sidebarResize.isResizing}>
           <Sidebar
-            workspaceName={switching ? 'Scanning…' : basename(settings?.workspace) || 'Open folder'}
+            workspaceName={switching ? 'Scanning…' : currentWorkspace?.name || 'Open folder'}
             onPickWorkspace={pickWorkspace}
             switching={switching}
             onOpenSettings={() => setShowSettings(true)}
@@ -146,7 +152,7 @@ export default function App() {
             </div>
 
             <div style={appStyles.center} data-tauri-drag-region>
-              <div className="seg-track">
+              <div className="seg-track" style={{ visibility: currentWorkspace ? 'visible' : 'hidden' }}>
                 {TABS.map(({ id, label, Icon }) => {
                   const active = activeTab === id;
                   return (
@@ -188,13 +194,21 @@ export default function App() {
           </div>
 
           <div style={appStyles.view}>
-            {/* Chat stays mounted across tab switches so an in-flight stream
-                keeps rendering when you leave to the treemap and come back. */}
-            <div style={{ display: activeTab === 'chat' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
-              <Chat />
-            </div>
-            {activeTab === 'treemap' && <TreemapView />}
-            {activeTab === 'usage' && <Usage />}
+            {/* No workspace yet → onboarding. Wait for the initial load so
+                returning users don't flash it. */}
+            {!wsReady ? null : !currentWorkspace ? (
+              <Onboarding />
+            ) : (
+              <>
+                {/* Chat stays mounted across tab switches so an in-flight stream
+                    keeps rendering when you leave to the treemap and come back. */}
+                <div style={{ display: activeTab === 'chat' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+                  <Chat />
+                </div>
+                {activeTab === 'treemap' && <TreemapView />}
+                {activeTab === 'usage' && <Usage />}
+              </>
+            )}
           </div>
         </div>
 
