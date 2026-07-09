@@ -4,7 +4,7 @@ import type { AppState } from './index';
 import { loadPrefs, savePrefs } from './_persist';
 
 export type TabId = 'chat' | 'treemap' | 'usage';
-export type SettingsCategoryId = 'chat' | 'providers' | 'workspace' | 'advanced';
+export type SettingsCategoryId = 'appearance' | 'chat' | 'providers' | 'workspace' | 'advanced';
 
 export interface UiSlice {
   activeTab: TabId;

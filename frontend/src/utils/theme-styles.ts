@@ -895,8 +895,14 @@ export const settingsModalStyles: Record<string, CSSProperties> = {
   sidebar: { width: 176, background: theme.bgDeep, padding: '16px 8px 12px 14px', display: 'flex', flexDirection: 'column', gap: 2, borderRight: `1px solid ${theme.card}` },
   sidebarTitle: { fontSize: 15, fontWeight: 600, color: theme.text, marginBottom: 14, paddingLeft: 4 },
   // nav items use .menu-item (buttons.css)
-  content: { flex: 1, padding: '14px 20px', position: 'relative', overflowY: 'auto' },
-  closeBtn: { position: 'absolute', top: 12, right: 12 },
+  content: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
+  header: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    height: 48, padding: '0 12px 0 20px', flexShrink: 0,
+    borderBottom: `1px solid ${theme.card}`,
+  },
+  headerTitle: { fontSize: 14, fontWeight: 600, color: theme.text },
+  body: { flex: 1, overflowY: 'auto', padding: '18px 20px' },
 };
 
 // ThemeSelect uses .seg-track/.seg-btn (buttons.css).
