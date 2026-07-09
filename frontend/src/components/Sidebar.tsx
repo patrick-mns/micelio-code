@@ -102,18 +102,20 @@ export default function Sidebar({
 
       {/* Workspaces → sessions tree */}
       <div style={sidebarStyles.sessionList}>
-        {/* Global new session button */}
-        <div
-          onClick={newSession}
-          tabIndex={0}
-          role="button"
-          style={sidebarStyles.newBtn}
-          onMouseEnter={(e) => { e.currentTarget.style.color = theme.accent; e.currentTarget.style.background = theme.cardActive; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = theme.faint; e.currentTarget.style.background = 'transparent'; }}
-        >
-          <Plus size={14} weight="bold" />
-          <span>New session</span>
-        </div>
+        {/* Global new session button — only when a workspace is loaded. */}
+        {currentWorkspace && (
+          <div
+            onClick={newSession}
+            tabIndex={0}
+            role="button"
+            style={sidebarStyles.newBtn}
+            onMouseEnter={(e) => { e.currentTarget.style.color = theme.accent; e.currentTarget.style.background = theme.cardActive; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = theme.faint; e.currentTarget.style.background = 'transparent'; }}
+          >
+            <Plus size={14} weight="bold" />
+            <span>New session</span>
+          </div>
+        )}
 
         {workspacesWithSessions.map((ws) => {
           const expanded = expandedWorkspaces.includes(ws.id);

@@ -54,8 +54,9 @@ export const workspaceSlice: StateCreator<
   loadCurrentWorkspace: async () => {
     set({ workspaceLoading: true });
     try {
-      const ws = await invoke<Workspace>('get_current_workspace');
-      set({ currentWorkspace: ws, expandedWorkspaces: [ws.id] });
+      // null when the app has no workspaces yet (fresh install / all deleted).
+      const ws = await invoke<Workspace | null>('get_current_workspace');
+      set({ currentWorkspace: ws, expandedWorkspaces: ws ? [ws.id] : [] });
       return ws;
     } catch (e) {
       console.error('Failed to load current workspace', e);
@@ -68,13 +69,17 @@ export const workspaceSlice: StateCreator<
   loadWorkspacesWithSessions: async () => {
     try {
       const list = await invoke<WorkspaceWithSessions[]>('list_all_workspaces_with_sessions');
+      // `is_current` is authoritative: it's set exactly when a workspace is
+      // loaded, and absent in the empty onboarding state — so fall back to null
+      // (not the stale previous value) when nothing is current.
+      const current = list.find((w) => w.is_current) ?? null;
       set((s) => ({
         workspacesWithSessions: list,
-        currentWorkspace: list.find((w) => w.is_current) ?? s.currentWorkspace,
+        currentWorkspace: current,
         expandedWorkspaces:
           s.expandedWorkspaces.length > 0
             ? s.expandedWorkspaces
-            : list.filter((w) => w.is_current).map((w) => w.id),
+            : current ? [current.id] : [],
       }));
     } catch (e) {
       console.error('Failed to load workspaces with sessions', e);

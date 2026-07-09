@@ -43,16 +43,8 @@ export default function WorkspaceSettings() {
     }
   }, [isEditing]);
 
-  if (!currentWorkspace) {
-    return (
-      <div style={{ padding: '24px 0', color: theme.dim, fontSize: 13 }}>
-        Loading workspace…
-      </div>
-    );
-  }
-
   const commitRename = async () => {
-    if (!isEditing) return;
+    if (!isEditing || !currentWorkspace) return;
     const trimmed = editingName.trim();
     if (!trimmed || trimmed === currentWorkspace.name) {
       setEditingName(currentWorkspace.name);
@@ -64,11 +56,13 @@ export default function WorkspaceSettings() {
   };
 
   const startEditing = () => {
+    if (!currentWorkspace) return;
     setEditingName(currentWorkspace.name);
     setIsEditing(true);
   };
 
   const handleAddFolder = async () => {
+    if (!currentWorkspace) return;
     setAddingFolder(true);
     try {
       const path = await ipc.pickFolder(currentWorkspace.folders[0]);
@@ -86,6 +80,7 @@ export default function WorkspaceSettings() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 8 }}>
 
+      {currentWorkspace && (<>
       {/* ── Current workspace name ── */}
       <Section title="WORKSPACE">
         <div style={workspaceSettingsStyles.listCard}>
@@ -157,6 +152,7 @@ export default function WorkspaceSettings() {
           {addingFolder ? 'Adding…' : 'Add folder'}
         </button>
       </Section>
+      </>)}
 
       {/* ── All workspaces ── */}
       <Section title="ALL WORKSPACES">
@@ -165,7 +161,7 @@ export default function WorkspaceSettings() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {workspacesWithSessions.map((ws) => {
-              const isCurrent = ws.id === currentWorkspace.id;
+              const isCurrent = ws.id === currentWorkspace?.id;
               return (
                 <div
                   key={ws.id}
@@ -176,34 +172,29 @@ export default function WorkspaceSettings() {
                     gap: 10,
                     padding: '9px 12px',
                     borderRadius: 6,
-                    background: isCurrent ? theme.bgDeep : 'transparent',
-                    border: `1px solid ${isCurrent ? theme.border : 'transparent'}`,
+                    background: 'transparent',
+                    border: '1px solid transparent',
                     cursor: !isCurrent && !workspaceLoading ? 'pointer' : 'default',
                     transition: 'background 0.1s, border-color 0.1s',
                     opacity: workspaceLoading && !isCurrent ? 0.5 : 1,
                     pointerEvents: workspaceLoading && !isCurrent ? 'none' : 'auto',
                   }}
                 >
-                  <FolderOpen size={16} color={isCurrent ? theme.accent : theme.dim} style={{ flexShrink: 0 }} />
+                  <FolderOpen size={16} color={theme.dim} style={{ flexShrink: 0 }} />
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
                     <span style={workspaceSettingsStyles.wsName}>{ws.name}</span>
                     <span style={workspaceSettingsStyles.wsPath}>
                       {ws.folders.length} folder{ws.folders.length !== 1 ? 's' : ''}
                     </span>
                   </div>
-                  {isCurrent && (
-                    <span style={workspaceSettingsStyles.activeBadge}>Active</span>
-                  )}
-                  {!isCurrent && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete workspace "${ws.name}"?`)) deleteWorkspace(ws.id); }}
-                      className="icon-btn-sm"
-                      title="Delete workspace"
-                      style={{ flexShrink: 0, color: theme.dim, opacity: 0.5 }}
-                    >
-                      <Trash size={13} />
-                    </button>
-                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete workspace "${ws.name}"?`)) deleteWorkspace(ws.id); }}
+                    className="icon-btn-sm"
+                    title="Delete workspace"
+                    style={{ flexShrink: 0, color: theme.dim, opacity: 0.5 }}
+                  >
+                    <Trash size={13} />
+                  </button>
                 </div>
               );
             })}
