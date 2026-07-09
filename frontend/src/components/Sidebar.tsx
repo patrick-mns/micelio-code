@@ -29,7 +29,7 @@ export default function Sidebar({
     setSettingsCategory, setShowSettings,
     workspacesWithSessions, loadWorkspacesWithSessions,
     switchWorkspace, expandedWorkspaces, toggleExpandedWorkspace,
-    currentWorkspace,
+    currentWorkspace, setAgentStatus,
   } = useStore();
 
   const refresh = (): Promise<SessionInfo[]> =>
@@ -67,6 +67,7 @@ export default function Sidebar({
   const switchTo = async (id: string, active: boolean) => {
     if (active) { setActiveTab('chat'); return; }
     setCurrentSession(id);
+    setAgentStatus(id, 'idle');
     const msgs = await ipc.switchSession(id).catch(() => null);
     if (msgs) setMessages(id, msgs);
     loadSessionModels(id);
@@ -292,6 +293,7 @@ function SessionItem({
 }) {
   const [hover, setHover] = React.useState(false);
   const isActive = session.active && isCurrentWs;
+  const dotColor = useDotColor(session.id, isActive);
 
   return (
     <div
@@ -309,9 +311,9 @@ function SessionItem({
     >
       <span style={{
         width: 6, height: 6, borderRadius: '50%',
-        background: isActive ? theme.accent : theme.faint,
+        background: dotColor,
         flexShrink: 0,
-        marginLeft: 3, // Align with the Caret collapse button above
+        marginLeft: 3,
       }} />
       <span style={{
         flex: 1, fontSize: 12.5,
@@ -334,6 +336,23 @@ function SessionItem({
       </span>
     </div>
   );
+}
+
+/** Map agent status to a dot color (or fallback to the existing active/faint logic). */
+function useDotColor(sessionId: string, isActive: boolean): string {
+  const status = useStore((s) => s.agentStatus[sessionId]) ?? 'idle';
+
+  if (status === 'idle') {
+    return isActive ? theme.accent : theme.faint;
+  }
+
+  const dotColors: Record<string, string> = {
+    running:        theme.warn,
+    awaiting_input: theme.accent,
+    error:          theme.error,
+    complete:       theme.success,
+  };
+  return dotColors[status] ?? (isActive ? theme.accent : theme.faint);
 }
 
 
