@@ -23,11 +23,13 @@ export const appStyles: Record<string, CSSProperties> = {
     paddingInline: 12,
   },
   trafficGap: { width: 72, flexShrink: 0 },
-  // Left/right get equal flex so the segmented control stays truly centered
-  // regardless of how many action buttons each side holds.
-  headerLeft: { flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 },
-  headerRight: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, minWidth: 0 },
-  center: { display: 'flex', justifyContent: 'center', flexShrink: 0 },
+  // Left and right columns use flex-shrink:0 so their buttons/icons never
+  // collapse when the window is narrow.  The center tabs area (flex:1) is
+  // the only zone that shrinks — it fills the remaining space and clips its
+  // overflow so the header never invades the right-side controls.
+  headerLeft: { flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8 },
+  headerRight: { flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
+  center: { flex: '1 1 auto', display: 'flex', justifyContent: 'center', minWidth: 0, overflow: 'hidden' },
   // Tabs (.seg-track/.seg-btn) and the sidebar toggle (.icon-btn) are styled
   // via the unified button classes in buttons.css.
   body: { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'row' },

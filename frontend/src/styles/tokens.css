@@ -66,3 +66,183 @@
 
   --overlay: 0, 0, 0;
 }
+
+/* ── Accent Color Variants ───────────────────────────────
+   Applied via data-accent on <html>, e.g. <html data-accent="blue">.
+   Override only the accent-related variables. */
+:root[data-accent='blue'] {
+  --color-accent: #58a6ff;
+  --color-accent-hover: #79c0ff;
+}
+:root[data-accent='purple'] {
+  --color-accent: #bc8cff;
+  --color-accent-hover: #d2a8ff;
+}
+:root[data-accent='pink'] {
+  --color-accent: #f778ba;
+  --color-accent-hover: #f9a8d4;
+}
+:root[data-accent='orange'] {
+  --color-accent: #f0883e;
+  --color-accent-hover: #f5a623;
+}
+:root[data-accent='teal'] {
+  --color-accent: #56d4c9;
+  --color-accent-hover: #7ae2d9;
+}
+
+/* Light accent overrides match the light theme's values */
+:root[data-theme='light'][data-accent='blue'] {
+  --color-accent: #0969da;
+  --color-accent-hover: #0a7cef;
+}
+:root[data-theme='light'][data-accent='purple'] {
+  --color-accent: #8250df;
+  --color-accent-hover: #9360f0;
+}
+:root[data-theme='light'][data-accent='pink'] {
+  --color-accent: #d63384;
+  --color-accent-hover: #e4409a;
+}
+:root[data-theme='light'][data-accent='orange'] {
+  --color-accent: #d4661a;
+  --color-accent-hover: #e8782a;
+}
+:root[data-theme='light'][data-accent='teal'] {
+  --color-accent: #1b9e8a;
+  --color-accent-hover: #22b8a0;
+}
+
+/* ── Theme Variants ──────────────────────────────────────
+   Applied via data-variant on <html>, e.g. <html data-variant="sepia">. */
+/* Sepia — warm, paper-like tones */
+:root[data-variant='sepia'] {
+  --color-bg-deep: #2a241c;
+  --color-bg: #322a1f;
+  --color-card: #3d3427;
+  --color-card-active: #4a3f30;
+  --color-border: #5a4e3e;
+  --color-text-strong: #f0e6d3;
+  --color-text: #d8cdb8;
+  --color-text-soft: #b0a593;
+  --color-dim: #8c8270;
+  --color-faint: #6b6254;
+  --color-code-bg: #241e17;
+  --overlay: 255, 255, 255;
+}
+:root[data-theme='light'][data-variant='sepia'] {
+  --color-bg-deep: #f4ecd8;
+  --color-bg: #faf3e0;
+  --color-card: #fffbf0;
+  --color-card-active: #f0e8d0;
+  --color-border: #ddd0b8;
+  --color-text-strong: #2b261e;
+  --color-text: #3d3528;
+  --color-text-soft: #6b5f4e;
+  --color-dim: #8c8070;
+  --color-faint: #b0a594;
+  --overlay: 0, 0, 0;
+}
+
+/* High contrast — increased contrast for accessibility */
+:root[data-variant='high-contrast'] {
+  --color-bg-deep: #000000;
+  --color-bg: #0a0a0a;
+  --color-card: #1a1a1a;
+  --color-card-active: #2a2a2a;
+  --color-border: #555555;
+  --color-text-strong: #ffffff;
+  --color-text: #ffffff;
+  --color-text-soft: #e0e0e0;
+  --color-dim: #aaaaaa;
+  --color-faint: #888888;
+  --color-code-bg: #000000;
+  --overlay: 255, 255, 255;
+}
+:root[data-theme='light'][data-variant='high-contrast'] {
+  --color-bg-deep: #ffffff;
+  --color-bg: #ffffff;
+  --color-card: #f0f0f0;
+  --color-card-active: #e0e0e0;
+  --color-border: #666666;
+  --color-text-strong: #000000;
+  --color-text: #000000;
+  --color-text-soft: #333333;
+  --color-dim: #555555;
+  --color-faint: #777777;
+  --overlay: 0, 0, 0;
+}
+
+/* Nord — cold, arctic blue tones */
+:root[data-variant='nord'] {
+  --color-bg-deep: #242933;
+  --color-bg: #2e3440;
+  --color-card: #3b4252;
+  --color-card-active: #434c5e;
+  --color-border: #4c566a;
+  --color-text-strong: #eceff4;
+  --color-text: #d8dee9;
+  --color-text-soft: #b0b8c8;
+  --color-dim: #8c94a8;
+  --color-faint: #6c7488;
+  --color-code-bg: #1e222a;
+  --color-success: #a3be8c;
+  --color-error: #bf616a;
+  --color-warn: #d08770;
+  --overlay: 255, 255, 255;
+}
+:root[data-theme='light'][data-variant='nord'] {
+  --color-bg-deep: #e5e9f0;
+  --color-bg: #eceff4;
+  --color-card: #ffffff;
+  --color-card-active: #e5e9f0;
+  --color-border: #d8dee9;
+  --color-text-strong: #2e3440;
+  --color-text: #3b4252;
+  --color-text-soft: #5e687a;
+  --color-dim: #7c869a;
+  --color-faint: #9ca4b8;
+  --color-success: #6a9955;
+  --color-error: #c04040;
+  --color-warn: #b07040;
+  --overlay: 0, 0, 0;
+}
+
+/* Dracula — purple/magenta dark tones */
+:root[data-variant='dracula'] {
+  --color-bg-deep: #1e1e2e;
+  --color-bg: #282a36;
+  --color-card: #363849;
+  --color-card-active: #404256;
+  --color-border: #4e5066;
+  --color-text-strong: #f8f8f2;
+  --color-text: #e0e0e0;
+  --color-text-soft: #b8b8c8;
+  --color-dim: #9090a8;
+  --color-faint: #707088;
+  --color-code-bg: #1a1a2e;
+  --color-accent: #bd93f9;
+  --color-accent-hover: #caa9fa;
+  --color-success: #50fa7b;
+  --color-error: #ff5555;
+  --color-warn: #f1fa8c;
+  --overlay: 255, 255, 255;
+}
+:root[data-theme='light'][data-variant='dracula'] {
+  --color-bg-deep: #f0ecf4;
+  --color-bg: #f7f4fa;
+  --color-card: #ffffff;
+  --color-card-active: #ede8f2;
+  --color-border: #d8d0e0;
+  --color-text-strong: #1e1e2e;
+  --color-text: #2d2b40;
+  --color-text-soft: #5c5870;
+  --color-dim: #807c98;
+  --color-faint: #a8a4bc;
+  --color-accent: #8250df;
+  --color-accent-hover: #9360f0;
+  --color-success: #3fb950;
+  --color-error: #cf222e;
+  --color-warn: #bc6c1e;
+  --overlay: 0, 0, 0;
+}

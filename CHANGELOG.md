@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.6.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.5.0...micelio-v0.6.0) (2026-07-10)
+
+
+### Features
+
+* agent modes, styled confirms, and workspace session fixes ([#28](https://github.com/patrick-mns/micelio-code/issues/28)) ([3ba34c1](https://github.com/patrick-mns/micelio-code/commit/3ba34c162cbade8da021b049148575611202d118))
+
+## [0.5.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.4.0...micelio-v0.5.0) (2026-07-09)
+
+
+### Features
+
+* **app:** custom title bar for Windows and Linux ([0a25c80](https://github.com/patrick-mns/micelio-code/commit/0a25c805f692d220b62981cccd7b5e564879f55e))
+* **ui:** render ask_user question text as markdown in QuestionCard ([926a603](https://github.com/patrick-mns/micelio-code/commit/926a603065014f1746a8704e027ee13cb933897d))
+
+
+### Bug Fixes
+
+* **chat:** honor "Show thinking" toggle in MessageList ([56502f7](https://github.com/patrick-mns/micelio-code/commit/56502f723a940fe525a5720c716f4e4cad58aa70))
+* **chat:** honor "Show thinking" toggle in MessageList ([422d244](https://github.com/patrick-mns/micelio-code/commit/422d244bd5f48bc4462823a12889257d7da0d761))
+* **treemap:** re-busca o grafo ao trocar de pasta ativa ([6180139](https://github.com/patrick-mns/micelio-code/commit/6180139a8ac0248357c3d5a679095952963865e0))
+* **treemap:** re-fetch graph when switching active folder ([b7b4a63](https://github.com/patrick-mns/micelio-code/commit/b7b4a63f6baf39665d2c5a193e4a0933893c3d6c))
+* **ui:** use btn-ghost variant for Reject button in EditApprovalCard ([cd590c4](https://github.com/patrick-mns/micelio-code/commit/cd590c4969fa92900e8445a32c525a5cf7d05739))
+
 ## [0.4.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.3.7...micelio-v0.4.0) (2026-07-09)
 
 
