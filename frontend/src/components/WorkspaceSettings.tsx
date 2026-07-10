@@ -5,6 +5,7 @@ import Section from './Section';
 import { Plus, Trash, FolderOpen } from '@phosphor-icons/react';
 import { ipc } from '@/ipc';
 import { fieldStyles } from '@/utils/theme-styles';
+import ConfirmModal from './ConfirmModal';
 
 const MONO = 'ui-monospace, SFMono-Regular, monospace';
 
@@ -25,6 +26,7 @@ export default function WorkspaceSettings() {
   const [name, setName] = useState('');
   const [createName, setCreateName] = useState('');
   const [addingFolder, setAddingFolder] = useState(false);
+  const [confirmDeleteWs, setConfirmDeleteWs] = useState<string | null>(null); // workspace id or null
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadWorkspacesWithSessions(); }, [loadWorkspacesWithSessions]);
@@ -151,7 +153,7 @@ export default function WorkspaceSettings() {
                     </span>
                   </div>
                   <button
-                    onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete workspace "${ws.name}"?`)) deleteWorkspace(ws.id); }}
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteWs(ws.id); }}
                     className="icon-btn-sm"
                     title="Delete workspace"
                     style={{ flexShrink: 0 }}
@@ -177,6 +179,16 @@ export default function WorkspaceSettings() {
           </button>
         </form>
       </Section>
+
+      <ConfirmModal
+        open={!!confirmDeleteWs}
+        title="Delete workspace"
+        message="This will permanently delete the workspace and all its chats. This action cannot be undone."
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => { if (confirmDeleteWs) deleteWorkspace(confirmDeleteWs); setConfirmDeleteWs(null); }}
+        onCancel={() => setConfirmDeleteWs(null)}
+      />
     </div>
   );
 }

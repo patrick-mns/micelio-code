@@ -1,4 +1,4 @@
-import React, { useEffect, type CSSProperties } from 'react';
+import React, { useEffect, useState, type CSSProperties } from 'react';
 import { sidebarStyles } from '@/utils/theme-styles';
 import {
   Trash, FolderOpen,
@@ -17,11 +17,12 @@ interface SidebarProps {
   switching: boolean;
   onOpenSettings: () => void;
   onOpenUpdate: () => void;
+  onDeleteSession: (id: string) => void;
 }
 
 export default function Sidebar({
   workspaceName, onPickWorkspace, switching,
-  onOpenSettings, onOpenUpdate,
+  onOpenSettings, onOpenUpdate, onDeleteSession,
 }: SidebarProps) {
   const {
     sessions, setSessions, setMessages, setActiveTab,
@@ -33,14 +34,14 @@ export default function Sidebar({
     currentWorkspace, setAgentStatus,
   } = useStore();
 
+  const platform = usePlatform();
+
   const refresh = (): Promise<SessionInfo[]> =>
     ipc.listSessions().then((list) => { setSessions(list); return list; }).catch(() => []);
 
   const loadSessionModels = async (id: string) => {
     try { setSessionModels(id, await ipc.getSessionModels(id)); } catch {}
   };
-
-  const platform = usePlatform();
 
   useEffect(() => { loadWorkspacesWithSessions(); }, [loadWorkspacesWithSessions]);
 
@@ -89,22 +90,7 @@ export default function Sidebar({
 
   const deleteSession = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    const nextId = await ipc.deleteSession(id).catch(() => null);
-    // nextId can be null (error), a valid session_id, or "" (empty = no sessions left)
-    if (nextId) {
-      const msgs = await ipc.getHistory().catch(() => []);
-      setCurrentSession(nextId);
-      setMessages(nextId, msgs);
-    } else {
-      // No sessions left — clear chat state synchronously so the Chat view
-      // doesn't fall back to the stale `sessions` array (which still contains
-      // the deleted session with active:true) and re-render the old conversation.
-      setSessions([]);
-      setCurrentSession(null);
-      setMessages('', []);
-    }
-    refresh();
-    loadWorkspacesWithSessions();
+    onDeleteSession(id);
   };
 
   const handleWsHeaderClick = async (id: string) => {

@@ -8,6 +8,7 @@ import SystemPromptModal from '@/components/SystemPromptModal';
 import AboutModal from '@/components/AboutModal';
 import UpdateModal from '@/components/UpdateModal';
 import Sidebar from '@/components/Sidebar';
+import ConfirmModal from '@/components/ConfirmModal';
 import Onboarding from '@/components/Onboarding';
 import ScanOverlay from '@/components/ScanOverlay';
 import OpenInButton from '@/components/OpenInButton';
@@ -54,6 +55,7 @@ export default function App() {
   const [sysPromptOpen, setSysPromptOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
+  const [confirmDeleteSession, setConfirmDeleteSession] = useState<string | null>(null);
 
   // Set up background update check
   useEffect(() => {
@@ -108,6 +110,25 @@ export default function App() {
   } = useReview();
   const { switching, pickWorkspace } = useWorkspace();
   const { loadCurrentWorkspace, currentWorkspace } = useStore();
+
+  const handleDeleteSessionConfirm = async () => {
+    const id = confirmDeleteSession;
+    if (!id) return;
+    setConfirmDeleteSession(null);
+    const { setSessions, setCurrentSession, setMessages, loadSessions } = useStore.getState();
+    const nextId = await ipc.deleteSession(id).catch(() => null);
+    if (nextId) {
+      const msgs = await ipc.getHistory().catch(() => []);
+      setCurrentSession(nextId);
+      setMessages(nextId, msgs);
+      await loadSessions();
+    } else {
+      setSessions([]);
+      setCurrentSession(null);
+      setMessages('', []);
+    }
+  };
+
   // Gate the main UI behind having a workspace, but only after the initial load
   // resolves — otherwise returning users would flash the onboarding screen.
   const [wsReady, setWsReady] = useState(false);
@@ -134,6 +155,7 @@ export default function App() {
             switching={switching}
             onOpenSettings={() => setShowSettings(true)}
             onOpenUpdate={() => setUpdateOpen(true)}
+            onDeleteSession={(id) => setConfirmDeleteSession(id)}
           />
         </AnimatedPanel>
         {sidebarOpen && <ResizeHandle onMouseDown={sidebarResize.startResize} />}
@@ -245,6 +267,15 @@ export default function App() {
       {sysPromptOpen && <SystemPromptModal onClose={() => setSysPromptOpen(false)} />}
       {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
       {updateOpen && <UpdateModal onClose={() => setUpdateOpen(false)} />}
+      <ConfirmModal
+        open={confirmDeleteSession !== null}
+        title="Delete session"
+        message="This will permanently delete this session and its history. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        onConfirm={handleDeleteSessionConfirm}
+        onCancel={() => setConfirmDeleteSession(null)}
+      />
       <Toasts />
     </div>
   );
