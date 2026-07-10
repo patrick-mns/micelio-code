@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.5.0...micelio-v0.6.0) (2026-07-10)
+
+
+### Features
+
+* agent modes, styled confirms, and workspace session fixes ([#28](https://github.com/patrick-mns/micelio-code/issues/28)) ([3ba34c1](https://github.com/patrick-mns/micelio-code/commit/3ba34c162cbade8da021b049148575611202d118))
+
 ## [0.5.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.4.0...micelio-v0.5.0) (2026-07-09)
 
 
