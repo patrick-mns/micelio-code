@@ -81,7 +81,9 @@
 }
 
 /* ── Window control buttons (minimize / maximize / close) ────────────────────
-   For custom titlebar buttons. Hover overlay and close hover follow OS pattern. */
+   For custom titlebar buttons. Base background is transparent so hover can paint
+   over it — never set background inline on these buttons. */
+.win-btn { background: transparent; }
 .win-btn:hover { background: rgba(var(--overlay), 0.08); }
 .win-btn-close:hover { background: #e81123 !important; color: #fff !important; }
 

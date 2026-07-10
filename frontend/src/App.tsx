@@ -28,6 +28,7 @@ import { ipc } from '@/ipc';
 import type { TabId } from '@/store/uiSlice';
 import { appStyles } from '@/utils/theme-styles';
 import WindowControls from '@/components/WindowControls';
+import ResizeEdgeHandles from '@/components/ResizeEdgeHandles';
 
 // Thin draggable strip rendered in the gap between two side panels. Lives in
 // the flex flow (not inside a panel), so it never overlaps a panel's scrollbar.
@@ -205,7 +206,7 @@ export default function App() {
             </div>
 
             {/* --- Right --- */}
-            <div style={appStyles.headerRight}>
+            <div style={{ ...appStyles.headerRight, alignSelf: 'stretch' }}>
               <button
                 className="btn btn-icon btn-ghost"
                 style={{ color: aboutOpen ? theme.text : theme.dim }}
@@ -282,6 +283,7 @@ export default function App() {
         onCancel={() => setConfirmDeleteSession(null)}
       />
       <Toasts />
+      {platform.showWindowControls && <ResizeEdgeHandles />}
     </div>
   );
 }

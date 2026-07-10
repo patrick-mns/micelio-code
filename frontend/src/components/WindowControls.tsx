@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 const btn: React.CSSProperties = {
@@ -8,7 +8,6 @@ const btn: React.CSSProperties = {
   width: 46,
   height: '100%',
   border: 'none',
-  background: 'transparent',
   cursor: 'pointer',
   color: 'var(--color-dim)',
   transition: 'background 0.1s, color 0.1s',
@@ -17,30 +16,47 @@ const btn: React.CSSProperties = {
   zIndex: 10,
 };
 
-const closeHoverBg = '#e81123';
-const closeHoverColor = '#fff';
-
 export default function WindowControls() {
-  const win = getCurrentWindow();
+  const win = useMemo(() => {
+    try {
+      return getCurrentWindow();
+    } catch (e) {
+      console.error('[WindowControls] getCurrentWindow failed:', e);
+      return null;
+    }
+  }, []);
 
-  const handleMinimize = useCallback(() => {
-    win.minimize().catch(console.error);
+  const handleMinimize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('[WindowControls] minimize clicked, win=', !!win);
+    if (!win) return;
+    win.minimize().catch((err) => console.error('[WindowControls] minimize failed:', err));
   }, [win]);
 
-  const handleMaximize = useCallback(() => {
-    win.toggleMaximize().catch(console.error);
+  const handleMaximize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('[WindowControls] maximize clicked, win=', !!win);
+    if (!win) return;
+    win.toggleMaximize().catch((err) => console.error('[WindowControls] toggleMaximize failed:', err));
   }, [win]);
 
-  const handleClose = useCallback(() => {
-    win.close().catch(console.error);
+  const handleClose = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('[WindowControls] close clicked, win=', !!win);
+    if (!win) return;
+    win.close().catch((err) => console.error('[WindowControls] close failed:', err));
   }, [win]);
 
   return (
     <div
       style={{
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'stretch',
         height: '100%',
+        alignSelf: 'stretch',
         userSelect: 'none',
       }}
     >
@@ -48,7 +64,7 @@ export default function WindowControls() {
       <button
         className="win-btn"
         style={btn}
-        onClick={handleMinimize}
+        onMouseDown={handleMinimize}
         aria-label="Minimize"
         title="Minimize"
       >
@@ -61,7 +77,7 @@ export default function WindowControls() {
       <button
         className="win-btn"
         style={btn}
-        onClick={handleMaximize}
+        onMouseDown={handleMaximize}
         aria-label="Maximize"
         title="Maximize"
       >
@@ -74,7 +90,7 @@ export default function WindowControls() {
       <button
         className="win-btn win-btn-close"
         style={btn}
-        onClick={handleClose}
+        onMouseDown={handleClose}
         aria-label="Close"
         title="Close"
       >
