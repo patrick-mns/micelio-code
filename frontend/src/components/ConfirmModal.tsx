@@ -1,6 +1,7 @@
 import React, { useState, useEffect, type CSSProperties } from 'react';
 import { modalStyles } from '@/utils/theme-styles';
 import { theme } from '@/theme';
+import { useI18n } from '@/i18n';
 
 interface ConfirmModalProps {
   open: boolean;
@@ -26,6 +27,9 @@ export default function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const { t } = useI18n();
+  const confirmText = confirmLabel || t('sidebar.deleteBtn');
+  const cancelText = cancelLabel || t('sidebar.cancelBtn');
   const [show, setShow] = useState(false);
 
   useEffect(() => {
@@ -123,7 +127,7 @@ export default function ConfirmModal({
               cursor: 'pointer',
             }}
           >
-            {cancelLabel}
+            {cancelText}
           </button>
           <button
             onClick={onConfirm}
@@ -138,7 +142,7 @@ export default function ConfirmModal({
               cursor: 'pointer',
             }}
           >
-            {confirmLabel}
+            {confirmText}
           </button>
         </div>
       </div>
