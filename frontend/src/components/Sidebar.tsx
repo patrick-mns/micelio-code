@@ -59,6 +59,14 @@ export default function Sidebar({
     return () => unsub?.();
   }, []);
 
+  useEffect(() => {
+    let unsub: UnlistenFn | undefined;
+    ipc.onSessionCreated(() => {
+      loadWorkspacesWithSessions();
+    }).then((u) => { unsub = u; });
+    return () => unsub?.();
+  }, []);
+
   const newSession = async () => {
     const id = await ipc.newSession().catch(() => null);
     if (id) { setCurrentSession(id); setMessages(id, []); loadSessionModels(id); }
@@ -82,10 +90,18 @@ export default function Sidebar({
   const deleteSession = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     const nextId = await ipc.deleteSession(id).catch(() => null);
+    // nextId can be null (error), a valid session_id, or "" (empty = no sessions left)
     if (nextId) {
       const msgs = await ipc.getHistory().catch(() => []);
       setCurrentSession(nextId);
       setMessages(nextId, msgs);
+    } else {
+      // No sessions left — clear chat state synchronously so the Chat view
+      // doesn't fall back to the stale `sessions` array (which still contains
+      // the deleted session with active:true) and re-render the old conversation.
+      setSessions([]);
+      setCurrentSession(null);
+      setMessages('', []);
     }
     refresh();
     loadWorkspacesWithSessions();

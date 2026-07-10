@@ -271,6 +271,8 @@ export default function Chat() {
       try {
         const nextId = await ipc.newSession();
         await useStore.getState().loadSessions();
+        await useStore.getState().loadWorkspacesWithSessions();
+        useStore.getState().setCurrentSession(nextId);
         activeSession = nextId;
       } catch (e) {
         console.error('Failed to auto-create session', e);

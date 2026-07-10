@@ -95,6 +95,8 @@ export const ipc = {
   onSummarizeProgress: (cb: (p: SummarizeProgress) => void) => on<SummarizeProgress>('summarize_progress', cb),
   onSummarizeDone: (cb: (p: SummarizeProgress) => void) => on<SummarizeProgress>('summarize_done', cb),
   onSessionTitle: (cb: (p: SessionTitle) => void) => on<SessionTitle>('session_title', cb),
+  onSessionCreated: (cb: (p: { session_id: string }) => void) => on<{ session_id: string }>('session_created', cb),
+  onSessionSwitched: (cb: (p: { session_id: string }) => void) => on<{ session_id: string }>('session_switched', cb),
 
   listOpeners: () => invoke<Opener[]>('list_openers'),
   openIn: (app: string) => invoke<void>('open_in', { app }),
