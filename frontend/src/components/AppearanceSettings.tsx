@@ -60,15 +60,21 @@ export default function AppearanceSettings() {
             value={locale}
             onChange={(e) => setLocale(e.target.value as Locale)}
             style={{
-              background: 'var(--color-bg-deep)',
+              background: 'var(--color-card)',
               border: '1px solid var(--color-border)',
               borderRadius: 'var(--radius-sm)',
-              padding: '4px 8px',
-              fontSize: 12,
+              padding: '5px 24px 5px 10px',
+              fontSize: 11.5,
+              fontWeight: 500,
               color: 'var(--color-text)',
               fontFamily: 'inherit',
               cursor: 'pointer',
               outline: 'none',
+              appearance: 'none',
+              WebkitAppearance: 'none',
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238c8a82'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 8px center',
             }}
           >
             {LOCALE_OPTIONS.map((opt) => (
