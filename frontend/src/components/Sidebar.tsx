@@ -8,7 +8,6 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 import { ipc } from '@/ipc';
 import { useStore, type SessionBrief } from '@/store';
 import { theme } from '@/theme';
-import { useI18n } from '@/i18n';
 import { usePlatform } from '@/hooks/usePlatform';
 import type { SessionInfo } from '@/types';
 
@@ -35,7 +34,6 @@ export default function Sidebar({
     currentWorkspace, setAgentStatus,
   } = useStore();
 
-  const { t } = useI18n();
   const platform = usePlatform();
 
   const refresh = (): Promise<SessionInfo[]> =>
@@ -121,7 +119,7 @@ export default function Sidebar({
             onMouseLeave={(e) => { e.currentTarget.style.color = theme.faint; e.currentTarget.style.background = 'transparent'; }}
           >
             <Plus size={14} weight="bold" />
-            <span>{t('sidebar.newSession')}</span>
+            <span>New session</span>
           </div>
         )}
 
@@ -164,7 +162,7 @@ export default function Sidebar({
                 <div style={{ margin: '2px 0 14px', display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {ws.sessions.length === 0 && (
                     <div style={{ display: 'flex', alignItems: 'center', padding: '6px 14px 6px 36px', margin: '0 6px', fontSize: 11.5, color: theme.faint, fontWeight: 400 }}>
-                        {t('sidebar.noConversations')}
+                        No conversations
                     </div>
                   )}
                   {ws.sessions.map((s) => (
@@ -197,11 +195,11 @@ export default function Sidebar({
           className="btn btn-ghost"
           style={sidebarStyles.gearBtn}
           onClick={() => { setSettingsCategory('workspace'); setShowSettings(true); }}
-          title={t('sidebar.openSettings')}
+          title="Workspace settings"
         >
           <FolderOpen size={15} />
         </button>
-        <button className="btn btn-ghost" style={sidebarStyles.gearBtn} onClick={onOpenSettings} title={t('sidebar.openSettings')}>
+        <button className="btn btn-ghost" style={sidebarStyles.gearBtn} onClick={onOpenSettings} title="All settings">
           <Gear size={17} />
         </button>
       </div>
@@ -298,7 +296,6 @@ function SessionItem({
   onSwitch: () => void;
   onDelete: (e: React.MouseEvent) => void;
 }) {
-  const { t } = useI18n();
   const [hover, setHover] = React.useState(false);
   const isActive = session.active && isCurrentWs;
   const dotColor = useDotColor(session.id, isActive);
@@ -328,7 +325,7 @@ function SessionItem({
         color: isActive ? theme.text : theme.textSoft,
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}>
-        {session.title || t('sidebar.newSession')}
+        {session.title || 'New session'}
       </span>
       <span
         onClick={onDelete}
@@ -338,7 +335,7 @@ function SessionItem({
           opacity: hover ? 1 : 0,
           transition: 'opacity 0.1s',
         }}
-        title={t('sidebar.deleteBtn')}
+        title="Delete"
       >
         <Trash size={11} />
       </span>
@@ -365,14 +362,13 @@ function useDotColor(sessionId: string, isActive: boolean): string {
 
 
 function UpdateStatusBar({ onOpenUpdate }: { onOpenUpdate: () => void }) {
-  const { t } = useI18n();
   const { update } = useStore();
   const [hover, setHover] = React.useState(false);
 
   if (update.status !== 'available' && update.status !== 'ready') return null;
 
   const icon = <DownloadSimple size={15} color={theme.accent} />;
-  const label = update.status === 'ready' ? t('update.restartLabel') : `${t('update.available')}: v${update.version}`;
+  const label = update.status === 'ready' ? 'Restart to update' : `Update available: v${update.version}`;
   const color = theme.text;
 
   return (

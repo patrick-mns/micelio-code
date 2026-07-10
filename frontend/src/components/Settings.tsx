@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ChatCircle, Cloud, FolderOpen, Wrench, Palette, X, type Icon } from '@phosphor-icons/react';
 import { theme } from '@/theme';
-import { useI18n } from '@/i18n';
 import AppearanceSettings from './AppearanceSettings';
 import ChatSettings from './ChatSettings';
 import ProviderSettings from './ProviderSettings';
@@ -13,12 +12,12 @@ import { ipc } from '@/ipc';
 import { useStore } from '@/store';
 import type { SettingsCategoryId } from '@/store/uiSlice';
 
-const CATEGORIES: { id: SettingsCategoryId; Icon: Icon; Panel: React.ComponentType }[] = [
-  { id: 'appearance', Icon: Palette, Panel: AppearanceSettings },
-  { id: 'chat', Icon: ChatCircle, Panel: ChatSettings },
-  { id: 'providers', Icon: Cloud, Panel: ProviderSettings },
-  { id: 'workspace', Icon: FolderOpen, Panel: WorkspaceSettings },
-  { id: 'advanced', Icon: Wrench, Panel: AdvancedSettings },
+const CATEGORIES: { id: SettingsCategoryId; label: string; Icon: Icon; Panel: React.ComponentType }[] = [
+  { id: 'appearance', label: 'Appearance', Icon: Palette, Panel: AppearanceSettings },
+  { id: 'chat', label: 'Chat', Icon: ChatCircle, Panel: ChatSettings },
+  { id: 'providers', label: 'Providers', Icon: Cloud, Panel: ProviderSettings },
+  { id: 'workspace', label: 'Workspace', Icon: FolderOpen, Panel: WorkspaceSettings },
+  { id: 'advanced', label: 'Advanced', Icon: Wrench, Panel: AdvancedSettings },
 ];
 
 interface SettingsProps {
@@ -26,7 +25,6 @@ interface SettingsProps {
 }
 
 export default function Settings({ onClose }: SettingsProps) {
-  const { t } = useI18n();
   const { settingsCategory: category, setSettingsCategory: setCategory } = useStore();
   const [version, setVersion] = useState('');
   const active = CATEGORIES.find((c) => c.id === category) ?? CATEGORIES[0];
@@ -40,8 +38,8 @@ export default function Settings({ onClose }: SettingsProps) {
       <div style={modalStyles.modal} onClick={(e) => e.stopPropagation()}>
         {/* Sidebar */}
         <div style={modalStyles.sidebar}>
-          <div style={modalStyles.sidebarTitle}>{t('settings.title')}</div>
-          {CATEGORIES.map(({ id, Icon }) => {
+          <div style={modalStyles.sidebarTitle}>Settings</div>
+          {CATEGORIES.map(({ id, label, Icon }) => {
             const selected = category === id;
             return (
               <button
@@ -50,7 +48,7 @@ export default function Settings({ onClose }: SettingsProps) {
                 className={selected ? 'menu-item is-active' : 'menu-item'}
               >
                 <Icon size={15} color={selected ? theme.accent : theme.dim} />
-                {t('settings.' + id)}
+                {label}
               </button>
             );
           })}
@@ -63,8 +61,8 @@ export default function Settings({ onClose }: SettingsProps) {
         {/* Content */}
         <div style={modalStyles.content}>
           <div style={modalStyles.header}>
-            <span style={modalStyles.headerTitle}>{t('settings.' + active.id)}</span>
-            <button onClick={onClose} className="close-btn" title={t('settings.close')}>
+            <span style={modalStyles.headerTitle}>{active.label}</span>
+            <button onClick={onClose} className="close-btn" title="Close">
               <X size={15} />
             </button>
           </div>

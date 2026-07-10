@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { FolderOpen, Plus } from '@phosphor-icons/react';
 import { useStore } from '@/store';
-import { useI18n } from '@/i18n';
 import { ipc } from '@/ipc';
 import { theme } from '@/theme';
 
@@ -11,7 +10,6 @@ import { theme } from '@/theme';
  * silently bootstrapping a phantom default.
  */
 export default function Onboarding() {
-  const { t } = useI18n();
   const { createWorkspace, workspaceLoading } = useStore();
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -50,9 +48,9 @@ export default function Onboarding() {
   return (
     <div style={styles.root}>
       <div style={styles.card}>
-        <h1 style={styles.title}>{t('onboarding.createFirst')}</h1>
+        <h1 style={styles.title}>Create your first workspace</h1>
         <p style={styles.subtitle}>
-          {t('onboarding.desc')}
+          A workspace holds its own folders, conversations, and knowledge graph.
         </p>
 
         {/* Primary action — mirrors the sidebar's "New session" row: a quiet,
@@ -65,20 +63,20 @@ export default function Onboarding() {
           onMouseLeave={(e) => { e.currentTarget.style.background = theme.card; e.currentTarget.style.color = theme.textSoft; e.currentTarget.style.borderColor = theme.border; }}
         >
           <FolderOpen size={17} weight="regular" />
-          <span style={{ flex: 1, textAlign: 'left' }}>{busy ? t('onboarding.opening') : t('onboarding.openFolder')}</span>
-          <span style={styles.hint}>{t('onboarding.scanHint')}</span>
+          <span style={{ flex: 1, textAlign: 'left' }}>{busy ? 'Opening…' : 'Open a folder'}</span>
+          <span style={styles.hint}>scan a project</span>
         </button>
 
         <div style={styles.divider}>
           <span style={styles.dividerLine} />
-          <span style={styles.dividerText}>{t('onboarding.or')}</span>
+          <span style={styles.dividerText}>or</span>
           <span style={styles.dividerLine} />
         </div>
 
         <form onSubmit={createEmpty} style={styles.form}>
           <input
             type="text"
-            placeholder={t('onboarding.namePlaceholder')}
+            placeholder="Name an empty workspace"
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={disabled}
@@ -91,7 +89,7 @@ export default function Onboarding() {
             style={{ flexShrink: 0 }}
           >
             <Plus size={15} weight="bold" />
-            {t('onboarding.createBtn')}
+            Create
           </button>
         </form>
       </div>

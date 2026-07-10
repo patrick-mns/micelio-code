@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, GithubLogo } from '@phosphor-icons/react';
 import { theme } from '@/theme';
-import { useI18n } from '@/i18n';
 import { ipc } from '@/ipc';
 import Modal from '@/components/Modal';
 
@@ -49,7 +48,6 @@ const FRAMES = [
 ];
 
 export default function AboutModal({ onClose }: AboutModalProps) {
-  const { t } = useI18n();
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {
@@ -68,8 +66,8 @@ export default function AboutModal({ onClose }: AboutModalProps) {
       <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {/* Header row */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 18, fontWeight: 600, color: theme.text }}>{t('about.title')}</span>
-          <button className="close-btn" onClick={onClose} title={t('about.close')}>
+          <span style={{ fontSize: 18, fontWeight: 600, color: theme.text }}>Micelio Code</span>
+          <button className="close-btn" onClick={onClose} title="Close (Esc)">
             <X size={15} />
           </button>
         </div>
@@ -107,16 +105,20 @@ export default function AboutModal({ onClose }: AboutModalProps) {
             fontFamily: 'ui-monospace, SFMono-Regular, monospace',
           }}
         >
-          {t('about.badge')}
+          // experimental
         </div>
 
         {/* Description */}
         <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, color: theme.textSoft }}>
-          {t('about.description1')}
+          Micelio Code is an experimental AI coding assistant inspired by Claude Code.
+          It runs locally via Tauri, supports multiple model providers (OpenRouter,
+          Anthropic, Ollama), and helps you navigate, edit, and reason about your
+          codebase through a conversational interface.
         </p>
 
         <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6, color: theme.textSoft }}>
-          {t('about.description2')}
+          This is a personal project — expect rough edges, breaking changes and
+          occasional mushrooms. Contributions and feedback are very welcome.
         </p>
 
         {/* Divider */}
@@ -125,7 +127,7 @@ export default function AboutModal({ onClose }: AboutModalProps) {
         {/* Creator + GitHub */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: theme.textSoft }}>
           <span>
-            {t('about.createdBy')}{' '}
+            Created by{' '}
             <span
               onClick={() => ipc.openUrl(GITHUB)}
               style={{ color: theme.accent, textDecoration: 'none', fontWeight: 500, cursor: 'pointer' }}

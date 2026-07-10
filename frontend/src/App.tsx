@@ -18,7 +18,6 @@ import AnimatedPanel from '@/components/AnimatedPanel';
 import Toasts from '@/components/Toasts';
 import { useStore } from '@/store';
 import { theme } from '@/theme';
-import { useI18n } from '@/i18n';
 import { usePanelResize } from '@/hooks/usePanelResize';
 import { useBgTasks } from '@/hooks/useBgTasks';
 import { useReview } from '@/hooks/useReview';
@@ -35,10 +34,10 @@ function ResizeHandle({ onMouseDown }: { onMouseDown: () => void }) {
   return <div className="panel-resizer" onMouseDown={onMouseDown} title="Drag to resize" />;
 }
 
-const TABS: { id: TabId; Icon: Icon }[] = [
-  { id: 'chat', Icon: ChatCircle },
-  { id: 'treemap', Icon: SquaresFour },
-  { id: 'usage', Icon: ChartBar },
+const TABS: { id: TabId; label: string; Icon: Icon }[] = [
+  { id: 'chat', label: 'Chat', Icon: ChatCircle },
+  { id: 'treemap', label: 'Treemap', Icon: SquaresFour },
+  { id: 'usage', label: 'Usage', Icon: ChartBar },
 ];
 
 function basename(p: string | undefined): string {
@@ -57,7 +56,6 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [confirmDeleteSession, setConfirmDeleteSession] = useState<string | null>(null);
-  const { t } = useI18n();
 
   // Set up background update check
   useEffect(() => {
@@ -155,7 +153,7 @@ export default function App() {
       <div style={appStyles.body}>
         <AnimatedPanel open={sidebarOpen} side="left" width={sidebarResize.width} resizing={sidebarResize.isResizing}>
           <Sidebar
-            workspaceName={switching ? t('sidebar.scanning') : currentWorkspace?.name || t('sidebar.openFolder')}
+            workspaceName={switching ? 'Scanning…' : currentWorkspace?.name || 'Open folder'}
             onPickWorkspace={pickWorkspace}
             switching={switching}
             onOpenSettings={() => setShowSettings(true)}
@@ -179,7 +177,7 @@ export default function App() {
               <button
                 className="icon-btn"
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                title={t('app.sidebarToggle')}
+                title="Toggle conversations"
               >
                 <SidebarSimple size={18} weight={sidebarOpen ? 'fill' : 'regular'} />
               </button>
@@ -188,7 +186,7 @@ export default function App() {
             {/* --- Center (draggable on all platforms) --- */}
             <div style={appStyles.center} data-tauri-drag-region>
               <div className="seg-track" style={{ visibility: currentWorkspace ? 'visible' : 'hidden' }}>
-                {TABS.map(({ id, Icon }) => {
+                {TABS.map(({ id, label, Icon }) => {
                   const active = activeTab === id;
                   return (
                     <button
@@ -197,7 +195,7 @@ export default function App() {
                       onClick={() => setActiveTab(id)}
                     >
                       <Icon size={15} weight={active ? 'fill' : 'regular'} />
-                      {t('tabs.' + id)}
+                      {label}
                     </button>
                   );
                 })}
@@ -209,7 +207,7 @@ export default function App() {
               <button
                 className="btn btn-icon btn-ghost"
                 style={{ color: aboutOpen ? theme.text : theme.dim }}
-                title={t('header.about')}
+                title="About Micelio Code"
                 onClick={() => setAboutOpen(true)}
               >
                 <Info size={16} />
@@ -217,7 +215,7 @@ export default function App() {
               <button
                 className="btn btn-icon btn-ghost"
                 style={{ color: sysPromptOpen ? theme.text : theme.dim }}
-                title={t('header.systemPrompt')}
+                title="View system prompt"
                 onClick={() => setSysPromptOpen(true)}
               >
                 <FileText size={16} />

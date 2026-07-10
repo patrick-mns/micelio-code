@@ -37,27 +37,8 @@ export const KIND_COLORS: Record<string, string> = {
 
 export type ThemePref = 'system' | 'dark' | 'light';
 export type ResolvedTheme = 'dark' | 'light';
-export type AccentColor = 'default' | 'blue' | 'purple' | 'pink' | 'orange' | 'teal';
-export type ThemeVariant = 'default' | 'sepia' | 'high-contrast' | 'nord' | 'dracula';
 
 export const THEME_OPTIONS: ThemePref[] = ['system', 'dark', 'light'];
-
-export const ACCENT_OPTIONS: { id: AccentColor; label: string }[] = [
-  { id: 'default', label: 'Default' },
-  { id: 'blue', label: 'Blue' },
-  { id: 'purple', label: 'Purple' },
-  { id: 'pink', label: 'Pink' },
-  { id: 'orange', label: 'Orange' },
-  { id: 'teal', label: 'Teal' },
-];
-
-export const VARIANT_OPTIONS: { id: ThemeVariant; label: string }[] = [
-  { id: 'default', label: 'Default' },
-  { id: 'sepia', label: 'Sepia' },
-  { id: 'high-contrast', label: 'High contrast' },
-  { id: 'nord', label: 'Nord' },
-  { id: 'dracula', label: 'Dracula' },
-];
 
 // Resolve a preference ('system' | 'dark' | 'light') to the concrete theme and
 // apply it to <html data-theme>. Returns the resolved theme.
@@ -69,24 +50,6 @@ export function applyTheme(pref: ThemePref): ResolvedTheme {
   const resolved = pref === 'system' ? (prefersLight ? 'light' : 'dark') : pref;
   document.documentElement.dataset.theme = resolved;
   return resolved;
-}
-
-// Apply accent color to <html data-accent>.
-export function applyAccent(accent: AccentColor): void {
-  if (accent === 'default') {
-    delete document.documentElement.dataset.accent;
-  } else {
-    document.documentElement.dataset.accent = accent;
-  }
-}
-
-// Apply theme variant to <html data-variant>.
-export function applyVariant(variant: ThemeVariant): void {
-  if (variant === 'default') {
-    delete document.documentElement.dataset.variant;
-  } else {
-    document.documentElement.dataset.variant = variant;
-  }
 }
 
 // Re-apply on OS theme changes while following the system preference. Returns

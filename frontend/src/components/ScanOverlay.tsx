@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { scanOverlayStyles } from '@/utils/theme-styles';
-import { useI18n } from '@/i18n';
 import { theme } from '@/theme';
 import { ipc } from '@/ipc';
 
@@ -35,7 +34,6 @@ function buildGraph(): { nodes: GraphNode[]; edges: Edge[] } {
 }
 
 export default function ScanOverlay() {
-  const { t } = useI18n();
   const { nodes, edges } = useMemo(buildGraph, []);
   const nodeRefs = useRef<(SVGCircleElement | null)[]>([]);
   const edgeRefs = useRef<(SVGLineElement | null)[]>([]);
@@ -134,8 +132,8 @@ export default function ScanOverlay() {
             />
           ))}
         </svg>
-        <div style={scanOverlayStyles.label}>{t('scan.scanning')}</div>
-        <div style={scanOverlayStyles.hint}>{t('scan.escHint')}</div>
+        <div style={scanOverlayStyles.label}>Indexing workspace…</div>
+        <div style={scanOverlayStyles.hint}>(esc) to cancel</div>
       </div>
     </div>
   );
