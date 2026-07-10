@@ -252,18 +252,22 @@ async fn switch_workspace_internal(state: &State<'_, AppState>, ws: &Workspace) 
         .map_err(|e| e.to_string())?;
     let session_id = match store.latest_session_id() {
         Ok(Some(id)) => id,
-        _ => String::new(), // no sessions yet — frontend shows "No conversations"
+        _ => {
+            // Auto-create a session so the workspace is never in a "no sessions"
+            // state — this prevents the bug where the user can send a message in
+            // the chat without a valid session, causing orphan DB events.
+            let model = state.chat_model();
+            store
+                .create_session("New session", &model)
+                .map_err(|e| e.to_string())?
+        }
     };
 
-    let resumed: Vec<crate::backend::llm::Message> = if session_id.is_empty() {
-        vec![]
-    } else {
-        store
-            .load_history(&session_id)
-            .ok()
-            .and_then(|j| serde_json::from_str(&j).ok())
-            .unwrap_or_default()
-    };
+    let resumed: Vec<crate::backend::llm::Message> = store
+        .load_history(&session_id)
+        .ok()
+        .and_then(|j| serde_json::from_str(&j).ok())
+        .unwrap_or_default();
 
     // 4. Update memory structures in AppState
     let workspace_root = ws.folders.first().cloned().unwrap_or_else(|| ws.dir());

@@ -93,12 +93,38 @@ pub struct TurnResult {
     pub content: String,
 }
 
+/// If there is no active session (`current_session` is empty), create a new one
+/// and set it as the current session so the caller can safely use it.
+/// This fixes a bug where sending a chat message on a brand-new workspace (no
+/// sessions yet) would use an empty session_id, causing orphan events in the DB
+/// and a broken in-memory history that never reconciles with any real session.
+fn ensure_session(app: &AppHandle, state: &State<'_, AppState>) -> Result<(), String> {
+    let is_empty = state.current_session.lock().unwrap().is_empty();
+    if !is_empty {
+        return Ok(());
+    }
+    let id = {
+        let store = state.sessions.lock().unwrap();
+        store
+            .create_session("New session", &state.chat_model())
+            .map_err(|e| format!("failed to create session: {e}"))?
+    };
+    *state.current_session.lock().unwrap() = id.clone();
+    // No history to load — brand new session
+    state.session_histories.lock().unwrap().remove(&id);
+    // Emit to the frontend so the sidebar and chat view update their session list
+    let _ = app.emit("session_created", serde_json::json!({ "session_id": id }));
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn send_message(
     app: AppHandle,
     state: State<'_, AppState>,
     content: String,
 ) -> Result<TurnResult, String> {
+    // Auto-create a session if none exists (e.g. brand new workspace).
+    ensure_session(&app, &state)?;
     let session_id = state.current_session.lock().unwrap().clone();
     let model = state.session_chat_model(&session_id);
 
@@ -150,11 +176,14 @@ pub async fn send_message(
 
 #[tauri::command]
 pub async fn start_chat_stream(app: AppHandle, content: String) -> Result<String, String> {
-    let (model, workspace_root, graph_json, session_id, history) = {
+    let (model, workspace_root, graph_json, session_id, history, mode) = {
         let state = app.state::<AppState>();
+        // Auto-create a session if none exists (e.g. brand new workspace).
+        ensure_session(&app, &state)?;
         let workspace_root = state.workspace_root.lock().unwrap().clone();
         let session_id = state.current_session.lock().unwrap().clone();
         let model = state.session_chat_model(&session_id);
+        let mode = state.session_agent_mode(&session_id);
 
         {
             let store = state.sessions.lock().unwrap();
@@ -185,9 +214,16 @@ pub async fn start_chat_stream(app: AppHandle, content: String) -> Result<String
             graph.serialize()
         };
 
-        let mut history = vec![Message::system(&crate::backend::prompt::system_prompt())];
+        let mut system = crate::backend::prompt::system_prompt();
+        // Chat mode: no tools are sent to the model. Tell it so it doesn't
+        // promise actions it can't take and stays purely conversational.
+        if mode == crate::backend::review::AgentMode::Chat {
+            system.push_str("\n\n");
+            system.push_str(crate::backend::prompt::CHAT_MODE);
+        }
+        let mut history = vec![Message::system(&system)];
         history.extend(messages);
-        (model, workspace_root, graph_json, session_id, history)
+        (model, workspace_root, graph_json, session_id, history, mode)
     };
 
     // Per-session cancel flag: reset (or create fresh) for this session.
@@ -217,6 +253,7 @@ pub async fn start_chat_stream(app: AppHandle, content: String) -> Result<String
             history,
             cancel,
             needs_tool,
+            mode,
         );
     });
 

@@ -2,7 +2,7 @@ use crate::backend::llm::Message;
 use crate::commands::chat::ChatMessage;
 use crate::AppState;
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 #[derive(Serialize, Default)]
 pub struct ModelStat {
@@ -178,7 +178,7 @@ pub async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<SessionInfo
 }
 
 #[tauri::command]
-pub async fn new_session(state: State<'_, AppState>) -> Result<String, String> {
+pub async fn new_session(app: AppHandle, state: State<'_, AppState>) -> Result<String, String> {
     let model = state.chat_model();
     let id = {
         let store = state.sessions.lock().unwrap();
@@ -186,6 +186,7 @@ pub async fn new_session(state: State<'_, AppState>) -> Result<String, String> {
     };
     *state.current_session.lock().unwrap() = id.clone();
     state.session_histories.lock().unwrap().remove(&id);
+    let _ = app.emit("session_created", serde_json::json!({ "session_id": id }));
     Ok(id)
 }
 
@@ -252,7 +253,11 @@ pub async fn set_session_model(
 }
 
 #[tauri::command]
-pub async fn delete_session(state: State<'_, AppState>, id: String) -> Result<String, String> {
+pub async fn delete_session(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<String, String> {
     let store = state.sessions.lock().unwrap();
     store.delete_session(&id)?;
 
@@ -276,9 +281,10 @@ pub async fn delete_session(state: State<'_, AppState>, id: String) -> Result<St
                     .insert(latest.clone(), hist);
                 latest
             }
-            None => "".to_string(), // Keep empty if no sessions are left!
+            None => String::new(),
         };
         *current = next.clone();
+        let _ = app.emit("session_switched", serde_json::json!({ "session_id": next }));
         return Ok(next);
     }
     Ok(current.clone())

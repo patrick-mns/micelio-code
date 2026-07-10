@@ -10,9 +10,45 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+/// How the agent handles a turn. Selected by the user in the composer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentMode {
+    /// Conversation only — tools are not offered to the model, so it can't
+    /// read or modify the workspace. Just answers questions.
+    Chat,
+    /// Fully autonomous — tool calls (including file writes/edits) execute
+    /// immediately without pausing for approval.
+    Auto,
+    /// Like Auto, but file write/edit calls pause and wait for the user to
+    /// approve or reject the diff before it hits disk.
+    Review,
+}
+
+impl AgentMode {
+    /// Parse the wire string the frontend sends. Unknown values fall back to
+    /// the safe default (Review).
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "chat" => AgentMode::Chat,
+            "auto" => AgentMode::Auto,
+            _ => AgentMode::Review,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AgentMode::Chat => "chat",
+            AgentMode::Auto => "auto",
+            AgentMode::Review => "review",
+        }
+    }
+}
+
 pub struct ReviewManager {
-    /// Whether file writes/edits pause for user approval before hitting disk.
-    pub review_mode: bool,
+    /// How the agent handles a turn (chat / auto / review). In Review mode,
+    /// file writes/edits pause for user approval before hitting disk.
+    pub mode: AgentMode,
     /// Cached git diff (unstaged). Refreshed on demand.
     git_diff_cache: Option<Vec<ReviewFileInfo>>,
 }
@@ -20,7 +56,7 @@ pub struct ReviewManager {
 impl ReviewManager {
     pub fn new() -> Self {
         Self {
-            review_mode: true,
+            mode: AgentMode::Review,
             git_diff_cache: None,
         }
     }

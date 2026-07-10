@@ -88,6 +88,11 @@ export const ipc = {
   onStreamError: (cb: (p: StreamError) => void) => on<StreamError>('stream_error', cb),
   onAskUser: (cb: (p: AskUser) => void) => on<AskUser>('ask_user', cb),
   answerEditReview: (accepted: boolean) => invoke<void>('answer_edit_review', { accepted }),
+  getAgentMode: () => invoke<string>('get_agent_mode'),
+  setAgentMode: (mode: string) => invoke<string>('set_agent_mode', { mode }),
+  getSessionMode: (sessionId: string) => invoke<string>('get_session_mode', { sessionId }),
+  setSessionMode: (sessionId: string, mode: string) =>
+    invoke<string>('set_session_mode', { sessionId, mode }),
   onReviewRequest: (cb: (p: EditReviewRequest) => void) => on<EditReviewRequest>('review_request', cb),
 
   onGraphUpdated: (cb: (p: null) => void) => on<null>('graph_updated', cb),
@@ -95,6 +100,8 @@ export const ipc = {
   onSummarizeProgress: (cb: (p: SummarizeProgress) => void) => on<SummarizeProgress>('summarize_progress', cb),
   onSummarizeDone: (cb: (p: SummarizeProgress) => void) => on<SummarizeProgress>('summarize_done', cb),
   onSessionTitle: (cb: (p: SessionTitle) => void) => on<SessionTitle>('session_title', cb),
+  onSessionCreated: (cb: (p: { session_id: string }) => void) => on<{ session_id: string }>('session_created', cb),
+  onSessionSwitched: (cb: (p: { session_id: string }) => void) => on<{ session_id: string }>('session_switched', cb),
 
   listOpeners: () => invoke<Opener[]>('list_openers'),
   openIn: (app: string) => invoke<void>('open_in', { app }),

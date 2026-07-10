@@ -2,6 +2,7 @@ import React, { type ComponentType, type RefObject } from 'react';
 import { ArrowElbowDownLeft, Stop, Broom, ImageSquare, X } from '@phosphor-icons/react';
 import { theme } from '@/theme';
 import ModelRolesSelector from '@/components/ModelRolesSelector';
+import ModeSelector from '@/components/ModeSelector';
 import { chatStyles as styles } from '@/utils/theme-styles';
 import type { Attachment, SlashCommand } from '@/utils/chatHelpers';
 
@@ -78,6 +79,7 @@ export default function Composer({
             onChange={(e) => { attachImage(e.target.files?.[0] ?? null); e.target.value = ''; }}
           />
           <div style={styles.actionRow}>
+            <ModeSelector />
             <button className="icon-btn" onClick={clear} title="Clear conversation">
               <Broom size={16} />
             </button>

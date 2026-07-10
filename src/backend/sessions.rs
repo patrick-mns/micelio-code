@@ -137,6 +137,9 @@ impl SessionStore {
             "ALTER TABLE usage_log ADD COLUMN response_raw TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE sessions ADD COLUMN summarize_model TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE sessions ADD COLUMN vision_model TEXT NOT NULL DEFAULT ''",
+            // Per-session agent mode (chat/auto/review). Empty = unset, so the
+            // caller falls back to the global default.
+            "ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT ''",
         ] {
             let _ = conn.execute(stmt, []);
         }
@@ -181,6 +184,28 @@ impl SessionStore {
                 |row| row.get::<_, String>(0),
             )
             .unwrap_or_default()
+    }
+
+    /// The agent mode pinned to this session ("chat" | "auto" | "review"), or
+    /// empty if unset (caller falls back to the global default).
+    pub fn session_mode(&self, session_id: &str) -> String {
+        self.conn
+            .query_row(
+                "SELECT mode FROM sessions WHERE id = ?1",
+                [session_id],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap_or_default()
+    }
+
+    /// Pin an agent mode to this session. Pass empty to unset (fall back to the
+    /// global default).
+    pub fn set_session_mode(&self, session_id: &str, mode: &str) -> BackendResult<()> {
+        self.conn.execute(
+            "UPDATE sessions SET mode = ?2, updated_at = ?3 WHERE id = ?1",
+            rusqlite::params![session_id, mode, now_iso()],
+        )?;
+        Ok(())
     }
 
     /// Pin `model` to `role` for this session. Unknown roles are a no-op.

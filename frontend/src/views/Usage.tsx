@@ -9,6 +9,7 @@ import LedgerDetail from '@/components/LedgerDetail';
 import { fmtUsd, fmtTok, shortModel, fmtTs, RANGES } from '@/utils/usageHelpers';
 import { usageStyles as styles } from '@/utils/theme-styles';
 import type { UsageLogEntry, UsageStats } from '@/types';
+import ConfirmModal from '@/components/ConfirmModal';
 
 // A ledger entry plus the global index of the row it was selected from.
 type SelectedEntry = UsageLogEntry & { _i: number };
@@ -22,6 +23,7 @@ export default function Usage() {
   const [clearing, setClearing] = useState(false);
   const [selected, setSelected] = useState<SelectedEntry | null>(null); // ledger entry shown in the side panel
   const [page, setPage] = useState(0); // ledger pagination (0-indexed)
+  const [confirmClear, setConfirmClear] = useState(false);
   const { setActiveTab, setCurrentSession, setMessages } = useStore();
   const PAGE_SIZE = 5;
 
@@ -43,8 +45,8 @@ export default function Usage() {
   useEffect(() => { load(range); }, [range]);
   useEffect(() => { setPage(0); }, [range, modelFilter]);
 
-  const clear = async () => {
-    if (!window.confirm('Clear all usage history? Chat transcripts and per-message costs are kept — only the Usage totals reset.')) return;
+  const handleClearConfirm = async () => {
+    setConfirmClear(false);
     setClearing(true);
     try {
       await ipc.clearUsage();
@@ -92,7 +94,7 @@ export default function Usage() {
                 </button>
               ))}
             </div>
-            <button className="btn btn-md btn-outline" onClick={clear} disabled={clearing || empty}>
+            <button className="btn btn-md btn-outline" onClick={() => setConfirmClear(true)} disabled={clearing || empty}>
               <Trash size={14} weight="bold" />
               {clearing ? 'Clearing…' : 'Clear'}
             </button>
@@ -248,6 +250,16 @@ export default function Usage() {
           onOpenSession={() => { openSession(selected.session_id); setSelected(null); }}
         />
       )}
+
+      <ConfirmModal
+        open={confirmClear}
+        title="Clear usage history"
+        message="This will reset all Usage totals. Chat transcripts and per-message costs are kept — only the aggregated numbers reset."
+        confirmLabel="Clear"
+        danger
+        onConfirm={handleClearConfirm}
+        onCancel={() => setConfirmClear(false)}
+      />
     </div>
   );
 }

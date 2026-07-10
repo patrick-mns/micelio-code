@@ -166,6 +166,12 @@ pub const NEEDS_TOOL: &str =
 pub const SUMMARY_REQUEST: &str = "You've completed all the necessary tasks. Write a concise \
 summary of exactly what you did for the user. Be specific about files created or modified.";
 
+/// Appended to the system prompt in Chat mode, where no tools are available.
+pub const CHAT_MODE: &str = "You are in CHAT mode: no tools are available this turn. You cannot \
+read, write, edit, or run anything in the workspace. Answer conversationally using the context \
+you already have. If a request would require a tool, explain what you would do and suggest the \
+user switch to Auto or Review mode to carry it out.";
+
 #[cfg(test)]
 mod tests {
     use super::*;
