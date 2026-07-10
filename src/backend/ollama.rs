@@ -79,8 +79,9 @@ impl crate::backend::llm::Provider for OllamaProvider {
         &self,
         model: &str,
         history: &[Message],
+        include_tools: bool,
     ) -> BackendResult<Box<dyn crate::backend::llm::ChatStream>> {
-        Ok(Box::new(ChatStream::start(model, history)?))
+        Ok(Box::new(ChatStream::start(model, history, include_tools)?))
     }
     fn tool_calls_history_json(&self, calls: &[ToolCall]) -> String {
         tool_calls_to_json(calls)
@@ -105,15 +106,21 @@ impl crate::backend::llm::ChatStream for ChatStream {
 }
 
 impl ChatStream {
-    pub fn start(model: &str, history: &[Message]) -> BackendResult<Self> {
+    pub fn start(model: &str, history: &[Message], include_tools: bool) -> BackendResult<Self> {
         let messages_json = messages_to_json(history);
         let num_ctx = request_num_ctx(model);
         let think = model_supports_thinking(model);
+        // Chat mode omits tools so the model can only reply with text.
+        let tools_json = if include_tools {
+            crate::backend::tools::tools_json()
+        } else {
+            "[]"
+        };
         let body = format!(
             "{{\"model\":{},\"messages\":[{}],\"tools\":{},\"stream\":true,\"think\":{},\"options\":{{\"temperature\":0,\"num_ctx\":{}}}}}",
             json_string(model),
             messages_json,
-            crate::backend::tools::tools_json(),
+            tools_json,
             think,
             num_ctx,
         );

@@ -141,6 +141,9 @@ export default function App() {
   useEffect(() => {
     loadCurrentWorkspace().finally(() => setWsReady(true));
     ipc.getSettings().then(setSettings).catch(console.error);
+    // Backend resets agent mode to its default on restart — push the persisted
+    // choice so the two stay in sync.
+    useStore.getState().syncAgentMode();
   }, [loadCurrentWorkspace]);
 
   return (

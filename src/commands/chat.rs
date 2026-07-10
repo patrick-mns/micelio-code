@@ -176,13 +176,14 @@ pub async fn send_message(
 
 #[tauri::command]
 pub async fn start_chat_stream(app: AppHandle, content: String) -> Result<String, String> {
-    let (model, workspace_root, graph_json, session_id, history) = {
+    let (model, workspace_root, graph_json, session_id, history, mode) = {
         let state = app.state::<AppState>();
         // Auto-create a session if none exists (e.g. brand new workspace).
         ensure_session(&app, &state)?;
         let workspace_root = state.workspace_root.lock().unwrap().clone();
         let session_id = state.current_session.lock().unwrap().clone();
         let model = state.session_chat_model(&session_id);
+        let mode = state.session_agent_mode(&session_id);
 
         {
             let store = state.sessions.lock().unwrap();
@@ -213,9 +214,16 @@ pub async fn start_chat_stream(app: AppHandle, content: String) -> Result<String
             graph.serialize()
         };
 
-        let mut history = vec![Message::system(&crate::backend::prompt::system_prompt())];
+        let mut system = crate::backend::prompt::system_prompt();
+        // Chat mode: no tools are sent to the model. Tell it so it doesn't
+        // promise actions it can't take and stays purely conversational.
+        if mode == crate::backend::review::AgentMode::Chat {
+            system.push_str("\n\n");
+            system.push_str(crate::backend::prompt::CHAT_MODE);
+        }
+        let mut history = vec![Message::system(&system)];
         history.extend(messages);
-        (model, workspace_root, graph_json, session_id, history)
+        (model, workspace_root, graph_json, session_id, history, mode)
     };
 
     // Per-session cancel flag: reset (or create fresh) for this session.
@@ -245,6 +253,7 @@ pub async fn start_chat_stream(app: AppHandle, content: String) -> Result<String
             history,
             cancel,
             needs_tool,
+            mode,
         );
     });
 

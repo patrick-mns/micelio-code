@@ -14,6 +14,7 @@ export interface StoredPrefs {
   showTools?: boolean;
   autoCompact?: boolean;
   debug?: boolean;
+  agentMode?: string;
 }
 
 export const loadPrefs = (): StoredPrefs => {

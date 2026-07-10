@@ -280,8 +280,15 @@ pub trait Provider: Send + Sync {
         Err("this provider does not support image input".into())
     }
 
-    /// Begin a streamed turn with full history + tool definitions.
-    fn start_stream(&self, model: &str, history: &[Message]) -> BackendResult<Box<dyn ChatStream>>;
+    /// Begin a streamed turn with full history. When `include_tools` is false
+    /// (Chat mode) the tool definitions are omitted so the model can only reply
+    /// with text.
+    fn start_stream(
+        &self,
+        model: &str,
+        history: &[Message],
+        include_tools: bool,
+    ) -> BackendResult<Box<dyn ChatStream>>;
 
     /// Serializes one or more tool calls made in the SAME assistant turn
     /// (parallel tool calls) into this provider's history wire format — an

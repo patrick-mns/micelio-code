@@ -51,7 +51,15 @@ pub fn run_agent_loop(
     mut history: Vec<Message>,
     cancel: Arc<AtomicBool>,
     needs_tool: bool,
+    mode: crate::backend::review::AgentMode,
 ) {
+    use crate::backend::review::AgentMode;
+    // Chat mode never offers tools to the model, so it can only reply with
+    // text (no file reads/writes, no workspace mutations).
+    let include_tools = mode != AgentMode::Chat;
+    // A model that can't call tools can't satisfy a "change this file" request
+    // with a tool, so suppress the tool-nudge retry in Chat mode.
+    let needs_tool = needs_tool && include_tools;
     let mut did_any_tool = false;
     let mut retried_for_tool = false;
     let mut consecutive_errors: u32 = 0;
@@ -191,7 +199,7 @@ pub fn run_agent_loop(
         // Keep the working context within budget before the next model turn.
         compact_history(&mut history);
         // ---- stream one model turn ----
-        let mut stream = match provider.start_stream(&model, &history) {
+        let mut stream = match provider.start_stream(&model, &history, include_tools) {
             Ok(s) => s,
             Err(e) => {
                 let _ = app.emit(
@@ -317,6 +325,7 @@ pub fn run_agent_loop(
                 &graph_json,
                 &dirty,
                 &session_id_ref,
+                mode,
             );
             tool_summaries.extend(summaries);
             if any_error {
@@ -489,6 +498,7 @@ pub fn run_tool_calls(
     graph_json: &str,
     dirty: &Arc<Mutex<HashSet<String>>>,
     session_id: &str,
+    mode: crate::backend::review::AgentMode,
 ) -> (Vec<String>, bool) {
     history.push(Message::assistant_with_tool_call(
         assistant_content,
@@ -509,6 +519,7 @@ pub fn run_tool_calls(
             model,
             graph_json,
             session_id,
+            mode,
         );
 
         // `touched` is only Some when the file was actually written to disk
@@ -537,6 +548,7 @@ fn execute_tool_call(
     model: &str,
     graph_json: &str,
     session_id: &str,
+    mode: crate::backend::review::AgentMode,
 ) -> (String, bool, Option<String>) {
     // `ask_user` is interactive: hand the questions to the UI and block this
     // worker thread until the user answers (or cancels / stops the stream).
@@ -617,8 +629,8 @@ fn execute_tool_call(
         || (normalized == "file"
             && tools::get_string_field(&call.arguments, "action").as_deref() == Some("edit"));
 
-    let review_on = (is_file_mod || is_legacy_mod)
-        && app.state::<AppState>().review.lock().unwrap().review_mode;
+    let review_on =
+        (is_file_mod || is_legacy_mod) && mode == crate::backend::review::AgentMode::Review;
 
     let (is_error, tool_content, touched) = if review_on {
         let path = tools::get_string_field(&call.arguments, "path")

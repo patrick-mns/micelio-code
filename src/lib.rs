@@ -112,6 +112,17 @@ impl AppState {
             pinned
         }
     }
+
+    /// The agent mode for this session: its pinned value, or the global default
+    /// (used by new/unset sessions) when unset.
+    pub fn session_agent_mode(&self, session_id: &str) -> backend::review::AgentMode {
+        let pinned = self.sessions.lock().unwrap().session_mode(session_id);
+        if pinned.is_empty() {
+            self.review.lock().unwrap().mode
+        } else {
+            backend::review::AgentMode::from_str(&pinned)
+        }
+    }
 }
 
 fn ensure_cli_path() {
@@ -306,8 +317,10 @@ pub fn run() {
             commands::bg::clear_bg_tasks,
             commands::bg::get_bg_task_log,
             commands::review::get_review_status,
-            commands::review::toggle_review_mode,
-            commands::review::get_review_mode,
+            commands::review::set_agent_mode,
+            commands::review::get_agent_mode,
+            commands::review::get_session_mode,
+            commands::review::set_session_mode,
             commands::review::git_revert_review_file,
             commands::review::git_revert_all_review,
             commands::review::answer_edit_review,
