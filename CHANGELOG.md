@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.7.0...micelio-v0.8.0) (2026-07-11)
+
+
+### Features
+
+* read-only tools in Chat mode, header centering & sidebar fixes ([#35](https://github.com/patrick-mns/micelio-code/issues/35)) ([404011c](https://github.com/patrick-mns/micelio-code/commit/404011c4878ec84b93a5acce5468a5c967c22d03))
+
 ## [0.7.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.6.0...micelio-v0.7.0) (2026-07-11)
 
 
