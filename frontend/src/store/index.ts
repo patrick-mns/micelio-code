@@ -7,6 +7,7 @@ import { prefsSlice, type PrefsSlice } from './prefsSlice';
 import { sessionsSlice, type SessionsSlice } from './sessionsSlice';
 import { uiSlice, type UiSlice } from './uiSlice';
 import { themeSlice, type ThemeSlice } from './themeSlice';
+import { localeSlice, type LocaleSlice } from './localeSlice';
 import { updateSlice, type UpdateSlice } from './updateSlice';
 import { workspaceSlice, type WorkspaceSlice } from './workspaceSlice';
 
@@ -21,6 +22,7 @@ export type AppState =
   & SessionsSlice
   & UiSlice
   & ThemeSlice
+  & LocaleSlice
   & UpdateSlice
   & WorkspaceSlice;
 
@@ -33,6 +35,7 @@ export const useStore = create<AppState>()((...a) => ({
   ...sessionsSlice(...a),
   ...uiSlice(...a),
   ...themeSlice(...a),
+  ...localeSlice(...a),
   ...updateSlice(...a),
   ...workspaceSlice(...a),
 }));
