@@ -280,14 +280,15 @@ pub trait Provider: Send + Sync {
         Err("this provider does not support image input".into())
     }
 
-    /// Begin a streamed turn with full history. When `include_tools` is false
-    /// (Chat mode) the tool definitions are omitted so the model can only reply
-    /// with text.
+    /// Begin a streamed turn with full history. `tools_json` is the JSON array
+    /// of tool definitions to advertise this turn (already filtered by the
+    /// caller for the active mode); an empty string or `"[]"` omits tools
+    /// entirely so the model can only reply with text.
     fn start_stream(
         &self,
         model: &str,
         history: &[Message],
-        include_tools: bool,
+        tools_json: &str,
     ) -> BackendResult<Box<dyn ChatStream>>;
 
     /// Serializes one or more tool calls made in the SAME assistant turn

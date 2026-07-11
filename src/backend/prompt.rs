@@ -167,10 +167,12 @@ pub const SUMMARY_REQUEST: &str = "You've completed all the necessary tasks. Wri
 summary of exactly what you did for the user. Be specific about files created or modified.";
 
 /// Appended to the system prompt in Chat mode, where no tools are available.
-pub const CHAT_MODE: &str = "You are in CHAT mode: no tools are available this turn. You cannot \
-read, write, edit, or run anything in the workspace. Answer conversationally using the context \
-you already have. If a request would require a tool, explain what you would do and suggest the \
-user switch to Auto or Review mode to carry it out.";
+pub const CHAT_MODE: &str = "You are in CHAT mode: read-only. You may use the read-only tools \
+available this turn (read files, search, read the knowledge graph, fetch URLs, look at images \
+with vision, ask the user) to ground your answers, but you CANNOT write or edit files, run shell \
+commands, or otherwise change the workspace or system. If a request would require a mutating \
+action, explain what you would do and suggest the user switch to Auto or Review mode to carry it \
+out.";
 
 #[cfg(test)]
 mod tests {

@@ -54,12 +54,17 @@ pub fn run_agent_loop(
     mode: crate::backend::review::AgentMode,
 ) {
     use crate::backend::review::AgentMode;
-    // Chat mode never offers tools to the model, so it can only reply with
-    // text (no file reads/writes, no workspace mutations).
-    let include_tools = mode != AgentMode::Chat;
-    // A model that can't call tools can't satisfy a "change this file" request
-    // with a tool, so suppress the tool-nudge retry in Chat mode.
-    let needs_tool = needs_tool && include_tools;
+    // Chat mode advertises only a read-only subset of tools (see
+    // CHAT_MODE_TOOLS); every other mode gets the full toolset. The subset is
+    // computed once and reused for every streamed round this turn.
+    let tools_advert = if mode == AgentMode::Chat {
+        tools::tools_json_filtered(tools::CHAT_MODE_TOOLS)
+    } else {
+        tools::tools_json().to_string()
+    };
+    // Chat mode can't write/edit files, so a "change this file" request can
+    // never be satisfied there — suppress the tool-nudge retry.
+    let needs_tool = needs_tool && mode != AgentMode::Chat;
     let mut did_any_tool = false;
     let mut retried_for_tool = false;
     let mut consecutive_errors: u32 = 0;
@@ -199,7 +204,7 @@ pub fn run_agent_loop(
         // Keep the working context within budget before the next model turn.
         compact_history(&mut history);
         // ---- stream one model turn ----
-        let mut stream = match provider.start_stream(&model, &history, include_tools) {
+        let mut stream = match provider.start_stream(&model, &history, &tools_advert) {
             Ok(s) => s,
             Err(e) => {
                 let _ = app.emit(
@@ -595,6 +600,28 @@ fn execute_tool_call(
             serde_json::json!({ "session_id": session_id, "summary": summary }),
         );
         history.push(Message::tool("ask_user", &answer));
+        return (summary, false, None);
+    }
+
+    // Chat mode is read-only. The model is only offered read-only tools, but
+    // guard execution too so a stray call (e.g. a `file` write) can never touch
+    // disk — return an explanatory result instead of running it.
+    if mode == crate::backend::review::AgentMode::Chat
+        && !tools::chat_mode_allows(&call.name, &call.arguments)
+    {
+        let msg = format!(
+            "Chat mode is read-only — `{}` isn't available here. Switch to Auto or Review mode to make changes.",
+            call.name
+        );
+        let summary = format!("{} blocked\n{msg}", call.name);
+        let _ = app.emit(
+            "stream_tool",
+            serde_json::json!({ "session_id": session_id, "summary": summary }),
+        );
+        history.push(Message::tool_with_content(
+            &call.name,
+            ToolResultContent::Full(msg),
+        ));
         return (summary, false, None);
     }
 

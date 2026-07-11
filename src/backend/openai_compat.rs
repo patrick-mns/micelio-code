@@ -201,7 +201,7 @@ impl Provider for OpenAiCompatProvider {
         &self,
         model: &str,
         history: &[Message],
-        include_tools: bool,
+        tools_json: &str,
     ) -> BackendResult<Box<dyn ChatStream>> {
         let key = self.require_key()?;
         let mut body = serde_json::json!({
@@ -217,14 +217,12 @@ impl Provider for OpenAiCompatProvider {
             body["usage"] = serde_json::json!({ "include": true });
         }
 
-        // Chat mode omits tools entirely so the model can only reply with text.
-        if include_tools {
-            let tools_json = crate::backend::tools::tools_json();
-            if !tools_json.trim().is_empty() && tools_json != "[]" {
-                if let Ok(tools) = serde_json::from_str::<Vec<serde_json::Value>>(&tools_json) {
-                    if !tools.is_empty() {
-                        body["tools"] = serde_json::Value::Array(tools);
-                    }
+        // Advertise only the tools the caller passed (already mode-filtered).
+        // An empty list omits tools entirely so the model can only reply text.
+        if !tools_json.trim().is_empty() && tools_json != "[]" {
+            if let Ok(tools) = serde_json::from_str::<Vec<serde_json::Value>>(tools_json) {
+                if !tools.is_empty() {
+                    body["tools"] = serde_json::Value::Array(tools);
                 }
             }
         }
