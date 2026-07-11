@@ -293,6 +293,54 @@ pub fn tools_json() -> &'static str {
     "#.trim()
 }
 
+/// Read-only tools advertised in Chat mode. Everything here either can't mutate
+/// the workspace/system at all (`vision`, `search`, `graph`, `fetch`,
+/// `ask_user`) or is gated to its read action at execution time (`file` — only
+/// `action:"read"` is allowed, see [`chat_mode_allows`]). Deliberately excludes
+/// `terminal`, `context_node`, `graph_focus`, and `bg`.
+pub const CHAT_MODE_TOOLS: &[&str] = &["vision", "file", "search", "graph", "fetch", "ask_user"];
+
+/// Return [`tools_json`] filtered to only the tools whose name is in `allowed`,
+/// preserving schema order. Used to hand Chat mode a read-only subset instead
+/// of the full toolset.
+pub fn tools_json_filtered(allowed: &[&str]) -> String {
+    let parsed: serde_json::Value = match serde_json::from_str(tools_json()) {
+        Ok(v) => v,
+        Err(_) => return "[]".into(),
+    };
+    let kept: Vec<serde_json::Value> = parsed
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter(|t| {
+                    t.get("function")
+                        .and_then(|f| f.get("name"))
+                        .and_then(|n| n.as_str())
+                        .map(|n| allowed.contains(&n))
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    serde_json::to_string(&kept).unwrap_or_else(|_| "[]".into())
+}
+
+/// Whether `name` (with its `arguments`) is permitted to execute in Chat mode.
+/// Chat mode is read-only: only the [`CHAT_MODE_TOOLS`] are allowed, and `file`
+/// is further restricted to its `read` action (no `write`/`edit`). Legacy
+/// `write_file`/`edit_file` names are always mutations, so they're rejected.
+pub fn chat_mode_allows(name: &str, arguments: &str) -> bool {
+    match normalize_tool_name(name) {
+        "vision" | "search" | "graph" | "fetch" | "ask_user" | "read_file" => true,
+        "file" => !matches!(
+            get_string_field(arguments, "action").as_deref(),
+            Some("write") | Some("edit")
+        ),
+        _ => false,
+    }
+}
+
 /// Names + descriptions of every tool the model can actually call, parsed
 /// from [`tools_json`] so the `/tools` listing can never drift from the
 /// schema we hand to the model. Returns them in schema order.
@@ -423,6 +471,42 @@ mod tests {
         ] {
             assert!(names.contains(&n.to_string()), "schema missing {n}");
         }
+    }
+
+    #[test]
+    fn chat_mode_tools_are_read_only_subset() {
+        let json = tools_json_filtered(CHAT_MODE_TOOLS);
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        let names: Vec<&str> = parsed
+            .iter()
+            .filter_map(|t| t.get("function")?.get("name")?.as_str())
+            .collect();
+        // Every advertised chat tool is in the allowlist.
+        for n in &names {
+            assert!(CHAT_MODE_TOOLS.contains(n), "unexpected chat tool {n}");
+        }
+        // The read-only staples are present; the mutating ones are not.
+        assert!(names.contains(&"vision"));
+        assert!(names.contains(&"file"));
+        assert!(!names.contains(&"terminal"));
+        assert!(!names.contains(&"context_node"));
+        assert!(!names.contains(&"graph_focus"));
+        assert!(!names.contains(&"bg"));
+    }
+
+    #[test]
+    fn chat_mode_allows_reads_but_not_writes() {
+        assert!(chat_mode_allows("vision", r#"{"path":"a.png"}"#));
+        assert!(chat_mode_allows("search", r#"{"pattern":"x"}"#));
+        assert!(chat_mode_allows("file", r#"{"action":"read","path":"a.rs"}"#));
+        // file write/edit and legacy write names are blocked.
+        assert!(!chat_mode_allows("file", r#"{"action":"write","path":"a.rs"}"#));
+        assert!(!chat_mode_allows("file", r#"{"action":"edit","path":"a.rs"}"#));
+        assert!(!chat_mode_allows("write_file", r#"{"path":"a.rs"}"#));
+        // Mutating tools are always blocked in chat mode.
+        assert!(!chat_mode_allows("terminal", r#"{"command":"ls"}"#));
+        assert!(!chat_mode_allows("bg", r#"{"action":"list"}"#));
+        assert!(!chat_mode_allows("context_node", r#"{"label":"x"}"#));
     }
 
     #[test]
