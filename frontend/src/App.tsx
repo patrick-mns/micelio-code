@@ -118,7 +118,7 @@ export default function App() {
     const id = confirmDeleteSession;
     if (!id) return;
     setConfirmDeleteSession(null);
-    const { setSessions, setCurrentSession, setMessages, loadSessions } = useStore.getState();
+    const { setSessions, setCurrentSession, setMessages, loadSessions, loadWorkspacesWithSessions } = useStore.getState();
     const nextId = await ipc.deleteSession(id).catch(() => null);
     if (nextId) {
       const msgs = await ipc.getHistory().catch(() => []);
@@ -130,6 +130,9 @@ export default function App() {
       setCurrentSession(null);
       setMessages('', []);
     }
+    // The sidebar tree renders from workspacesWithSessions, so refresh it too or
+    // the deleted chat lingers until the next sidebar interaction.
+    await loadWorkspacesWithSessions();
   };
 
   // Gate the main UI behind having a workspace, but only after the initial load
