@@ -1,7 +1,7 @@
 import React, { useEffect, useState, type CSSProperties } from 'react';
 import { sidebarStyles } from '@/utils/theme-styles';
 import {
-  Trash, FolderOpen,
+  Trash,
   Gear, DownloadSimple, CaretRight, Plus,
 } from '@phosphor-icons/react';
 import type { UnlistenFn } from '@tauri-apps/api/event';
@@ -29,7 +29,6 @@ export default function Sidebar({
     sessions, setSessions, setMessages, setActiveTab,
     messagesBySession, isLoading, setCurrentSession, currentSession,
     setSessionModels, update,
-    setSettingsCategory, setShowSettings,
     workspacesWithSessions, loadWorkspacesWithSessions,
     switchWorkspace, expandedWorkspaces, toggleExpandedWorkspace,
     currentWorkspace, setAgentStatus,
@@ -132,32 +131,12 @@ export default function Sidebar({
           return (
             <div key={ws.id} style={{ marginBottom: 2 }}>
               {/* Workspace header row */}
-              <div
+              <WorkspaceHeader
+                name={ws.name}
+                current={current}
+                expanded={expanded}
                 onClick={() => handleWsHeaderClick(ws.id)}
-                tabIndex={0}
-                role="button"
-                style={{
-                  ...sidebarStyles.wsHeader,
-                  background: current ? theme.cardActive : 'transparent',
-                }}
-                onMouseEnter={(e) => {
-                  if (!current) e.currentTarget.style.background = theme.cardActive;
-                }}
-                onMouseLeave={(e) => {
-                  if (!current) e.currentTarget.style.background = 'transparent';
-                }}
-              >
-                <span style={sidebarStyles.wsChevron}>
-                  <CaretRight size={12} weight="bold" style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
-                </span>
-                <span style={{
-                  ...sidebarStyles.wsName,
-                  fontWeight: current ? 600 : 450,
-                  color: current ? theme.text : theme.textSoft,
-                }}>
-                  {ws.name}
-                </span>
-              </div>
+              />
 
               {/* Sessions under this workspace */}
               {expanded && (
@@ -193,14 +172,6 @@ export default function Sidebar({
       <UpdateStatusBar onOpenUpdate={onOpenUpdate} />
 
       <div style={sidebarStyles.footer}>
-        <button
-          className="btn btn-ghost"
-          style={sidebarStyles.gearBtn}
-          onClick={() => { setSettingsCategory('workspace'); setShowSettings(true); }}
-          title={t('sidebar.openSettings')}
-        >
-          <FolderOpen size={15} />
-        </button>
         <button className="btn btn-ghost" style={sidebarStyles.gearBtn} onClick={onOpenSettings} title={t('sidebar.openSettings')}>
           <Gear size={17} />
         </button>
@@ -211,13 +182,12 @@ export default function Sidebar({
 
 /* ── Sub-components ──────────────────────────────────────────────────── */
 
-function WsHeader({
-  name, foldersCount, expanded, isCurrent, onClick,
+function WorkspaceHeader({
+  name, current, expanded, onClick,
 }: {
   name: string;
-  foldersCount: number;
+  current: boolean;
   expanded: boolean;
-  isCurrent: boolean;
   onClick: () => void;
 }) {
   const [hover, setHover] = React.useState(false);
@@ -229,31 +199,20 @@ function WsHeader({
       tabIndex={0}
       role="button"
       style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '8px 14px', margin: '0 6px', borderRadius: 8,
-        cursor: 'pointer',
-        background: isCurrent || hover ? theme.cardActive : 'transparent',
+        ...sidebarStyles.wsHeader,
+        background: current || hover ? theme.cardActive : 'transparent',
       }}
->
-      <FolderOpen size={15} color={theme.faint} style={{ flexShrink: 0 }} />
+    >
+      <span style={sidebarStyles.wsChevron}>
+        <CaretRight size={12} weight="bold" style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
+      </span>
       <span style={{
-        flex: 1, fontSize: 12.5,
-        fontWeight: isCurrent ? 600 : 450,
-        color: isCurrent ? theme.text : theme.textSoft,
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        ...sidebarStyles.wsName,
+        fontWeight: current ? 600 : 450,
+        color: current ? theme.text : theme.textSoft,
       }}>
         {name}
       </span>
-      <CaretRight
-        size={12}
-        weight="bold"
-        style={{
-          transform: expanded ? 'rotate(90deg)' : 'none',
-          transition: 'transform .15s',
-          flexShrink: 0,
-          color: theme.faint,
-        }}
-      />
     </div>
   );
 }
