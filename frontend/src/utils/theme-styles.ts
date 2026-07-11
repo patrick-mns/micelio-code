@@ -17,19 +17,17 @@ export const appStyles: Record<string, CSSProperties> = {
     height: 52,
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
     background: theme.bg,
     flexShrink: 0,
     paddingInline: 12,
   },
   trafficGap: { width: 72, flexShrink: 0 },
-  // Left and right columns use flex-shrink:0 so their buttons/icons never
-  // collapse when the window is narrow.  The center tabs area (flex:1) is
-  // the only zone that shrinks — it fills the remaining space and clips its
-  // overflow so the header never invades the right-side controls.
-  headerLeft: { flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8 },
-  headerRight: { flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
-  center: { flex: '1 1 auto', display: 'flex', justifyContent: 'center', minWidth: 0, overflow: 'hidden' },
+  // Left and right columns share the leftover space equally (flex:1 1 0) so the
+  // center tabs group (flex:0 0 auto, natural width) stays truly centred in the
+  // window regardless of the asymmetric widths of the side controls.
+  headerLeft: { flex: '1 1 0', display: 'flex', alignItems: 'center', gap: 8 },
+  headerRight: { flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
+  center: { flex: '0 0 auto', display: 'flex', justifyContent: 'center' },
   // Tabs (.seg-track/.seg-btn) and the sidebar toggle (.icon-btn) are styled
   // via the unified button classes in buttons.css.
   body: { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'row' },
