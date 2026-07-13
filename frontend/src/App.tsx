@@ -54,6 +54,10 @@ export default function App() {
     update, setUpdateState, checkForUpdates,
   } = useStore();
   const [rightPanel, setRightPanel] = useState<'bg' | 'review' | null>(null);
+  const [panelContent, setPanelContent] = useState<'bg' | 'review' | null>(null);
+  useEffect(() => {
+    if (rightPanel !== null) setPanelContent(rightPanel);
+  }, [rightPanel]);
   const [sysPromptOpen, setSysPromptOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -253,7 +257,7 @@ export default function App() {
 
         {rightPanel && <ResizeHandle onMouseDown={bgResize.startResize} />}
         <AnimatedPanel open={!!rightPanel} side="right" width={bgResize.width} resizing={bgResize.isResizing}>
-          {rightPanel === 'review' ? (
+          {panelContent === 'review' ? (
             <ReviewPanel
               gitFiles={reviewStatus.changes.git_files}
               onClose={() => setRightPanel(null)}
