@@ -6,6 +6,7 @@ import Composer from '@/components/Composer';
 import StreamStatus from '@/components/StreamStatus';
 import QuestionCard, { parseQuestions } from '@/components/QuestionCard';
 import EditApprovalCard from '@/components/EditApprovalCard';
+import ToolConfirmCard from '@/components/ToolConfirmCard';
 import GitContext from '@/components/GitContext';
 import SummarizeBanner from '@/components/SummarizeBanner';
 import TranscriptView from '@/components/TranscriptView';
@@ -16,7 +17,7 @@ import { MIN_SCAN_MS } from '@/utils/treemapHelpers';
 import { chatStyles as styles } from '@/utils/theme-styles';
 import type { StreamPart, StreamState } from '@/components/StreamStatus';
 import type { Question } from '@/components/QuestionCard';
-import type { EditReviewRequest, Usage } from '@/types';
+import type { EditReviewRequest, ToolConfirmRequest, Usage } from '@/types';
 
 // The in-flight assistant turn buffered in a ref (a richer StreamState with the
 // thinking text, start time, usage, and a cancel flag).
@@ -69,6 +70,7 @@ export default function Chat() {
   // ── Local state ────────────────────────────────────────────────────────────
   const [pendingAsk, setPendingAsk] = useState<Question[] | null>(null);
   const [pendingEdit, setPendingEdit] = useState<EditReviewRequest | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<ToolConfirmRequest | null>(null);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [summarize, setSummarize] = useState<SummarizeState | null>(null);
   const [cmdSelected, setCmdSelected] = useState(0);
@@ -140,6 +142,10 @@ export default function Chat() {
     });
     ipc.onReviewRequest((req) => {
       setPendingEdit(req);
+      useStore.getState().setAgentStatus(req.session_id, 'awaiting_input');
+    });
+    ipc.onConfirmRequest((req) => {
+      setPendingConfirm(req);
       useStore.getState().setAgentStatus(req.session_id, 'awaiting_input');
     });
     ipc.onStreamUsage(({ session_id, ...u }) => {
@@ -365,6 +371,13 @@ export default function Chat() {
     await ipc.answerEditReview(false).catch(console.error);
   }, [viewingSession]);
 
+  // ── ToolConfirmCard ─────────────────────────────────────────────────────────
+  const answerConfirm = useCallback(async (decision: 'reject' | 'once' | 'always') => {
+    setPendingConfirm(null);
+    useStore.getState().setAgentStatus(viewingSession, 'running');
+    await ipc.answerToolConfirm(decision).catch(console.error);
+  }, [viewingSession]);
+
   // ── Slash commands ─────────────────────────────────────────────────────────
   const showPalette = input.startsWith('/') && !input.includes(' ');
   const filteredCmds = showPalette ? COMMANDS.filter((c) => c.cmd.startsWith(input.toLowerCase())) : [];
@@ -470,6 +483,9 @@ export default function Chat() {
           )}
           {pendingEdit && pendingEdit.session_id === viewingSession && (
             <EditApprovalCard request={pendingEdit} onAccept={acceptEdit} onReject={rejectEdit} />
+          )}
+          {pendingConfirm && pendingConfirm.session_id === viewingSession && (
+            <ToolConfirmCard request={pendingConfirm} onDecision={answerConfirm} />
           )}
           {summarize && (
             <SummarizeBanner

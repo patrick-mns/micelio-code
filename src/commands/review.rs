@@ -3,7 +3,7 @@
 //! (see `answer_edit_review` below); these commands cover the review-mode
 //! toggle and the unstaged-git-changes panel.
 
-use crate::backend::review::{self, AgentMode, WorkspaceChanges};
+use crate::backend::review::{self, AgentMode, ConfirmDecision, WorkspaceChanges};
 use crate::AppState;
 use serde::Serialize;
 use tauri::State;
@@ -93,5 +93,22 @@ pub async fn answer_edit_review(state: State<'_, AppState>, accepted: bool) -> R
             .send(accepted)
             .map_err(|_| "worker no longer waiting".to_string()),
         None => Err("no pending edit review".into()),
+    }
+}
+
+/// Answer a pending generic tool confirmation (see `execute_tool_call`) for a
+/// side-effecting non-file tool. `decision` is one of "reject", "once", or
+/// "always" (see [`ConfirmDecision`]).
+#[tauri::command]
+pub async fn answer_tool_confirm(
+    state: State<'_, AppState>,
+    decision: String,
+) -> Result<(), String> {
+    let entry = state.pending_confirm.lock().unwrap().take();
+    match entry {
+        Some((_sid, tx)) => tx
+            .send(ConfirmDecision::from_str(&decision))
+            .map_err(|_| "worker no longer waiting".to_string()),
+        None => Err("no pending tool confirmation".into()),
     }
 }

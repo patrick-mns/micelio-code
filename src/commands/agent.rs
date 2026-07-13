@@ -659,6 +659,98 @@ fn execute_tool_call(
     let review_on =
         (is_file_mod || is_legacy_mod) && mode == crate::backend::review::AgentMode::Review;
 
+    // ── Review mode: pause side-effecting non-file tools for confirmation ──
+    // terminal / bg-stop / context_node don't produce a diff, so they get a
+    // generic confirmation card instead of the EditApprovalCard. The user can
+    // reject, allow once, or "always allow" the tool for the rest of the
+    // session (tracked in `session_tool_allow`). File write/edit is handled by
+    // the diff flow below, so it's excluded from `needs_review_confirmation`.
+    if mode == crate::backend::review::AgentMode::Review
+        && tools::needs_review_confirmation(normalized, &call.arguments)
+    {
+        let already_allowed = {
+            let st = app.state::<AppState>();
+            let map = st.session_tool_allow.lock().unwrap();
+            map.get(session_id)
+                .map(|set| set.contains(normalized))
+                .unwrap_or(false)
+        };
+
+        if !already_allowed {
+            let (title, detail) = tools::confirm_summary(normalized, &call.arguments);
+
+            let (tx, rx) = std::sync::mpsc::channel::<crate::backend::review::ConfirmDecision>();
+            {
+                let st = app.state::<AppState>();
+                *st.pending_confirm.lock().unwrap() = Some((session_id.to_string(), tx));
+            }
+            let _ = app.emit(
+                "confirm_request",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "tool": normalized,
+                    "title": title,
+                    "detail": detail,
+                }),
+            );
+
+            let cancel = {
+                let st = app.state::<AppState>();
+                let c = st.session_cancels.lock().unwrap().get(session_id).cloned();
+                c
+            };
+            let decision = loop {
+                let canceled = cancel
+                    .as_ref()
+                    .map(|c| c.load(Ordering::SeqCst))
+                    .unwrap_or(false);
+                if canceled {
+                    break crate::backend::review::ConfirmDecision::Reject;
+                }
+                match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                    Ok(d) => break d,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        break crate::backend::review::ConfirmDecision::Reject
+                    }
+                }
+            };
+            {
+                let st = app.state::<AppState>();
+                *st.pending_confirm.lock().unwrap() = None;
+            }
+
+            match decision {
+                crate::backend::review::ConfirmDecision::Reject => {
+                    let msg = format!(
+                        "`{}` was rejected by the user — it was not run.",
+                        call.name
+                    );
+                    let summary = format!("{} blocked\n{msg}", call.name);
+                    let _ = app.emit(
+                        "stream_tool",
+                        serde_json::json!({ "session_id": session_id, "summary": summary }),
+                    );
+                    history.push(Message::tool_with_content(
+                        &call.name,
+                        ToolResultContent::Full(msg),
+                    ));
+                    return (summary, false, None);
+                }
+                crate::backend::review::ConfirmDecision::Always => {
+                    let st = app.state::<AppState>();
+                    st.session_tool_allow
+                        .lock()
+                        .unwrap()
+                        .entry(session_id.to_string())
+                        .or_default()
+                        .insert(normalized.to_string());
+                }
+                crate::backend::review::ConfirmDecision::Once => {}
+            }
+        }
+    }
+
     let (is_error, tool_content, touched) = if review_on {
         let path = tools::get_string_field(&call.arguments, "path")
             .unwrap_or_else(|| "unknown".into());
