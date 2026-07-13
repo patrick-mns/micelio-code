@@ -240,6 +240,16 @@ export interface EditReviewRequest {
   proposed_content: string;
 }
 
+// Emitted when review mode pauses a side-effecting non-file tool (terminal,
+// bg-stop, context_node) for user confirmation (see
+// commands::agent::execute_tool_call). Answered via `answerToolConfirm`.
+export interface ToolConfirmRequest {
+  session_id: string;
+  tool: string;
+  title: string;
+  detail: string;
+}
+
 export interface SessionTitle {
   session_id: string;
   title: string;

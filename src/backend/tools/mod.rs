@@ -341,6 +341,49 @@ pub fn chat_mode_allows(name: &str, arguments: &str) -> bool {
     }
 }
 
+/// Whether a tool call must pause for a generic (non-diff) confirmation card in
+/// Review mode. These are side-effecting tools other than file write/edit —
+/// running a shell command (`terminal`), killing a background process
+/// (`bg` with `action:"stop"`), or mutating the knowledge graph
+/// (`context_node`). File write/edit is intentionally NOT here: it has its own
+/// diff-based approval flow (see `commands::agent::execute_tool_call`).
+/// Read-only actions like `bg` list/logs never need confirmation.
+pub fn needs_review_confirmation(name: &str, arguments: &str) -> bool {
+    match normalize_tool_name(name) {
+        "terminal" | "context_node" => true,
+        "bg" => get_string_field(arguments, "action").as_deref() == Some("stop"),
+        _ => false,
+    }
+}
+
+/// A human-readable `(title, detail)` pair describing what a confirmation-gated
+/// tool call will do, for the generic confirmation card. `detail` is the
+/// concrete thing being acted on (the command, the pid, the graph node).
+pub fn confirm_summary(name: &str, arguments: &str) -> (String, String) {
+    match normalize_tool_name(name) {
+        "terminal" => (
+            "Run terminal command".into(),
+            get_string_field(arguments, "command").unwrap_or_default(),
+        ),
+        "bg" => (
+            "Stop background process".into(),
+            get_string_field(arguments, "pid")
+                .map(|p| format!("pid {p}"))
+                .unwrap_or_default(),
+        ),
+        "context_node" => ("Update knowledge graph".into(), {
+            let label = get_string_field(arguments, "label").unwrap_or_default();
+            let kind = get_string_field(arguments, "kind").unwrap_or_default();
+            if kind.is_empty() {
+                label
+            } else {
+                format!("{label} ({kind})")
+            }
+        }),
+        other => (other.to_string(), String::new()),
+    }
+}
+
 /// Names + descriptions of every tool the model can actually call, parsed
 /// from [`tools_json`] so the `/tools` listing can never drift from the
 /// schema we hand to the model. Returns them in schema order.
@@ -507,6 +550,37 @@ mod tests {
         assert!(!chat_mode_allows("terminal", r#"{"command":"ls"}"#));
         assert!(!chat_mode_allows("bg", r#"{"action":"list"}"#));
         assert!(!chat_mode_allows("context_node", r#"{"label":"x"}"#));
+    }
+
+    #[test]
+    fn needs_review_confirmation_covers_side_effecting_tools() {
+        // Side-effecting non-file tools require a generic confirmation.
+        assert!(needs_review_confirmation("terminal", r#"{"command":"ls"}"#));
+        assert!(needs_review_confirmation("context_node", r#"{"label":"x"}"#));
+        // bg only when stopping a process; list/logs are read-only.
+        assert!(needs_review_confirmation("bg", r#"{"action":"stop","pid":42}"#));
+        assert!(!needs_review_confirmation("bg", r#"{"action":"list"}"#));
+        assert!(!needs_review_confirmation("bg", r#"{"action":"logs","pid":42}"#));
+        // file has its own diff-based flow; read-only tools never gate.
+        assert!(!needs_review_confirmation("file", r#"{"action":"write"}"#));
+        assert!(!needs_review_confirmation("search", r#"{"pattern":"x"}"#));
+        assert!(!needs_review_confirmation("fetch", r#"{"url":"http://x"}"#));
+    }
+
+    #[test]
+    fn confirm_summary_describes_the_action() {
+        assert_eq!(
+            confirm_summary("terminal", r#"{"command":"npm run build"}"#),
+            ("Run terminal command".to_string(), "npm run build".to_string())
+        );
+        assert_eq!(
+            confirm_summary("bg", r#"{"action":"stop","pid":42}"#).1,
+            "pid 42"
+        );
+        assert_eq!(
+            confirm_summary("context_node", r#"{"label":"parser","kind":"func"}"#).1,
+            "parser (func)"
+        );
     }
 
     #[test]

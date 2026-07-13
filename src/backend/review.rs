@@ -45,6 +45,31 @@ impl AgentMode {
     }
 }
 
+/// The user's answer to a generic tool-confirmation card (Review mode). Unlike
+/// the file-edit approval (a plain accept/reject), a confirmation can also be
+/// "always allow this tool for the rest of the session".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmDecision {
+    /// Don't run the tool call.
+    Reject,
+    /// Run it this once; ask again next time.
+    Once,
+    /// Run it and stop asking for this tool for the rest of the session.
+    Always,
+}
+
+impl ConfirmDecision {
+    /// Parse the wire string the frontend sends. Unknown values fall back to
+    /// the safe default (Reject).
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "always" => ConfirmDecision::Always,
+            "once" => ConfirmDecision::Once,
+            _ => ConfirmDecision::Reject,
+        }
+    }
+}
+
 pub struct ReviewManager {
     /// How the agent handles a turn (chat / auto / review). In Review mode,
     /// file writes/edits pause for user approval before hitting disk.

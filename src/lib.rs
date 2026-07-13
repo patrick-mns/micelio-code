@@ -45,6 +45,13 @@ pub struct AppState {
     pub session_pending: Mutex<Option<(String, std::sync::mpsc::Sender<String>)>>,
     /// Parked file edit/write approval (review mode): (session_id, reply channel).
     pub pending_edit: Mutex<Option<(String, std::sync::mpsc::Sender<bool>)>>,
+    /// Parked generic tool confirmation (review mode) for side-effecting
+    /// non-file tools: (session_id, reply channel).
+    pub pending_confirm:
+        Mutex<Option<(String, std::sync::mpsc::Sender<backend::review::ConfirmDecision>)>>,
+    /// Per-session set of tool names the user chose to "always allow" this
+    /// session (Review-mode confirmations). In-memory only; cleared on restart.
+    pub session_tool_allow: Mutex<HashMap<String, std::collections::HashSet<String>>>,
     /// Review manager: review-mode toggle + unstaged git changes.
     pub review: Mutex<backend::review::ReviewManager>,
 }
@@ -248,6 +255,8 @@ pub fn run() {
             session_cancels: Mutex::new(HashMap::new()),
             session_pending: Mutex::new(None),
             pending_edit: Mutex::new(None),
+            pending_confirm: Mutex::new(None),
+            session_tool_allow: Mutex::new(HashMap::new()),
             review: Mutex::new(backend::review::ReviewManager::new()),
         })
         .manage(updater)
@@ -324,6 +333,7 @@ pub fn run() {
             commands::review::git_revert_review_file,
             commands::review::git_revert_all_review,
             commands::review::answer_edit_review,
+            commands::review::answer_tool_confirm,
             commands::openers::list_openers,
             commands::openers::open_in,
             commands::openers::open_url,

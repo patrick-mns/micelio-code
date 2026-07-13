@@ -6,7 +6,7 @@ import type {
   EditReviewRequest, GitContext, ModelOption, ModelRole, NodeCode, NodeSummarized, Opener,
   OpenRouterStatus, SessionInfo, SessionModels, SessionTitle, Settings, StreamDelta, StreamDone,
   StreamError, StreamTool, StreamUsage, SummarizeProgress, SystemPromptInfo,
-  ToolInfo, Transcript, TreemapNode, UsageLogEntry, UsageRaw, UsageStats,
+  ToolConfirmRequest, ToolInfo, Transcript, TreemapNode, UsageLogEntry, UsageRaw, UsageStats,
 } from '@/types';
 
 // Typed listener helper: `listen` hands the callback the full event; every
@@ -94,6 +94,9 @@ export const ipc = {
   setSessionMode: (sessionId: string, mode: string) =>
     invoke<string>('set_session_mode', { sessionId, mode }),
   onReviewRequest: (cb: (p: EditReviewRequest) => void) => on<EditReviewRequest>('review_request', cb),
+  // decision: 'reject' | 'once' | 'always'
+  answerToolConfirm: (decision: string) => invoke<void>('answer_tool_confirm', { decision }),
+  onConfirmRequest: (cb: (p: ToolConfirmRequest) => void) => on<ToolConfirmRequest>('confirm_request', cb),
 
   onGraphUpdated: (cb: (p: null) => void) => on<null>('graph_updated', cb),
   onNodeSummarized: (cb: (p: NodeSummarized) => void) => on<NodeSummarized>('node_summarized', cb),
