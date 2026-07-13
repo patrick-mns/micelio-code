@@ -434,6 +434,14 @@ pub fn confirm_summary(name: &str, arguments: &str) -> (String, String) {
                 format!("{label} ({kind})")
             }
         }),
+        // MCP tools: `mcp__<server>__<tool>` → a readable title + the server.
+        other if other.starts_with(crate::backend::mcp::MCP_PREFIX) => {
+            let rest = other
+                .strip_prefix(crate::backend::mcp::MCP_PREFIX)
+                .unwrap_or(other);
+            let (server, tool) = rest.split_once("__").unwrap_or(("", rest));
+            (format!("Call MCP tool: {tool}"), format!("server: {server}"))
+        }
         other => (other.to_string(), String::new()),
     }
 }
@@ -636,6 +644,16 @@ mod tests {
             confirm_summary("context_node", r#"{"label":"parser","kind":"func"}"#).1,
             "parser (func)"
         );
+    }
+
+    #[test]
+    fn confirm_summary_formats_mcp_tool_names() {
+        let (title, detail) = confirm_summary("mcp__everything__echo", "{}");
+        assert_eq!(title, "Call MCP tool: echo");
+        assert_eq!(detail, "server: everything");
+        // Native tools keep their existing summaries.
+        let (title, _) = confirm_summary("terminal", r#"{"command":"ls"}"#);
+        assert_eq!(title, "Run terminal command");
     }
 
     #[test]

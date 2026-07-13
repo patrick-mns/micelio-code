@@ -669,8 +669,13 @@ fn execute_tool_call(
     // reject, allow once, or "always allow" the tool for the rest of the
     // session (tracked in `session_tool_allow`). File write/edit is handled by
     // the diff flow below, so it's excluded from `needs_review_confirmation`.
+    // MCP tools follow the same rule as native side-effecting tools in Review
+    // mode: a non-read-only MCP tool (per its readOnlyHint) needs confirmation.
+    // Read-only MCP tools run freely.
+    let mcp_needs_confirm = normalized.starts_with(crate::backend::mcp::MCP_PREFIX)
+        && !mcp_state.is_read_only(normalized);
     if mode == crate::backend::review::AgentMode::Review
-        && tools::needs_review_confirmation(normalized, &call.arguments)
+        && (tools::needs_review_confirmation(normalized, &call.arguments) || mcp_needs_confirm)
     {
         let already_allowed = {
             let st = app.state::<AppState>();
