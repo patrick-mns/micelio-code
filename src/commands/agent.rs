@@ -57,11 +57,8 @@ pub fn run_agent_loop(
     // Chat mode advertises only a read-only subset of tools (see
     // CHAT_MODE_TOOLS); every other mode gets the full toolset. The subset is
     // computed once and reused for every streamed round this turn.
-    let tools_advert = if mode == AgentMode::Chat {
-        tools::tools_json_filtered(tools::CHAT_MODE_TOOLS)
-    } else {
-        tools::tools_json().to_string()
-    };
+let mcp = app.state::<AppState>().mcp.clone();
+    let tools_advert = tools::all_tools_json(Some(&mcp), mode == AgentMode::Chat);
     // Chat mode can't write/edit files, so a "change this file" request can
     // never be satisfied there — suppress the tool-nudge retry.
     let needs_tool = needs_tool && mode != AgentMode::Chat;
@@ -606,9 +603,15 @@ fn execute_tool_call(
     // Chat mode is read-only. The model is only offered read-only tools, but
     // guard execution too so a stray call (e.g. a `file` write) can never touch
     // disk — return an explanatory result instead of running it.
-    if mode == crate::backend::review::AgentMode::Chat
-        && !tools::chat_mode_allows(&call.name, &call.arguments)
-    {
+    let chat_mode = mode == crate::backend::review::AgentMode::Chat;
+    let mcp_state = app.state::<AppState>().mcp.clone();
+    let mode_blocks = if call.name.starts_with(crate::backend::mcp::MCP_PREFIX) {
+        // MCP tools follow the mode: in Chat mode only read-only ones run.
+        !tools::mcp_mode_allows(Some(&mcp_state), &call.name, chat_mode)
+    } else {
+        chat_mode && !tools::chat_mode_allows(&call.name, &call.arguments)
+    };
+    if mode_blocks {
         let msg = format!(
             "Chat mode is read-only — `{}` isn't available here. Switch to Auto or Review mode to make changes.",
             call.name
@@ -640,6 +643,7 @@ fn execute_tool_call(
         show_tools: true,
         debug: false,
         graph_json: graph_json.to_string(),
+        mcp: Some(app.state::<AppState>().mcp.clone()),
     };
 
     // ── Review mode: pause file write/edit for user approval ────────────
@@ -658,6 +662,103 @@ fn execute_tool_call(
 
     let review_on =
         (is_file_mod || is_legacy_mod) && mode == crate::backend::review::AgentMode::Review;
+
+    // ── Review mode: pause side-effecting non-file tools for confirmation ──
+    // terminal / bg-stop / context_node don't produce a diff, so they get a
+    // generic confirmation card instead of the EditApprovalCard. The user can
+    // reject, allow once, or "always allow" the tool for the rest of the
+    // session (tracked in `session_tool_allow`). File write/edit is handled by
+    // the diff flow below, so it's excluded from `needs_review_confirmation`.
+    // MCP tools follow the same rule as native side-effecting tools in Review
+    // mode: a non-read-only MCP tool (per its readOnlyHint) needs confirmation.
+    // Read-only MCP tools run freely.
+    let mcp_needs_confirm = normalized.starts_with(crate::backend::mcp::MCP_PREFIX)
+        && !mcp_state.is_read_only(normalized);
+    if mode == crate::backend::review::AgentMode::Review
+        && (tools::needs_review_confirmation(normalized, &call.arguments) || mcp_needs_confirm)
+    {
+        let already_allowed = {
+            let st = app.state::<AppState>();
+            let map = st.session_tool_allow.lock().unwrap();
+            map.get(session_id)
+                .map(|set| set.contains(normalized))
+                .unwrap_or(false)
+        };
+
+        if !already_allowed {
+            let (title, detail) = tools::confirm_summary(normalized, &call.arguments);
+
+            let (tx, rx) = std::sync::mpsc::channel::<crate::backend::review::ConfirmDecision>();
+            {
+                let st = app.state::<AppState>();
+                *st.pending_confirm.lock().unwrap() = Some((session_id.to_string(), tx));
+            }
+            let _ = app.emit(
+                "confirm_request",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "tool": normalized,
+                    "title": title,
+                    "detail": detail,
+                }),
+            );
+
+            let cancel = {
+                let st = app.state::<AppState>();
+                let c = st.session_cancels.lock().unwrap().get(session_id).cloned();
+                c
+            };
+            let decision = loop {
+                let canceled = cancel
+                    .as_ref()
+                    .map(|c| c.load(Ordering::SeqCst))
+                    .unwrap_or(false);
+                if canceled {
+                    break crate::backend::review::ConfirmDecision::Reject;
+                }
+                match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                    Ok(d) => break d,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        break crate::backend::review::ConfirmDecision::Reject
+                    }
+                }
+            };
+            {
+                let st = app.state::<AppState>();
+                *st.pending_confirm.lock().unwrap() = None;
+            }
+
+            match decision {
+                crate::backend::review::ConfirmDecision::Reject => {
+                    let msg = format!(
+                        "`{}` was rejected by the user — it was not run.",
+                        call.name
+                    );
+                    let summary = format!("{} blocked\n{msg}", call.name);
+                    let _ = app.emit(
+                        "stream_tool",
+                        serde_json::json!({ "session_id": session_id, "summary": summary }),
+                    );
+                    history.push(Message::tool_with_content(
+                        &call.name,
+                        ToolResultContent::Full(msg),
+                    ));
+                    return (summary, false, None);
+                }
+                crate::backend::review::ConfirmDecision::Always => {
+                    let st = app.state::<AppState>();
+                    st.session_tool_allow
+                        .lock()
+                        .unwrap()
+                        .entry(session_id.to_string())
+                        .or_default()
+                        .insert(normalized.to_string());
+                }
+                crate::backend::review::ConfirmDecision::Once => {}
+            }
+        }
+    }
 
     let (is_error, tool_content, touched) = if review_on {
         let path = tools::get_string_field(&call.arguments, "path")

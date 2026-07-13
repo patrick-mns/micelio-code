@@ -141,6 +141,37 @@ export interface ToolInfo {
   description: string;
 }
 
+// ── MCP (Model Context Protocol) ────────────────────────────────────────
+export interface McpServerStatus {
+  name: string;
+  enabled: boolean;
+  connected: boolean;
+  toolCount: number;
+  transport: string; // "stdio" | "http"
+  error: string | null; // short, human-readable
+  errorDetail: string | null; // full raw error (shown on hover)
+}
+
+export interface McpToolInfo {
+  server: string;
+  name: string;
+  namespaced: string;
+  description: string;
+  readOnly: boolean;
+}
+
+export interface McpServerConfig {
+  command?: string | null;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string | null;
+  enabled?: boolean;
+}
+
+export interface McpConfigFile {
+  mcpServers: Record<string, McpServerConfig>;
+}
+
 export interface ModelRole {
   role: string; // "chat" | "summarize" | "vision"
   model: string;
@@ -238,6 +269,16 @@ export interface EditReviewRequest {
   path: string;
   original_content: string;
   proposed_content: string;
+}
+
+// Emitted when review mode pauses a side-effecting non-file tool (terminal,
+// bg-stop, context_node) for user confirmation (see
+// commands::agent::execute_tool_call). Answered via `answerToolConfirm`.
+export interface ToolConfirmRequest {
+  session_id: string;
+  tool: string;
+  title: string;
+  detail: string;
 }
 
 export interface SessionTitle {

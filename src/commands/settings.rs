@@ -31,11 +31,17 @@ pub struct ToolInfo {
 /// The tools the model can call, parsed from the live schema so `/tools` can
 /// never drift from what's actually registered.
 #[tauri::command]
-pub async fn list_tools() -> Result<Vec<ToolInfo>, String> {
-    Ok(crate::backend::tools::tool_summaries()
+pub async fn list_tools(state: State<'_, AppState>) -> Result<Vec<ToolInfo>, String> {
+    let mut tools: Vec<ToolInfo> = crate::backend::tools::tool_summaries()
         .into_iter()
         .map(|(name, description)| ToolInfo { name, description })
-        .collect())
+        .collect();
+    // Append discovered MCP tools under their namespaced names.
+    tools.extend(state.mcp.list_tools().into_iter().map(|t| ToolInfo {
+        name: t.namespaced,
+        description: t.description,
+    }));
+    Ok(tools)
 }
 
 #[tauri::command]

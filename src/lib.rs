@@ -8,7 +8,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 pub use backend::knowledge::KnowledgeGraph;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use backend::sessions::SessionStore;
 
 /// The model assigned to each role. Grouped behind a single lock because the
@@ -45,8 +45,18 @@ pub struct AppState {
     pub session_pending: Mutex<Option<(String, std::sync::mpsc::Sender<String>)>>,
     /// Parked file edit/write approval (review mode): (session_id, reply channel).
     pub pending_edit: Mutex<Option<(String, std::sync::mpsc::Sender<bool>)>>,
+    /// Parked generic tool confirmation (review mode) for side-effecting
+    /// non-file tools: (session_id, reply channel).
+    pub pending_confirm:
+        Mutex<Option<(String, std::sync::mpsc::Sender<backend::review::ConfirmDecision>)>>,
+    /// Per-session set of tool names the user chose to "always allow" this
+    /// session (Review-mode confirmations). In-memory only; cleared on restart.
+    pub session_tool_allow: Mutex<HashMap<String, std::collections::HashSet<String>>>,
     /// Review manager: review-mode toggle + unstaged git changes.
     pub review: Mutex<backend::review::ReviewManager>,
+    /// MCP client manager: live connections to external MCP servers and the
+    /// tools they expose. Shared into every tool-call context.
+    pub mcp: Arc<backend::mcp::McpManager>,
 }
 
 impl AppState {
@@ -215,10 +225,30 @@ pub fn run() {
 
     let updater = Arc::new(Updater::new());
 
+    // MCP manager: owns its own runtime and the live server connections.
+    // Building the manager is cheap (no connections yet); the actual connect
+    // happens off the main thread in `setup` so a slow/hung server never blocks
+    // app startup.
+    let mcp = Arc::new(
+        backend::mcp::McpManager::new().expect("failed to build MCP runtime"),
+    );
+    let mcp_for_setup = mcp.clone();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
+        .setup(move |app| {
             backend::tools::bg::set_app_handle(app.handle().clone());
+
+            // Connect to configured MCP servers off the main thread. Emits
+            // `mcp_status` when done so the UI can refresh its server list.
+            {
+                let mcp = mcp_for_setup.clone();
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    mcp.reload();
+                    let _ = handle.emit("mcp_status", mcp.server_status());
+                });
+            }
 
             // Remove native window decorations on Windows/Linux so the app can
             // draw its own title-bar buttons (minimize/maximize/close) inside the
@@ -248,7 +278,10 @@ pub fn run() {
             session_cancels: Mutex::new(HashMap::new()),
             session_pending: Mutex::new(None),
             pending_edit: Mutex::new(None),
+            pending_confirm: Mutex::new(None),
+            session_tool_allow: Mutex::new(HashMap::new()),
             review: Mutex::new(backend::review::ReviewManager::new()),
+            mcp,
         })
         .manage(updater)
         .invoke_handler(tauri::generate_handler![
@@ -316,6 +349,11 @@ pub fn run() {
             commands::bg::stop_bg_task,
             commands::bg::clear_bg_tasks,
             commands::bg::get_bg_task_log,
+            commands::mcp::mcp_list_servers,
+            commands::mcp::mcp_list_tools,
+            commands::mcp::mcp_get_config,
+            commands::mcp::mcp_save_config,
+            commands::mcp::mcp_reload,
             commands::review::get_review_status,
             commands::review::set_agent_mode,
             commands::review::get_agent_mode,
@@ -324,6 +362,7 @@ pub fn run() {
             commands::review::git_revert_review_file,
             commands::review::git_revert_all_review,
             commands::review::answer_edit_review,
+            commands::review::answer_tool_confirm,
             commands::openers::list_openers,
             commands::openers::open_in,
             commands::openers::open_url,

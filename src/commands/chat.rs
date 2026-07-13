@@ -436,7 +436,21 @@ pub async fn get_context_window(state: State<'_, AppState>) -> Result<ContextWin
     let total = provider.context_length(&model);
 
     let system_tokens = count_tokens(&crate::backend::prompt::system_prompt());
-    let tools_tokens = count_tokens(tools::tools_json());
+    let chat_mode = state.session_agent_mode(&session_id) == crate::backend::review::AgentMode::Chat;
+    // Native and MCP tools go to the model as one array, but we account for them
+    // separately so the meter shows how much MCP servers add to the context.
+    let native_tools_json = if chat_mode {
+        tools::tools_json_filtered(tools::CHAT_MODE_TOOLS)
+    } else {
+        tools::tools_json().to_string()
+    };
+    let tools_tokens = count_tokens(&native_tools_json);
+    let mcp_schema = state.mcp.tools_schema(chat_mode);
+    let mcp_tools_tokens = if mcp_schema.is_empty() {
+        0
+    } else {
+        count_tokens(&serde_json::to_string(&mcp_schema).unwrap_or_default())
+    };
 
     let messages_tokens = {
         let histories = state.session_histories.lock().unwrap();
@@ -456,7 +470,7 @@ pub async fn get_context_window(state: State<'_, AppState>) -> Result<ContextWin
             .unwrap_or(0)
     };
 
-    let used = system_tokens + tools_tokens + messages_tokens;
+    let used = system_tokens + tools_tokens + mcp_tools_tokens + messages_tokens;
     let mut segments = vec![
         ContextSegment {
             label: "Messages".into(),
@@ -465,6 +479,10 @@ pub async fn get_context_window(state: State<'_, AppState>) -> Result<ContextWin
         ContextSegment {
             label: "Tools".into(),
             tokens: tools_tokens,
+        },
+        ContextSegment {
+            label: "MCP tools".into(),
+            tokens: mcp_tools_tokens,
         },
         ContextSegment {
             label: "System prompt".into(),
@@ -602,7 +620,8 @@ pub async fn get_transcript(state: State<'_, AppState>) -> Result<Transcript, St
         tokens: system_tokens,
     });
 
-    let tools = tools::tools_json().to_string();
+    let chat_mode = state.session_agent_mode(&session_id) == crate::backend::review::AgentMode::Chat;
+    let tools = tools::all_tools_json(Some(&state.mcp), chat_mode);
     let tools_tokens = count_tokens(&tools);
     if tools_tokens > 0 && tools.trim() != "[]" {
         items.push(TranscriptItem {

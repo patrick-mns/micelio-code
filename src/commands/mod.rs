@@ -2,6 +2,7 @@ pub mod agent;
 pub mod bg;
 pub mod chat;
 pub mod graph;
+pub mod mcp;
 pub mod openers;
 pub mod review;
 pub mod sessions;

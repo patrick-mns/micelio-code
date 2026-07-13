@@ -9,6 +9,9 @@ mod terminal;
 mod vision;
 
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use crate::backend::mcp::McpManager;
 
 #[derive(Clone)]
 pub struct ToolContext {
@@ -22,6 +25,9 @@ pub struct ToolContext {
     pub show_tools: bool,
     pub debug: bool,
     pub graph_json: String,
+    /// Shared MCP client manager. `None` when MCP is unavailable (e.g. tests);
+    /// present in the real app so `mcp__*` tool calls can be routed to servers.
+    pub mcp: Option<Arc<McpManager>>,
 }
 
 impl ToolContext {
@@ -86,6 +92,11 @@ fn inject_action(args: &str, action: &str) -> String {
 /// `filefilefilefile` or `read_fileread_file`) by looking for a known tool
 /// name as a substring. Falls back to the original name if nothing matches.
 pub fn normalize_tool_name(name: &str) -> &str {
+    // MCP tools are namespaced (`mcp__<server>__<tool>`) and routed verbatim.
+    // Skip the stutter/substring normalization so their names are never mangled.
+    if name.starts_with(crate::backend::mcp::MCP_PREFIX) {
+        return name;
+    }
     const KNOWN: &[&str] = &[
         // Longest first so `context_node` matches before `context`, etc.
         "context_node",
@@ -116,6 +127,16 @@ pub fn normalize_tool_name(name: &str) -> &str {
 
 pub fn run(name: &str, arguments: &str, context: &ToolContext) -> Result<ToolResult, String> {
     let name = normalize_tool_name(name);
+    // MCP tools are routed to their server via the shared manager.
+    if name.starts_with(crate::backend::mcp::MCP_PREFIX) {
+        let mcp = context
+            .mcp
+            .as_ref()
+            .ok_or_else(|| "MCP is not available in this context".to_string())?;
+        return mcp
+            .call(name, arguments)
+            .map(|content| ToolResult { content });
+    }
     match name {
         "terminal" => terminal::run(arguments, context),
         "file" => file::run(arguments, context),
@@ -326,6 +347,39 @@ pub fn tools_json_filtered(allowed: &[&str]) -> String {
     serde_json::to_string(&kept).unwrap_or_else(|_| "[]".into())
 }
 
+/// Full tool schema advertised to the model this turn: the native tools (mode-
+/// filtered exactly as before) plus every discovered MCP tool. In Chat mode
+/// only read-only MCP tools are appended, mirroring the native read-only subset.
+/// `chat_mode` selects the Chat-mode filtering; `mcp` is `None` when MCP is
+/// unavailable, in which case this is equivalent to the old behavior.
+pub fn all_tools_json(mcp: Option<&McpManager>, chat_mode: bool) -> String {
+    let native = if chat_mode {
+        tools_json_filtered(CHAT_MODE_TOOLS)
+    } else {
+        tools_json().to_string()
+    };
+    let Some(mcp) = mcp else {
+        return native;
+    };
+    let mut arr: Vec<serde_json::Value> = serde_json::from_str(&native).unwrap_or_default();
+    // In Chat mode, only read-only MCP tools are advertised.
+    arr.extend(mcp.tools_schema(chat_mode));
+    serde_json::to_string(&arr).unwrap_or(native)
+}
+
+/// Whether an MCP tool named `name` may execute under `chat_mode`. Non-MCP
+/// names are not this function's concern (returns `true` so the native gate
+/// decides). In Chat mode, an MCP tool is allowed only when it is read-only.
+pub fn mcp_mode_allows(mcp: Option<&McpManager>, name: &str, chat_mode: bool) -> bool {
+    if !name.starts_with(crate::backend::mcp::MCP_PREFIX) {
+        return true;
+    }
+    if !chat_mode {
+        return true;
+    }
+    mcp.map(|m| m.is_read_only(name)).unwrap_or(false)
+}
+
 /// Whether `name` (with its `arguments`) is permitted to execute in Chat mode.
 /// Chat mode is read-only: only the [`CHAT_MODE_TOOLS`] are allowed, and `file`
 /// is further restricted to its `read` action (no `write`/`edit`). Legacy
@@ -338,6 +392,57 @@ pub fn chat_mode_allows(name: &str, arguments: &str) -> bool {
             Some("write") | Some("edit")
         ),
         _ => false,
+    }
+}
+
+/// Whether a tool call must pause for a generic (non-diff) confirmation card in
+/// Review mode. These are side-effecting tools other than file write/edit —
+/// running a shell command (`terminal`), killing a background process
+/// (`bg` with `action:"stop"`), or mutating the knowledge graph
+/// (`context_node`). File write/edit is intentionally NOT here: it has its own
+/// diff-based approval flow (see `commands::agent::execute_tool_call`).
+/// Read-only actions like `bg` list/logs never need confirmation.
+pub fn needs_review_confirmation(name: &str, arguments: &str) -> bool {
+    match normalize_tool_name(name) {
+        "terminal" | "context_node" => true,
+        "bg" => get_string_field(arguments, "action").as_deref() == Some("stop"),
+        _ => false,
+    }
+}
+
+/// A human-readable `(title, detail)` pair describing what a confirmation-gated
+/// tool call will do, for the generic confirmation card. `detail` is the
+/// concrete thing being acted on (the command, the pid, the graph node).
+pub fn confirm_summary(name: &str, arguments: &str) -> (String, String) {
+    match normalize_tool_name(name) {
+        "terminal" => (
+            "Run terminal command".into(),
+            get_string_field(arguments, "command").unwrap_or_default(),
+        ),
+        "bg" => (
+            "Stop background process".into(),
+            get_string_field(arguments, "pid")
+                .map(|p| format!("pid {p}"))
+                .unwrap_or_default(),
+        ),
+        "context_node" => ("Update knowledge graph".into(), {
+            let label = get_string_field(arguments, "label").unwrap_or_default();
+            let kind = get_string_field(arguments, "kind").unwrap_or_default();
+            if kind.is_empty() {
+                label
+            } else {
+                format!("{label} ({kind})")
+            }
+        }),
+        // MCP tools: `mcp__<server>__<tool>` → a readable title + the server.
+        other if other.starts_with(crate::backend::mcp::MCP_PREFIX) => {
+            let rest = other
+                .strip_prefix(crate::backend::mcp::MCP_PREFIX)
+                .unwrap_or(other);
+            let (server, tool) = rest.split_once("__").unwrap_or(("", rest));
+            (format!("Call MCP tool: {tool}"), format!("server: {server}"))
+        }
+        other => (other.to_string(), String::new()),
     }
 }
 
@@ -402,6 +507,7 @@ mod tests {
             show_tools: false,
             debug: false,
             graph_json: String::new(),
+            mcp: None,
         }
     }
 
@@ -507,6 +613,47 @@ mod tests {
         assert!(!chat_mode_allows("terminal", r#"{"command":"ls"}"#));
         assert!(!chat_mode_allows("bg", r#"{"action":"list"}"#));
         assert!(!chat_mode_allows("context_node", r#"{"label":"x"}"#));
+    }
+
+    #[test]
+    fn needs_review_confirmation_covers_side_effecting_tools() {
+        // Side-effecting non-file tools require a generic confirmation.
+        assert!(needs_review_confirmation("terminal", r#"{"command":"ls"}"#));
+        assert!(needs_review_confirmation("context_node", r#"{"label":"x"}"#));
+        // bg only when stopping a process; list/logs are read-only.
+        assert!(needs_review_confirmation("bg", r#"{"action":"stop","pid":42}"#));
+        assert!(!needs_review_confirmation("bg", r#"{"action":"list"}"#));
+        assert!(!needs_review_confirmation("bg", r#"{"action":"logs","pid":42}"#));
+        // file has its own diff-based flow; read-only tools never gate.
+        assert!(!needs_review_confirmation("file", r#"{"action":"write"}"#));
+        assert!(!needs_review_confirmation("search", r#"{"pattern":"x"}"#));
+        assert!(!needs_review_confirmation("fetch", r#"{"url":"http://x"}"#));
+    }
+
+    #[test]
+    fn confirm_summary_describes_the_action() {
+        assert_eq!(
+            confirm_summary("terminal", r#"{"command":"npm run build"}"#),
+            ("Run terminal command".to_string(), "npm run build".to_string())
+        );
+        assert_eq!(
+            confirm_summary("bg", r#"{"action":"stop","pid":42}"#).1,
+            "pid 42"
+        );
+        assert_eq!(
+            confirm_summary("context_node", r#"{"label":"parser","kind":"func"}"#).1,
+            "parser (func)"
+        );
+    }
+
+    #[test]
+    fn confirm_summary_formats_mcp_tool_names() {
+        let (title, detail) = confirm_summary("mcp__everything__echo", "{}");
+        assert_eq!(title, "Call MCP tool: echo");
+        assert_eq!(detail, "server: everything");
+        // Native tools keep their existing summaries.
+        let (title, _) = confirm_summary("terminal", r#"{"command":"ls"}"#);
+        assert_eq!(title, "Run terminal command");
     }
 
     #[test]

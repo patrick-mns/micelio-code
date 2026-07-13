@@ -3,10 +3,11 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import type {
   AskUser, BgTaskExited, BgTaskInfo, ChatMessage, CompactResult, ContextWindow,
-  EditReviewRequest, GitContext, ModelOption, ModelRole, NodeCode, NodeSummarized, Opener,
+  EditReviewRequest, GitContext, McpServerStatus, McpToolInfo,
+  ModelOption, ModelRole, NodeCode, NodeSummarized, Opener,
   OpenRouterStatus, SessionInfo, SessionModels, SessionTitle, Settings, StreamDelta, StreamDone,
   StreamError, StreamTool, StreamUsage, SummarizeProgress, SystemPromptInfo,
-  ToolInfo, Transcript, TreemapNode, UsageLogEntry, UsageRaw, UsageStats,
+  ToolConfirmRequest, ToolInfo, Transcript, TreemapNode, UsageLogEntry, UsageRaw, UsageStats,
 } from '@/types';
 
 // Typed listener helper: `listen` hands the callback the full event; every
@@ -18,6 +19,13 @@ export const ipc = {
   sendMessage: (content: string) => invoke<ChatMessage>('send_message', { content }),
   startChatStream: (content: string) => invoke<string>('start_chat_stream', { content }),
   listTools: () => invoke<ToolInfo[]>('list_tools'),
+
+  // MCP servers
+  mcpListServers: () => invoke<McpServerStatus[]>('mcp_list_servers'),
+  mcpListTools: () => invoke<McpToolInfo[]>('mcp_list_tools'),
+  mcpGetConfig: () => invoke<string>('mcp_get_config'),
+  mcpSaveConfig: (raw: string) => invoke<McpServerStatus[]>('mcp_save_config', { raw }),
+  mcpReload: () => invoke<McpServerStatus[]>('mcp_reload'),
   stopChatStream: () => invoke<void>('stop_chat_stream'),
   answerQuestion: (answer: string) => invoke<void>('answer_question', { answer }),
   getHistory: () => invoke<ChatMessage[]>('get_history'),
@@ -87,6 +95,7 @@ export const ipc = {
   onStreamUsage: (cb: (p: StreamUsage) => void) => on<StreamUsage>('stream_usage', cb),
   onStreamError: (cb: (p: StreamError) => void) => on<StreamError>('stream_error', cb),
   onAskUser: (cb: (p: AskUser) => void) => on<AskUser>('ask_user', cb),
+  onMcpStatus: (cb: (p: McpServerStatus[]) => void) => on<McpServerStatus[]>('mcp_status', cb),
   answerEditReview: (accepted: boolean) => invoke<void>('answer_edit_review', { accepted }),
   getAgentMode: () => invoke<string>('get_agent_mode'),
   setAgentMode: (mode: string) => invoke<string>('set_agent_mode', { mode }),
@@ -94,6 +103,9 @@ export const ipc = {
   setSessionMode: (sessionId: string, mode: string) =>
     invoke<string>('set_session_mode', { sessionId, mode }),
   onReviewRequest: (cb: (p: EditReviewRequest) => void) => on<EditReviewRequest>('review_request', cb),
+  // decision: 'reject' | 'once' | 'always'
+  answerToolConfirm: (decision: string) => invoke<void>('answer_tool_confirm', { decision }),
+  onConfirmRequest: (cb: (p: ToolConfirmRequest) => void) => on<ToolConfirmRequest>('confirm_request', cb),
 
   onGraphUpdated: (cb: (p: null) => void) => on<null>('graph_updated', cb),
   onNodeSummarized: (cb: (p: NodeSummarized) => void) => on<NodeSummarized>('node_summarized', cb),

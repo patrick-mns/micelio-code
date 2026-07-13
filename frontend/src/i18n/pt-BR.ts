@@ -71,6 +71,7 @@ const ptBR: Translations = {
     appearance: 'Aparência',
     chat: 'Chat',
     providers: 'Provedores',
+    mcp: 'MCP',
     workspace: 'Workspace',
     advanced: 'Avançado',
     theme: 'TEMA',

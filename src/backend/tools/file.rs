@@ -414,6 +414,7 @@ mod tests {
             show_tools: false,
             debug: false,
             graph_json: String::new(),
+            mcp: None,
         };
         (dir, ctx)
     }
