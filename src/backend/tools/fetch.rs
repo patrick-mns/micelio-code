@@ -202,6 +202,7 @@ mod tests {
             show_tools: false,
             debug: false,
             graph_json: String::new(),
+            mcp: None,
         };
         assert!(run(r#"{"url":"file:///etc/passwd"}"#, &ctx).is_err());
         assert!(run(r#"{"url":"ftp://example.com"}"#, &ctx).is_err());

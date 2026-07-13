@@ -9,6 +9,9 @@ mod terminal;
 mod vision;
 
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use crate::backend::mcp::McpManager;
 
 #[derive(Clone)]
 pub struct ToolContext {
@@ -22,6 +25,9 @@ pub struct ToolContext {
     pub show_tools: bool,
     pub debug: bool,
     pub graph_json: String,
+    /// Shared MCP client manager. `None` when MCP is unavailable (e.g. tests);
+    /// present in the real app so `mcp__*` tool calls can be routed to servers.
+    pub mcp: Option<Arc<McpManager>>,
 }
 
 impl ToolContext {
@@ -86,6 +92,11 @@ fn inject_action(args: &str, action: &str) -> String {
 /// `filefilefilefile` or `read_fileread_file`) by looking for a known tool
 /// name as a substring. Falls back to the original name if nothing matches.
 pub fn normalize_tool_name(name: &str) -> &str {
+    // MCP tools are namespaced (`mcp__<server>__<tool>`) and routed verbatim.
+    // Skip the stutter/substring normalization so their names are never mangled.
+    if name.starts_with(crate::backend::mcp::MCP_PREFIX) {
+        return name;
+    }
     const KNOWN: &[&str] = &[
         // Longest first so `context_node` matches before `context`, etc.
         "context_node",
@@ -116,6 +127,16 @@ pub fn normalize_tool_name(name: &str) -> &str {
 
 pub fn run(name: &str, arguments: &str, context: &ToolContext) -> Result<ToolResult, String> {
     let name = normalize_tool_name(name);
+    // MCP tools are routed to their server via the shared manager.
+    if name.starts_with(crate::backend::mcp::MCP_PREFIX) {
+        let mcp = context
+            .mcp
+            .as_ref()
+            .ok_or_else(|| "MCP is not available in this context".to_string())?;
+        return mcp
+            .call(name, arguments)
+            .map(|content| ToolResult { content });
+    }
     match name {
         "terminal" => terminal::run(arguments, context),
         "file" => file::run(arguments, context),
@@ -326,6 +347,39 @@ pub fn tools_json_filtered(allowed: &[&str]) -> String {
     serde_json::to_string(&kept).unwrap_or_else(|_| "[]".into())
 }
 
+/// Full tool schema advertised to the model this turn: the native tools (mode-
+/// filtered exactly as before) plus every discovered MCP tool. In Chat mode
+/// only read-only MCP tools are appended, mirroring the native read-only subset.
+/// `chat_mode` selects the Chat-mode filtering; `mcp` is `None` when MCP is
+/// unavailable, in which case this is equivalent to the old behavior.
+pub fn all_tools_json(mcp: Option<&McpManager>, chat_mode: bool) -> String {
+    let native = if chat_mode {
+        tools_json_filtered(CHAT_MODE_TOOLS)
+    } else {
+        tools_json().to_string()
+    };
+    let Some(mcp) = mcp else {
+        return native;
+    };
+    let mut arr: Vec<serde_json::Value> = serde_json::from_str(&native).unwrap_or_default();
+    // In Chat mode, only read-only MCP tools are advertised.
+    arr.extend(mcp.tools_schema(chat_mode));
+    serde_json::to_string(&arr).unwrap_or(native)
+}
+
+/// Whether an MCP tool named `name` may execute under `chat_mode`. Non-MCP
+/// names are not this function's concern (returns `true` so the native gate
+/// decides). In Chat mode, an MCP tool is allowed only when it is read-only.
+pub fn mcp_mode_allows(mcp: Option<&McpManager>, name: &str, chat_mode: bool) -> bool {
+    if !name.starts_with(crate::backend::mcp::MCP_PREFIX) {
+        return true;
+    }
+    if !chat_mode {
+        return true;
+    }
+    mcp.map(|m| m.is_read_only(name)).unwrap_or(false)
+}
+
 /// Whether `name` (with its `arguments`) is permitted to execute in Chat mode.
 /// Chat mode is read-only: only the [`CHAT_MODE_TOOLS`] are allowed, and `file`
 /// is further restricted to its `read` action (no `write`/`edit`). Legacy
@@ -445,6 +499,7 @@ mod tests {
             show_tools: false,
             debug: false,
             graph_json: String::new(),
+            mcp: None,
         }
     }
 
