@@ -27,7 +27,7 @@ export default function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
-  const { t } = useI18n();
+const { t } = useI18n();
   const confirmText = confirmLabel || t('sidebar.deleteBtn');
   const cancelText = cancelLabel || t('sidebar.cancelBtn');
   const [show, setShow] = useState(false);
@@ -127,7 +127,7 @@ export default function ConfirmModal({
               cursor: 'pointer',
             }}
           >
-            {cancelText}
+{cancelText}
           </button>
           <button
             onClick={onConfirm}
@@ -142,7 +142,7 @@ export default function ConfirmModal({
               cursor: 'pointer',
             }}
           >
-            {confirmText}
+{confirmText}
           </button>
         </div>
       </div>

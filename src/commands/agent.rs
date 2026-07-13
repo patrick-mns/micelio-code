@@ -57,7 +57,7 @@ pub fn run_agent_loop(
     // Chat mode advertises only a read-only subset of tools (see
     // CHAT_MODE_TOOLS); every other mode gets the full toolset. The subset is
     // computed once and reused for every streamed round this turn.
-    let mcp = app.state::<AppState>().mcp.clone();
+let mcp = app.state::<AppState>().mcp.clone();
     let tools_advert = tools::all_tools_json(Some(&mcp), mode == AgentMode::Chat);
     // Chat mode can't write/edit files, so a "change this file" request can
     // never be satisfied there — suppress the tool-nudge retry.

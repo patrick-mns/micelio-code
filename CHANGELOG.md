@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.8.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.7.0...micelio-v0.8.0) (2026-07-11)
+
+
+### Features
+
+* read-only tools in Chat mode, header centering & sidebar fixes ([#35](https://github.com/patrick-mns/micelio-code/issues/35)) ([404011c](https://github.com/patrick-mns/micelio-code/commit/404011c4878ec84b93a5acce5468a5c967c22d03))
+
+## [0.7.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.6.0...micelio-v0.7.0) (2026-07-11)
+
+
+### Features
+
+* **i18n:** add Portuguese language support with extended theming ([#30](https://github.com/patrick-mns/micelio-code/issues/30)) ([5eec7fd](https://github.com/patrick-mns/micelio-code/commit/5eec7fdc61d7cfffed2d7766357b8d163450856e))
+
+
+### Bug Fixes
+
+* **ui:** improve locale selector readability and unblock accent color on Dracula variant ([#32](https://github.com/patrick-mns/micelio-code/issues/32)) ([560c972](https://github.com/patrick-mns/micelio-code/commit/560c972c4b9d2116aba3eabbe38c3483dcd1e91e))
+
 ## [0.6.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.5.0...micelio-v0.6.0) (2026-07-10)
 
 

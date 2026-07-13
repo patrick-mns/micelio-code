@@ -34,7 +34,7 @@ export default function Sidebar({
     currentWorkspace, setAgentStatus,
   } = useStore();
 
-  const { t } = useI18n();
+const { t } = useI18n();
   const platform = usePlatform();
 
   const refresh = (): Promise<SessionInfo[]> =>

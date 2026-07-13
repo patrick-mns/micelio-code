@@ -62,7 +62,7 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [confirmDeleteSession, setConfirmDeleteSession] = useState<string | null>(null);
-  const { t } = useI18n();
+const { t } = useI18n();
 
   // Set up background update check
   useEffect(() => {
