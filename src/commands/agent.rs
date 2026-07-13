@@ -57,11 +57,8 @@ pub fn run_agent_loop(
     // Chat mode advertises only a read-only subset of tools (see
     // CHAT_MODE_TOOLS); every other mode gets the full toolset. The subset is
     // computed once and reused for every streamed round this turn.
-    let tools_advert = if mode == AgentMode::Chat {
-        tools::tools_json_filtered(tools::CHAT_MODE_TOOLS)
-    } else {
-        tools::tools_json().to_string()
-    };
+    let mcp = app.state::<AppState>().mcp.clone();
+    let tools_advert = tools::all_tools_json(Some(&mcp), mode == AgentMode::Chat);
     // Chat mode can't write/edit files, so a "change this file" request can
     // never be satisfied there — suppress the tool-nudge retry.
     let needs_tool = needs_tool && mode != AgentMode::Chat;
@@ -606,9 +603,15 @@ fn execute_tool_call(
     // Chat mode is read-only. The model is only offered read-only tools, but
     // guard execution too so a stray call (e.g. a `file` write) can never touch
     // disk — return an explanatory result instead of running it.
-    if mode == crate::backend::review::AgentMode::Chat
-        && !tools::chat_mode_allows(&call.name, &call.arguments)
-    {
+    let chat_mode = mode == crate::backend::review::AgentMode::Chat;
+    let mcp_state = app.state::<AppState>().mcp.clone();
+    let mode_blocks = if call.name.starts_with(crate::backend::mcp::MCP_PREFIX) {
+        // MCP tools follow the mode: in Chat mode only read-only ones run.
+        !tools::mcp_mode_allows(Some(&mcp_state), &call.name, chat_mode)
+    } else {
+        chat_mode && !tools::chat_mode_allows(&call.name, &call.arguments)
+    };
+    if mode_blocks {
         let msg = format!(
             "Chat mode is read-only — `{}` isn't available here. Switch to Auto or Review mode to make changes.",
             call.name
@@ -640,6 +643,7 @@ fn execute_tool_call(
         show_tools: true,
         debug: false,
         graph_json: graph_json.to_string(),
+        mcp: Some(app.state::<AppState>().mcp.clone()),
     };
 
     // ── Review mode: pause file write/edit for user approval ────────────
@@ -665,8 +669,13 @@ fn execute_tool_call(
     // reject, allow once, or "always allow" the tool for the rest of the
     // session (tracked in `session_tool_allow`). File write/edit is handled by
     // the diff flow below, so it's excluded from `needs_review_confirmation`.
+    // MCP tools follow the same rule as native side-effecting tools in Review
+    // mode: a non-read-only MCP tool (per its readOnlyHint) needs confirmation.
+    // Read-only MCP tools run freely.
+    let mcp_needs_confirm = normalized.starts_with(crate::backend::mcp::MCP_PREFIX)
+        && !mcp_state.is_read_only(normalized);
     if mode == crate::backend::review::AgentMode::Review
-        && tools::needs_review_confirmation(normalized, &call.arguments)
+        && (tools::needs_review_confirmation(normalized, &call.arguments) || mcp_needs_confirm)
     {
         let already_allowed = {
             let st = app.state::<AppState>();

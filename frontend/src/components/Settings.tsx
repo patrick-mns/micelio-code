@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { ChatCircle, Cloud, FolderOpen, Wrench, Palette, X, type Icon } from '@phosphor-icons/react';
+import { ChatCircle, Cloud, FolderOpen, Wrench, Palette, Plug, X, type Icon } from '@phosphor-icons/react';
 import { theme } from '@/theme';
 import { useI18n } from '@/i18n';
 import AppearanceSettings from './AppearanceSettings';
 import ChatSettings from './ChatSettings';
 import ProviderSettings from './ProviderSettings';
+import McpSettings from './McpSettings';
 import WorkspaceSettings from './WorkspaceSettings';
 import AdvancedSettings from './AdvancedSettings';
 import { settingsModalStyles as modalStyles } from '@/utils/theme-styles';
@@ -17,6 +18,7 @@ const CATEGORIES: { id: SettingsCategoryId; Icon: Icon; Panel: React.ComponentTy
   { id: 'appearance', Icon: Palette, Panel: AppearanceSettings },
   { id: 'chat', Icon: ChatCircle, Panel: ChatSettings },
   { id: 'providers', Icon: Cloud, Panel: ProviderSettings },
+  { id: 'mcp', Icon: Plug, Panel: McpSettings },
   { id: 'workspace', Icon: FolderOpen, Panel: WorkspaceSettings },
   { id: 'advanced', Icon: Wrench, Panel: AdvancedSettings },
 ];

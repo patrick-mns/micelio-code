@@ -73,6 +73,7 @@ const en = {
     appearance: 'Appearance',
     chat: 'Chat',
     providers: 'Providers',
+    mcp: 'MCP',
     workspace: 'Workspace',
     advanced: 'Advanced',
     // Appearance section
