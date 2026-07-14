@@ -435,13 +435,12 @@ pub async fn get_context_window(state: State<'_, AppState>) -> Result<ContextWin
     let provider = llm::provider_for_model(&model);
     let total = provider.context_length(&model);
 
-    // Skills are appended to the system prompt, but the meter accounts for
-    // them separately so enabling skills shows its real context cost.
+    // Skills are appended to the system prompt at send time, but the meter
+    // accounts for them separately so enabling skills shows its real cost.
     let skills_tokens = count_tokens(
         &crate::backend::skills::SkillRegistry::skills_prompt_section(),
     );
-    let system_tokens =
-        count_tokens(&crate::backend::prompt::system_prompt()).saturating_sub(skills_tokens);
+    let system_tokens = count_tokens(&crate::backend::prompt::base_system_prompt());
     let chat_mode = state.session_agent_mode(&session_id) == crate::backend::review::AgentMode::Chat;
     // Native and MCP tools go to the model as one array, but we account for them
     // separately so the meter shows how much MCP servers add to the context.
@@ -526,7 +525,10 @@ pub struct SystemPromptInfo {
 #[tauri::command]
 pub async fn get_system_prompt() -> Result<SystemPromptInfo, String> {
     Ok(SystemPromptInfo {
-        text: crate::backend::prompt::system_prompt(),
+        // Base prompt only — active skills are appended at send time and
+        // accounted for separately (the "Skills" context segment); showing
+        // them here would let an Edit+Save bake them into the override.
+        text: crate::backend::prompt::base_system_prompt(),
         is_custom: crate::backend::config::system_prompt_override().is_some(),
         default_text: crate::backend::prompt::default_system_prompt(),
     })
