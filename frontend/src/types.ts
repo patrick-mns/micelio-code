@@ -308,6 +308,8 @@ export interface SkillSummary {
   description: string;
   enabled: boolean;
   icon_path?: string | null;
+  /** Origin directory: "micelio" (.micelio/skills) or "claude" (.claude/skills) */
+  source: string;
 }
 
 export interface SkillDetail {
@@ -322,4 +324,5 @@ export interface SkillDetail {
   body: string;
   path: string;
   enabled: boolean;
+  source: string;
 }

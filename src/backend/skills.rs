@@ -44,6 +44,10 @@ pub struct Skill {
     /// Se a skill está ativa (habilita/desabilita via UI).
     #[serde(default)]
     pub enabled: bool,
+    /// Diretório de origem: "micelio" (`.micelio/skills`) ou "claude"
+    /// (`.claude/skills`, formato compatível do Claude Code).
+    #[serde(default)]
+    pub source: String,
 }
 
 /// Resumo leve para listar no frontend sem carregar o body.
@@ -56,6 +60,9 @@ pub struct SkillSummary {
     /// Caminho absoluto do arquivo de ícone (svg, png, webp), se existir.
     #[serde(default)]
     pub icon_path: Option<String>,
+    /// Diretório de origem ("micelio" | "claude").
+    #[serde(default)]
+    pub source: String,
 }
 
 // ── Registry ───────────────────────────────────────────────────────────────
@@ -81,15 +88,22 @@ impl SkillRegistry {
         }
     }
 
-    /// Carrega (ou recarrega) skills do diretório `.micelio/skills/` dentro de
-    /// `workspace_root`. Skills que já existiam mantêm seu estado `enabled`.
+    /// Carrega (ou recarrega) skills do workspace. Varre `.micelio/skills/` e
+    /// `.claude/skills/` (formato compatível do Claude Code); em conflito de
+    /// nome, `.micelio` vence por ser a fonte nativa. Skills que já existiam
+    /// mantêm seu estado `enabled`.
     pub fn load(workspace_root: &Path) {
         let mut reg = skill_registry().lock().unwrap();
-        let skills_dir = workspace_root.join(".micelio").join("skills");
 
         let mut new_skills: HashMap<String, Skill> = HashMap::new();
 
-        if let Ok(entries) = std::fs::read_dir(&skills_dir) {
+        // Ordem de varredura = precedência: `.claude` primeiro, `.micelio`
+        // depois sobrescrevendo em caso de conflito de nome.
+        for (dir, source) in [(".claude", "claude"), (".micelio", "micelio")] {
+            let skills_dir = workspace_root.join(dir).join("skills");
+            let Ok(entries) = std::fs::read_dir(&skills_dir) else {
+                continue;
+            };
             for entry in entries.flatten() {
                 let skill_path = entry.path();
                 if !skill_path.is_dir() {
@@ -110,10 +124,11 @@ impl SkillRegistry {
                             .unwrap_or(skill.meta.default_enabled);
                         let mut skill = skill;
                         skill.enabled = enabled;
+                        skill.source = source.to_string();
                         new_skills.insert(name, skill);
                     }
                     Err(e) => {
-                        eprintln!("[skills] skiplling {skill_path:?}: {e}");
+                        eprintln!("[skills] skipping {skill_path:?}: {e}");
                     }
                 }
             }
@@ -150,6 +165,7 @@ impl SkillRegistry {
                     description: s.meta.description.clone(),
                     enabled: s.enabled,
                     icon_path: icon,
+                    source: s.source.clone(),
                 }
             })
             .collect()
@@ -212,6 +228,7 @@ fn parse_skill_file(path: &Path) -> Result<Skill, String> {
         body,
         path: path.parent().unwrap_or(path).to_string_lossy().to_string(),
         enabled: false,
+        source: String::new(),
     })
 }
 
@@ -256,6 +273,10 @@ fn skill_icon_path(skill_path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // O registry é global (OnceLock); testes que chamam `load` precisam rodar
+    // serializados ou um sobrescreve o estado do outro.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn parse_minimal_skill() {
@@ -309,6 +330,7 @@ Check for security issues."#;
 
     #[test]
     fn load_skills_from_directory() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join("micelio-test-skills");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join(".micelio").join("skills").join("my-skill")).unwrap();
@@ -342,6 +364,42 @@ Hello world!"#;
         let active = SkillRegistry::active_skills();
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].meta.name, "my-skill");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_skills_from_claude_dir_with_micelio_precedence() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join("micelio-test-skills-claude");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let write_skill = |base: &str, name: &str, desc: &str| {
+            let p = dir.join(base).join("skills").join(name);
+            std::fs::create_dir_all(&p).unwrap();
+            std::fs::write(
+                p.join("SKILL.md"),
+                format!("---\nname: {name}\ndescription: {desc}\n---\n\nBody of {name}."),
+            )
+            .unwrap();
+        };
+
+        // Only in .claude
+        write_skill(".claude", "claude-only", "from claude");
+        // In both — .micelio must win
+        write_skill(".claude", "shared", "claude version");
+        write_skill(".micelio", "shared", "micelio version");
+
+        SkillRegistry::load(&dir);
+        let skills = SkillRegistry::list_skills();
+        assert_eq!(skills.len(), 2);
+
+        let claude_only = skills.iter().find(|s| s.name == "claude-only").unwrap();
+        assert_eq!(claude_only.source, "claude");
+
+        let shared = skills.iter().find(|s| s.name == "shared").unwrap();
+        assert_eq!(shared.source, "micelio");
+        assert_eq!(shared.description, "micelio version");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

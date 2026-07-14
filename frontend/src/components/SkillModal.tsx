@@ -51,6 +51,7 @@ export default function SkillModal({ skill, onClose }: SkillModalProps) {
           <span style={styles.meta}>
             #{skill.name}
             {detail?.meta.license ? ` · ${detail.meta.license}` : ''}
+            {skill.source === 'claude' ? ' · from .claude' : ''}
           </span>
         </div>
         <div style={styles.headRight}>
