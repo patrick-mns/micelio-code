@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.10.0...micelio-v0.11.0) (2026-07-14)
+
+
+### Features
+
+* skills system — workspace skill dock, #mentions, built-in skills ([7ccbbfe](https://github.com/patrick-mns/micelio-code/commit/7ccbbfed8e515cc19779eb237b1e052fcfccab7c))
+
+
+### Bug Fixes
+
+* sha256 hex formatting compat with latest sha2 crate ([c249158](https://github.com/patrick-mns/micelio-code/commit/c2491588e24de136163c7a3a9ffdcba548cba560))
+
 ## [0.10.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.9.0...micelio-v0.10.0) (2026-07-14)
 
 
