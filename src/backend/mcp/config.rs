@@ -38,7 +38,10 @@ fn default_true() -> bool {
 impl McpServerConfig {
     /// True when this entry describes a stdio (child-process) server.
     pub fn is_stdio(&self) -> bool {
-        self.command.as_deref().map(|c| !c.is_empty()).unwrap_or(false)
+        self.command
+            .as_deref()
+            .map(|c| !c.is_empty())
+            .unwrap_or(false)
     }
 
     /// True when this entry describes an HTTP (Streamable HTTP) server.

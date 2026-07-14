@@ -1,7 +1,7 @@
+use crate::backend::workspace::{list_workspaces, Workspace};
+use crate::AppState;
 use std::path::PathBuf;
 use tauri::State;
-use crate::AppState;
-use crate::backend::workspace::{Workspace, list_workspaces};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorkspaceWithSessions {
@@ -21,7 +21,9 @@ pub struct SessionBrief {
 }
 
 #[tauri::command]
-pub async fn get_current_workspace(state: State<'_, AppState>) -> Result<Option<Workspace>, String> {
+pub async fn get_current_workspace(
+    state: State<'_, AppState>,
+) -> Result<Option<Workspace>, String> {
     let ws = state.current_workspace.lock().unwrap();
     Ok(ws.clone())
 }
@@ -32,7 +34,9 @@ pub async fn list_all_workspaces() -> Result<Vec<Workspace>, String> {
 }
 
 #[tauri::command]
-pub async fn list_all_workspaces_with_sessions(state: State<'_, AppState>) -> Result<Vec<WorkspaceWithSessions>, String> {
+pub async fn list_all_workspaces_with_sessions(
+    state: State<'_, AppState>,
+) -> Result<Vec<WorkspaceWithSessions>, String> {
     let current_id = state
         .current_workspace
         .lock()
@@ -49,15 +53,18 @@ pub async fn list_all_workspaces_with_sessions(state: State<'_, AppState>) -> Re
         let sessions = if db_path.exists() {
             match crate::backend::sessions::SessionStore::open(&db_path) {
                 Ok(store) => match store.list_sessions() {
-                    Ok(metas) => metas.into_iter().map(|m| {
-                        let mid = m.id;
-                        SessionBrief {
-                            id: mid.clone(),
-                            title: m.title,
-                            message_count: m.event_count,
-                            active: is_current && mid == current_session_id,
-                        }
-                    }).collect(),
+                    Ok(metas) => metas
+                        .into_iter()
+                        .map(|m| {
+                            let mid = m.id;
+                            SessionBrief {
+                                id: mid.clone(),
+                                title: m.title,
+                                message_count: m.event_count,
+                                active: is_current && mid == current_session_id,
+                            }
+                        })
+                        .collect(),
                     Err(_) => vec![],
                 },
                 Err(_) => vec![],
@@ -65,7 +72,13 @@ pub async fn list_all_workspaces_with_sessions(state: State<'_, AppState>) -> Re
         } else {
             vec![]
         };
-        result.push(WorkspaceWithSessions { id: ws.id, name: ws.name, folders: ws.folders, sessions, is_current });
+        result.push(WorkspaceWithSessions {
+            id: ws.id,
+            name: ws.name,
+            folders: ws.folders,
+            sessions,
+            is_current,
+        });
     }
     Ok(result)
 }
@@ -235,7 +248,10 @@ fn workspaces_dir() -> std::path::PathBuf {
 }
 
 /// Internal helper to change the current active workspace in AppState
-async fn switch_workspace_internal(state: &State<'_, AppState>, ws: &Workspace) -> Result<(), String> {
+async fn switch_workspace_internal(
+    state: &State<'_, AppState>,
+    ws: &Workspace,
+) -> Result<(), String> {
     // 1. Core paths
     let ws_dir = ws.dir();
     let graph_path = ws_dir.join("graph.json");

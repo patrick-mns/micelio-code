@@ -73,7 +73,9 @@ pub async fn get_graph(state: State<'_, AppState>) -> Result<Vec<TreemapNode>, S
 #[tauri::command]
 pub async fn scan_workspace(app: AppHandle, state: State<'_, AppState>) -> Result<usize, String> {
     // Reset cancel flag at the start of every scan
-    state.scan_cancel.store(false, std::sync::atomic::Ordering::SeqCst);
+    state
+        .scan_cancel
+        .store(false, std::sync::atomic::Ordering::SeqCst);
 
     let Some(ws) = state.current_workspace.lock().unwrap().clone() else {
         return Ok(0); // No workspace to scan.
@@ -92,7 +94,8 @@ pub async fn scan_workspace(app: AppHandle, state: State<'_, AppState>) -> Resul
         } else {
             None
         };
-        let added = graph.scan_workspace_progress(folder, prefix, &state.scan_cancel, &mut |_| {})?;
+        let added =
+            graph.scan_workspace_progress(folder, prefix, &state.scan_cancel, &mut |_| {})?;
         total_added += added.added;
     }
 
@@ -112,7 +115,9 @@ pub async fn scan_workspace(app: AppHandle, state: State<'_, AppState>) -> Resul
 /// Signal the workspace scan to stop.
 #[tauri::command]
 pub async fn cancel_workspace_scan(state: State<'_, AppState>) -> Result<(), String> {
-    state.scan_cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+    state
+        .scan_cancel
+        .store(true, std::sync::atomic::Ordering::SeqCst);
     Ok(())
 }
 

@@ -292,10 +292,7 @@ pub fn list_models() -> BackendResult<Vec<ModelChoice>> {
         let name = trimmed.split_whitespace().next().unwrap_or("").to_string();
         if !name.is_empty() {
             let vision = model_supports_vision(&name);
-            models.push(ModelChoice {
-                name,
-                vision,
-            });
+            models.push(ModelChoice { name, vision });
         }
     }
     Ok(models)

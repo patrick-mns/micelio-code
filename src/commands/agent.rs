@@ -57,7 +57,7 @@ pub fn run_agent_loop(
     // Chat mode advertises only a read-only subset of tools (see
     // CHAT_MODE_TOOLS); every other mode gets the full toolset. The subset is
     // computed once and reused for every streamed round this turn.
-let mcp = app.state::<AppState>().mcp.clone();
+    let mcp = app.state::<AppState>().mcp.clone();
     let tools_advert = tools::all_tools_json(Some(&mcp), mode == AgentMode::Chat);
     // Chat mode can't write/edit files, so a "change this file" request can
     // never be satisfied there — suppress the tool-nudge retry.
@@ -628,7 +628,12 @@ fn execute_tool_call(
         return (summary, false, None);
     }
 
-    let ws = app.state::<AppState>().current_workspace.lock().unwrap().clone();
+    let ws = app
+        .state::<AppState>()
+        .current_workspace
+        .lock()
+        .unwrap()
+        .clone();
     let workspace_roots = match ws {
         Some(w) if !w.folders.is_empty() => w.folders,
         _ => vec![workspace_root.to_path_buf()],
@@ -731,10 +736,7 @@ fn execute_tool_call(
 
             match decision {
                 crate::backend::review::ConfirmDecision::Reject => {
-                    let msg = format!(
-                        "`{}` was rejected by the user — it was not run.",
-                        call.name
-                    );
+                    let msg = format!("`{}` was rejected by the user — it was not run.", call.name);
                     let summary = format!("{} blocked\n{msg}", call.name);
                     let _ = app.emit(
                         "stream_tool",
@@ -761,8 +763,8 @@ fn execute_tool_call(
     }
 
     let (is_error, tool_content, touched) = if review_on {
-        let path = tools::get_string_field(&call.arguments, "path")
-            .unwrap_or_else(|| "unknown".into());
+        let path =
+            tools::get_string_field(&call.arguments, "path").unwrap_or_else(|| "unknown".into());
         let full_path = workspace_root.join(&path);
         let original = std::fs::read_to_string(&full_path).unwrap_or_default();
 

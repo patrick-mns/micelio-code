@@ -284,7 +284,10 @@ pub async fn delete_session(
             None => String::new(),
         };
         *current = next.clone();
-        let _ = app.emit("session_switched", serde_json::json!({ "session_id": next }));
+        let _ = app.emit(
+            "session_switched",
+            serde_json::json!({ "session_id": next }),
+        );
         return Ok(next);
     }
     Ok(current.clone())

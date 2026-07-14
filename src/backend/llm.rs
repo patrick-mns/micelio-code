@@ -23,8 +23,11 @@ pub enum ProviderKind {
 
 impl ProviderKind {
     /// Every registered kind, in catalog display order.
-    pub const ALL: [ProviderKind; 3] =
-        [ProviderKind::Ollama, ProviderKind::OpenRouter, ProviderKind::LiteLLM];
+    pub const ALL: [ProviderKind; 3] = [
+        ProviderKind::Ollama,
+        ProviderKind::OpenRouter,
+        ProviderKind::LiteLLM,
+    ];
 
     /// Human label for catalog section headers.
     pub fn label(self) -> &'static str {
@@ -455,7 +458,10 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         let back: Message = serde_json::from_str(&json).unwrap();
         assert_eq!(back.content, "ok");
-        assert!(back.tool_content.is_none(), "tool_content must be skipped by serde");
+        assert!(
+            back.tool_content.is_none(),
+            "tool_content must be skipped by serde"
+        );
     }
 
     #[test]

@@ -113,7 +113,12 @@ impl Provider for OpenAiCompatProvider {
             .unwrap_or(128_000)
     }
 
-    fn chat(&self, model: &str, history: &[Message], debug: bool) -> BackendResult<AssistantResponse> {
+    fn chat(
+        &self,
+        model: &str,
+        history: &[Message],
+        debug: bool,
+    ) -> BackendResult<AssistantResponse> {
         let key = self.require_key()?;
         let body = serde_json::json!({
             "model": model,
@@ -137,7 +142,11 @@ impl Provider for OpenAiCompatProvider {
                         .unwrap_or("")
                         .to_string();
                     let tool_call = extract_tool_call(msg);
-                    return Ok(AssistantResponse { content, thinking, tool_call });
+                    return Ok(AssistantResponse {
+                        content,
+                        thinking,
+                        tool_call,
+                    });
                 }
             }
         }
@@ -150,10 +159,20 @@ impl Provider for OpenAiCompatProvider {
             .unwrap_or("")
             .to_string();
         let tool_call = extract_tool_call(msg);
-        Ok(AssistantResponse { content, thinking, tool_call })
+        Ok(AssistantResponse {
+            content,
+            thinking,
+            tool_call,
+        })
     }
 
-    fn chat_simple(&self, model: &str, system: &str, user: &str, debug: bool) -> BackendResult<String> {
+    fn chat_simple(
+        &self,
+        model: &str,
+        system: &str,
+        user: &str,
+        debug: bool,
+    ) -> BackendResult<String> {
         let key = self.require_key()?;
         let body = serde_json::json!({
             "model": model,
@@ -235,17 +254,21 @@ impl Provider for OpenAiCompatProvider {
             .set("Authorization", &format!("Bearer {key}"));
         if self.openrouter_extensions {
             req = req
-                .set("HTTP-Referer", "https://github.com/patrick-mns/minimal-context")
+                .set(
+                    "HTTP-Referer",
+                    "https://github.com/patrick-mns/minimal-context",
+                )
                 .set("X-Title", "Micelio Code");
         }
-        let resp = req
-            .set("Accept", "text/event-stream")
-            .send_json(body);
+        let resp = req.set("Accept", "text/event-stream").send_json(body);
         let resp = match resp {
             Ok(r) => r,
             Err(ureq::Error::Status(code, r)) => {
                 let detail = r.into_string().unwrap_or_default();
-                return Err(BackendError::Http { status: code, detail });
+                return Err(BackendError::Http {
+                    status: code,
+                    detail,
+                });
             }
             Err(e) => return Err(BackendError::Provider(format!("{}: {e}", self.name))),
         };
@@ -396,7 +419,10 @@ impl OpenAiCompatProvider {
             .set("Authorization", &format!("Bearer {key}"));
         if self.openrouter_extensions {
             req = req
-                .set("HTTP-Referer", "https://github.com/patrick-mns/minimal-context")
+                .set(
+                    "HTTP-Referer",
+                    "https://github.com/patrick-mns/minimal-context",
+                )
                 .set("X-Title", "Micelio Code");
         }
         let result = req.send_json(body);
@@ -406,7 +432,10 @@ impl OpenAiCompatProvider {
                 .map_err(|e| BackendError::Provider(format!("{} parse: {e}", self.name))),
             Err(ureq::Error::Status(code, resp)) => {
                 let detail = resp.into_string().unwrap_or_default();
-                Err(BackendError::Http { status: code, detail })
+                Err(BackendError::Http {
+                    status: code,
+                    detail,
+                })
             }
             Err(e) => Err(BackendError::Provider(format!("{}: {e}", self.name))),
         }
@@ -429,7 +458,11 @@ fn extract_tool_call(msg: &serde_json::Value) -> Option<ToolCall> {
                 other => other.to_string(),
             };
             let id = call["id"].as_str().map(|s| s.to_string());
-            Some(ToolCall { name, arguments, id })
+            Some(ToolCall {
+                name,
+                arguments,
+                id,
+            })
         })
 }
 

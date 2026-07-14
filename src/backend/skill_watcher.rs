@@ -134,7 +134,10 @@ pub fn watch_workspace(workspace_root: &Path) {
         }
     }
 
-    eprintln!("[skill_watcher] watching {} skill directories", SKILL_DIRS.len());
+    eprintln!(
+        "[skill_watcher] watching {} skill directories",
+        SKILL_DIRS.len()
+    );
 
     // Store the watcher to keep it alive (replaces the previous one)
     let mut cell = watcher_cell().lock().unwrap();

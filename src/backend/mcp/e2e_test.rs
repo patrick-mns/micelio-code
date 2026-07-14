@@ -37,26 +37,38 @@ fn connects_lists_and_calls_a_real_server() {
         "everything".to_string(),
         McpServerConfig {
             command: Some("npx".into()),
-            args: vec!["-y".into(), "@modelcontextprotocol/server-everything".into()],
+            args: vec![
+                "-y".into(),
+                "@modelcontextprotocol/server-everything".into(),
+            ],
             env: BTreeMap::new(),
             url: None,
             enabled: true,
         },
     );
-    super::config::save(&McpConfigFile { mcp_servers: servers }).unwrap();
+    super::config::save(&McpConfigFile {
+        mcp_servers: servers,
+    })
+    .unwrap();
 
     let mgr = McpManager::new().unwrap();
     mgr.reload();
 
     let status = mgr.server_status();
     println!("status: {status:?}");
-    let ev = status.iter().find(|s| s.name == "everything").expect("server listed");
+    let ev = status
+        .iter()
+        .find(|s| s.name == "everything")
+        .expect("server listed");
     assert!(ev.connected, "server failed to connect: {:?}", ev.error);
     assert!(ev.tool_count > 0, "no tools discovered");
 
     // The "everything" server exposes an `echo` tool.
     let tools = mgr.list_tools();
-    println!("tools: {:?}", tools.iter().map(|t| &t.namespaced).collect::<Vec<_>>());
+    println!(
+        "tools: {:?}",
+        tools.iter().map(|t| &t.namespaced).collect::<Vec<_>>()
+    );
     let echo = tools
         .iter()
         .find(|t| t.name == "echo")
@@ -66,7 +78,10 @@ fn connects_lists_and_calls_a_real_server() {
         .call(&echo.namespaced, r#"{"message":"hi from micelio"}"#)
         .expect("call succeeded");
     println!("echo result: {out}");
-    assert!(out.contains("hi from micelio"), "unexpected echo output: {out}");
+    assert!(
+        out.contains("hi from micelio"),
+        "unexpected echo output: {out}"
+    );
 }
 
 /// Exercises the Streamable HTTP transport. Requires a running server, e.g.:
@@ -92,24 +107,40 @@ fn connects_over_http() {
             enabled: true,
         },
     );
-    super::config::save(&McpConfigFile { mcp_servers: servers }).unwrap();
+    super::config::save(&McpConfigFile {
+        mcp_servers: servers,
+    })
+    .unwrap();
 
     let mgr = McpManager::new().unwrap();
     mgr.reload();
 
     let status = mgr.server_status();
     println!("http status: {status:?}");
-    let ev = status.iter().find(|s| s.name == "http-everything").expect("server listed");
-    assert!(ev.connected, "HTTP server failed to connect: {:?}", ev.error);
+    let ev = status
+        .iter()
+        .find(|s| s.name == "http-everything")
+        .expect("server listed");
+    assert!(
+        ev.connected,
+        "HTTP server failed to connect: {:?}",
+        ev.error
+    );
     assert!(ev.tool_count > 0, "no tools discovered over HTTP");
 
     let tools = mgr.list_tools();
-    let echo = tools.iter().find(|t| t.name == "echo").expect("echo tool present");
+    let echo = tools
+        .iter()
+        .find(|t| t.name == "echo")
+        .expect("echo tool present");
     let out = mgr
         .call(&echo.namespaced, r#"{"message":"hi over http"}"#)
         .expect("http call succeeded");
     println!("http echo result: {out}");
-    assert!(out.contains("hi over http"), "unexpected echo output: {out}");
+    assert!(
+        out.contains("hi over http"),
+        "unexpected echo output: {out}"
+    );
 }
 
 /// Smoke test for the HTTPS path against a real public Streamable HTTP server
@@ -135,15 +166,25 @@ fn connects_over_https_deepwiki() {
             enabled: true,
         },
     );
-    super::config::save(&McpConfigFile { mcp_servers: servers }).unwrap();
+    super::config::save(&McpConfigFile {
+        mcp_servers: servers,
+    })
+    .unwrap();
 
     let mgr = McpManager::new().unwrap();
     mgr.reload();
 
     let status = mgr.server_status();
     println!("https status: {status:?}");
-    let ev = status.iter().find(|s| s.name == "deepwiki").expect("server listed");
-    assert!(ev.connected, "HTTPS server failed to connect: {:?}", ev.error);
+    let ev = status
+        .iter()
+        .find(|s| s.name == "deepwiki")
+        .expect("server listed");
+    assert!(
+        ev.connected,
+        "HTTPS server failed to connect: {:?}",
+        ev.error
+    );
     assert!(ev.tool_count > 0, "no tools discovered over HTTPS");
     println!(
         "deepwiki tools: {:?}",
