@@ -260,7 +260,7 @@ impl Updater {
 
         // ── SHA256 verification ────────────────────────────────────
         if let (Some(cs_url), Some(h)) = (&checksum_url, hasher) {
-            let actual_hash = format!("{:x}", h.finalize());
+            let actual_hash = h.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>();
 
             // Fetch the checksums file from the same release
             let cs_resp = agent
