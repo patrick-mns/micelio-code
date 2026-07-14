@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.10.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.9.0...micelio-v0.10.0) (2026-07-14)
+
+
+### Features
+
+* skills system, MCP client, and review mode ([252a325](https://github.com/patrick-mns/micelio-code/commit/252a325329b2ae0c45a5a8fb2e60d17d033082f2))
+* **skills:** also load skills from .agents and .github ([435a9a8](https://github.com/patrick-mns/micelio-code/commit/435a9a8ac41b4d4b7d5c7fc7fa8bad53388199de))
+* **skills:** load Claude Code skills from .claude/skills ([277ee6a](https://github.com/patrick-mns/micelio-code/commit/277ee6a288f6a08bd4b7c5efdb6c0b39b8f8c94e))
+* **skills:** ship built-in skills (skill-creator, commit) ([b3cc5f4](https://github.com/patrick-mns/micelio-code/commit/b3cc5f44a8f7aa786d5b85104d72d189eca3fb1c))
+* **skills:** show active skills as a read-only section in the prompt inspector ([f7a9591](https://github.com/patrick-mns/micelio-code/commit/f7a9591d378a5b4a0717b88485a2b3a12af007fb))
+* **skills:** workspace skills with dock, #mentions, and inspector ([0707612](https://github.com/patrick-mns/micelio-code/commit/0707612d20fd55d73fddb4386603b92a61482375))
+* **skills:** workspace skills with dock, #mentions, and inspector modal ([796c9c8](https://github.com/patrick-mns/micelio-code/commit/796c9c8898bb9ce588897c02956a86bf7ca8e267))
+* **ui:** increase ModeSelector dropdown to match ModelRolesSelector width ([bf272f5](https://github.com/patrick-mns/micelio-code/commit/bf272f5b07df82c666c6951339a8b7e20b1ff40d))
+
+
+### Bug Fixes
+
+* **ollama:** detect vision capability via ollama show ([6514dfe](https://github.com/patrick-mns/micelio-code/commit/6514dfe3fc73b5abd5ca92a45fb0e6b2ff5e34d1))
+* **skills:** keep active skills out of the system prompt inspector ([052415f](https://github.com/patrick-mns/micelio-code/commit/052415f5b5e458c045de7c15a41aa11622b17060))
+* **skills:** sort list_skills alphabetically so the dock order is stable ([d4c108d](https://github.com/patrick-mns/micelio-code/commit/d4c108db8fcc0cc69c93aec494c8f9169a603998))
+
 ## [0.9.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.8.0...micelio-v0.9.0) (2026-07-13)
 
 
