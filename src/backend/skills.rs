@@ -44,8 +44,8 @@ pub struct Skill {
     /// Se a skill está ativa (habilita/desabilita via UI).
     #[serde(default)]
     pub enabled: bool,
-    /// Diretório de origem: "micelio" (`.micelio/skills`) ou "claude"
-    /// (`.claude/skills`, formato compatível do Claude Code).
+    /// Diretório de origem: "micelio", "claude", "agents" ou "github"
+    /// (`.<source>/skills`, todos no formato Agent Skills / SKILL.md).
     #[serde(default)]
     pub source: String,
 }
@@ -60,7 +60,7 @@ pub struct SkillSummary {
     /// Caminho absoluto do arquivo de ícone (svg, png, webp), se existir.
     #[serde(default)]
     pub icon_path: Option<String>,
-    /// Diretório de origem ("micelio" | "claude").
+    /// Diretório de origem ("micelio" | "claude" | "agents" | "github").
     #[serde(default)]
     pub source: String,
 }
@@ -88,18 +88,25 @@ impl SkillRegistry {
         }
     }
 
-    /// Carrega (ou recarrega) skills do workspace. Varre `.micelio/skills/` e
-    /// `.claude/skills/` (formato compatível do Claude Code); em conflito de
-    /// nome, `.micelio` vence por ser a fonte nativa. Skills que já existiam
-    /// mantêm seu estado `enabled`.
+    /// Carrega (ou recarrega) skills do workspace. Varre os diretórios de
+    /// skills compatíveis (formato Agent Skills / SKILL.md): `.micelio`
+    /// (nativo), `.claude` (Claude Code), `.agents` (padrão aberto) e
+    /// `.github` (Copilot). Em conflito de nome vence o mais específico —
+    /// `.micelio` > `.claude` > `.agents` > `.github`. Skills que já
+    /// existiam mantêm seu estado `enabled`.
     pub fn load(workspace_root: &Path) {
         let mut reg = skill_registry().lock().unwrap();
 
         let mut new_skills: HashMap<String, Skill> = HashMap::new();
 
-        // Ordem de varredura = precedência: `.claude` primeiro, `.micelio`
-        // depois sobrescrevendo em caso de conflito de nome.
-        for (dir, source) in [(".claude", "claude"), (".micelio", "micelio")] {
+        // Ordem de varredura = precedência invertida: os últimos sobrescrevem
+        // em caso de conflito de nome.
+        for (dir, source) in [
+            (".github", "github"),
+            (".agents", "agents"),
+            (".claude", "claude"),
+            (".micelio", "micelio"),
+        ] {
             let skills_dir = workspace_root.join(dir).join("skills");
             let Ok(entries) = std::fs::read_dir(&skills_dir) else {
                 continue;
@@ -384,22 +391,32 @@ Hello world!"#;
             .unwrap();
         };
 
-        // Only in .claude
+        // Only in one foreign dir each
         write_skill(".claude", "claude-only", "from claude");
-        // In both — .micelio must win
+        write_skill(".agents", "agents-only", "from agents");
+        write_skill(".github", "github-only", "from github");
+        // In several — precedence: micelio > claude > agents > github
         write_skill(".claude", "shared", "claude version");
         write_skill(".micelio", "shared", "micelio version");
+        write_skill(".github", "shared-foreign", "github version");
+        write_skill(".agents", "shared-foreign", "agents version");
 
         SkillRegistry::load(&dir);
         let skills = SkillRegistry::list_skills();
-        assert_eq!(skills.len(), 2);
+        assert_eq!(skills.len(), 5);
 
-        let claude_only = skills.iter().find(|s| s.name == "claude-only").unwrap();
-        assert_eq!(claude_only.source, "claude");
+        let find = |n: &str| skills.iter().find(|s| s.name == n).unwrap();
+        assert_eq!(find("claude-only").source, "claude");
+        assert_eq!(find("agents-only").source, "agents");
+        assert_eq!(find("github-only").source, "github");
 
-        let shared = skills.iter().find(|s| s.name == "shared").unwrap();
+        let shared = find("shared");
         assert_eq!(shared.source, "micelio");
         assert_eq!(shared.description, "micelio version");
+
+        let shared_foreign = find("shared-foreign");
+        assert_eq!(shared_foreign.source, "agents");
+        assert_eq!(shared_foreign.description, "agents version");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

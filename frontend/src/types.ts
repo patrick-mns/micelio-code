@@ -308,7 +308,7 @@ export interface SkillSummary {
   description: string;
   enabled: boolean;
   icon_path?: string | null;
-  /** Origin directory: "micelio" (.micelio/skills) or "claude" (.claude/skills) */
+  /** Origin directory: "micelio" | "claude" | "agents" | "github" (.<source>/skills) */
   source: string;
 }
 
