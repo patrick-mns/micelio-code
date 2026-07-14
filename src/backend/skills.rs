@@ -155,10 +155,13 @@ impl SkillRegistry {
             .collect()
     }
 
-    /// Retorna summaries de todas as skills carregadas.
+    /// Retorna summaries de todas as skills carregadas, em ordem alfabética
+    /// (o HashMap não tem ordem estável — sem isso o dock embaralha a cada
+    /// reload).
     pub fn list_skills() -> Vec<SkillSummary> {
         let reg = skill_registry().lock().unwrap();
-        reg.skills
+        let mut list: Vec<SkillSummary> = reg
+            .skills
             .values()
             .map(|s| {
                 let icon = skill_icon_path(Path::new(&s.path));
@@ -175,7 +178,9 @@ impl SkillRegistry {
                     source: s.source.clone(),
                 }
             })
-            .collect()
+            .collect();
+        list.sort_by(|a, b| a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()));
+        list
     }
 
     /// Retorna a skill completa (meta + body) pelo nome.
