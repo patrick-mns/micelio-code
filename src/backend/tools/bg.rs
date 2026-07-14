@@ -20,14 +20,50 @@ pub enum BgStatus {
 struct BgTask {
     command: String,
     log_path: PathBuf,
+    /// Folder the task was started in (the spawning session's workspace_root),
+    /// so the global panel can show where each task came from.
+    workspace_path: String,
     started_at: Instant,
     read_offset: u64,
     status: BgStatus,
 }
 
+/// One entry in the background-task snapshot, shared by the UI panel command
+/// and the `bg` model tool.
+pub struct BgSnapshot {
+    pub pid: u32,
+    pub command: String,
+    pub status: BgStatus,
+    pub uptime_secs: u64,
+    pub workspace_path: String,
+}
+
 fn registry() -> &'static Mutex<HashMap<u32, BgTask>> {
     static REGISTRY: OnceLock<Mutex<HashMap<u32, BgTask>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Cap on finished tasks kept around. Running tasks are never evicted (they're
+/// live processes the user must be able to stop); only the oldest finished ones
+/// are dropped once the panel would otherwise grow unbounded.
+const MAX_FINISHED: usize = 30;
+
+/// Evict the oldest finished tasks so at most `MAX_FINISHED` remain. Leaves all
+/// running tasks untouched. Caller holds the registry lock.
+fn prune_finished(reg: &mut HashMap<u32, BgTask>) {
+    let mut finished: Vec<(u32, Instant)> = reg
+        .iter()
+        .filter(|(_, t)| t.status != BgStatus::Running)
+        .map(|(pid, t)| (*pid, t.started_at))
+        .collect();
+    if finished.len() <= MAX_FINISHED {
+        return;
+    }
+    finished.sort_by_key(|(_, started)| *started); // oldest first
+    let excess = finished.len() - MAX_FINISHED;
+    for (pid, _) in finished.into_iter().take(excess) {
+        reg.remove(&pid);
+    }
 }
 
 /// Set once at startup so the exit-watcher thread can emit UI events.
@@ -40,13 +76,14 @@ pub fn set_app_handle(handle: tauri::AppHandle) {
 /// Register a freshly spawned detached process. Takes ownership of the `Child`
 /// and spawns a watcher thread that reaps it on exit, records the exit code,
 /// and notifies the UI. Returns the PID.
-pub fn register(command: &str, log_path: PathBuf, child: Child) -> u32 {
+pub fn register(command: &str, log_path: PathBuf, workspace_path: String, child: Child) -> u32 {
     let pid = child.id();
     registry().lock().unwrap().insert(
         pid,
         BgTask {
             command: command.to_string(),
             log_path,
+            workspace_path,
             started_at: Instant::now(),
             read_offset: 0,
             status: BgStatus::Running,
@@ -57,8 +94,13 @@ pub fn register(command: &str, log_path: PathBuf, child: Child) -> u32 {
     std::thread::spawn(move || {
         let mut child = child;
         let code = child.wait().ok().and_then(|s| s.code()).unwrap_or(-1);
-        if let Some(task) = registry().lock().unwrap().get_mut(&pid) {
-            task.status = BgStatus::Exited(code);
+        {
+            let mut reg = registry().lock().unwrap();
+            if let Some(task) = reg.get_mut(&pid) {
+                task.status = BgStatus::Exited(code);
+            }
+            // A task just finished — keep the registry bounded.
+            prune_finished(&mut reg);
         }
         if let Some(app) = APP.get() {
             use tauri::Emitter;
@@ -120,22 +162,22 @@ fn status_label(s: BgStatus) -> String {
     }
 }
 
-/// Snapshot of all known tasks (running + finished), for the UI command.
-pub fn snapshot() -> Vec<(u32, String, BgStatus, u64)> {
+/// Snapshot of all known tasks (running + finished), newest first so fresh
+/// tasks land at the top of the panel.
+pub fn snapshot() -> Vec<BgSnapshot> {
     let reg = registry().lock().unwrap();
-    let mut out: Vec<_> = reg
-        .iter()
-        .map(|(pid, t)| {
-            (
-                *pid,
-                t.command.clone(),
-                t.status,
-                t.started_at.elapsed().as_secs(),
-            )
+    let mut tasks: Vec<(&u32, &BgTask)> = reg.iter().collect();
+    tasks.sort_by(|(_, a), (_, b)| b.started_at.cmp(&a.started_at));
+    tasks
+        .into_iter()
+        .map(|(pid, t)| BgSnapshot {
+            pid: *pid,
+            command: t.command.clone(),
+            status: t.status,
+            uptime_secs: t.started_at.elapsed().as_secs(),
+            workspace_path: t.workspace_path.clone(),
         })
-        .collect();
-    out.sort_by_key(|(pid, ..)| *pid);
-    out
+        .collect()
 }
 
 /// Stop a task (frontend panel command). Returns true if the task existed.
@@ -205,11 +247,13 @@ fn list() -> ToolResult {
         };
     }
     let mut s = String::from("background tasks:\n");
-    for (pid, cmd, status, uptime) in tasks {
+    for t in tasks {
         s.push_str(&format!(
-            "- pid {pid} · {} · {}s · {cmd}\n",
-            status_label(status),
-            uptime
+            "- pid {} · {} · {}s · {}\n",
+            t.pid,
+            status_label(t.status),
+            t.uptime_secs,
+            t.command
         ));
     }
     ToolResult { content: s }

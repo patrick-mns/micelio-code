@@ -221,6 +221,8 @@ export interface BgTaskInfo {
   command: string;
   status: string;
   uptime_secs: number;
+  /** Folder the task was started in — shown so the global panel isn't ambiguous. */
+  workspace_path: string;
 }
 
 export interface Opener {
