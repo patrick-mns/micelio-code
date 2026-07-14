@@ -526,20 +526,20 @@ export const modeSelectorStyles: Record<string, CSSProperties> = {
   triggerLabel: { fontWeight: 500 },
   panel: {
     position: 'absolute', bottom: '100%', left: 0, marginBottom: 8,
-    width: 260, background: theme.bg, border: `1px solid ${theme.border}`,
-    borderRadius: 'var(--radius-lg)', padding: 6, zIndex: 100,
+    width: 420, background: theme.bg, border: `1px solid ${theme.border}`,
+    borderRadius: 'var(--radius-lg)', padding: 10, zIndex: 100,
   },
   item: {
     display: 'flex', alignItems: 'flex-start', gap: 10,
     width: '100%', border: 'none',
-    borderRadius: 'var(--radius-md)', padding: '8px 9px',
+    borderRadius: 'var(--radius-md)', padding: '10px 10px',
     cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
   },
-  itemIcon: { marginTop: 1, flexShrink: 0 },
+  itemIcon: { marginTop: 2, flexShrink: 0 },
   itemBody: { flex: 1, minWidth: 0 },
   itemLabelRow: { display: 'flex', alignItems: 'center', gap: 6 },
-  itemLabel: { fontSize: 12.5, fontWeight: 600, color: theme.text },
-  itemDesc: { fontSize: 11, color: theme.dim, lineHeight: 1.4, marginTop: 2 },
+  itemLabel: { fontSize: 13, fontWeight: 600, color: theme.text },
+  itemDesc: { fontSize: 11.5, color: theme.dim, lineHeight: 1.4, marginTop: 3 },
 };
 
 // ── NodeModal.tsx ────────────────────────────────────────────────────────
