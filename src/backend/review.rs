@@ -204,19 +204,42 @@ pub fn git_diff_files(workspace_root: &Path) -> Result<Vec<ReviewFileInfo>, Stri
     Ok(files)
 }
 
-/// Revert a single file to its committed (HEAD) version, discarding both staged
-/// and unstaged changes so it matches what the panel shows as changed vs HEAD.
+/// Revert a single file to the state the panel treats as "unchanged" (HEAD).
+///
+/// For a tracked file this restores the committed version, discarding staged
+/// and unstaged edits together. A file that isn't in HEAD is a new file
+/// (untracked or staged-add), so reverting it means removing it: `git rm -f`
+/// clears it from the index and worktree, with a plain delete as the fallback
+/// for a purely untracked file that git won't touch.
 pub fn git_revert_file(workspace_root: &Path, path: &str) -> Result<(), String> {
     use crate::backend::cmd::no_window_cmd;
-    let status = no_window_cmd("git")
+
+    // Tracked change vs HEAD → restore the committed version.
+    let restored = no_window_cmd("git")
         .args(["checkout", "HEAD", "--", path])
         .current_dir(workspace_root)
         .status()
         .map_err(|e| format!("git failed: {e}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("git checkout failed for {path}"))
+    if restored.success() {
+        return Ok(());
+    }
+
+    // Not in HEAD → new file. Remove it from the index + worktree if git knows
+    // it (staged-add); this is a no-op error for a purely untracked file.
+    let removed = no_window_cmd("git")
+        .args(["rm", "-f", "--", path])
+        .current_dir(workspace_root)
+        .status()
+        .map_err(|e| format!("git failed: {e}"))?;
+    if removed.success() {
+        return Ok(());
+    }
+
+    // Purely untracked → just delete it from disk.
+    match std::fs::remove_file(workspace_root.join(path)) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("failed to remove {path}: {e}")),
     }
 }
 
