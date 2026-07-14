@@ -1,7 +1,7 @@
 //! Tauri commands backing the review UI. File edit/write approval itself is
 //! synchronous and handled inline in `commands::agent::execute_tool_call`
 //! (see `answer_edit_review` below); these commands cover the review-mode
-//! toggle and the unstaged-git-changes panel.
+//! toggle and the uncommitted-git-changes panel.
 
 use crate::backend::review::{self, AgentMode, ConfirmDecision, WorkspaceChanges};
 use crate::AppState;

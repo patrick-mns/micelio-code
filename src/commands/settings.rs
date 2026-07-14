@@ -352,9 +352,9 @@ pub async fn get_git_context(state: State<'_, AppState>) -> Result<GitContext, S
         })
         .unwrap_or_else(|| "no git".to_string());
 
-    // Get diff stats (--cached for staged, without for unstaged)
+    // Diff stats vs HEAD so both staged and unstaged changes are counted.
     let diff_output = no_window_cmd("git")
-        .args(["diff", "--numstat"])
+        .args(["diff", "HEAD", "--numstat"])
         .current_dir(&*root)
         .output()
         .ok()
@@ -367,17 +367,41 @@ pub async fn get_git_context(state: State<'_, AppState>) -> Result<GitContext, S
         })
         .unwrap_or_default();
 
-    // Parse diff output: each line is "added\tmodified\tfile"
-    let (mut added, mut modified, mut deleted) = (0, 0, 0);
+    // Parse numstat: each line is "added\tdeleted\tfile" ("-\t-" for binary).
+    let (mut added, mut modified, mut deleted) = (0usize, 0usize, 0usize);
     for line in diff_output.lines() {
-        let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() >= 2 {
-            if let (Ok(add), Ok(rem)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
-                added += add;
-                deleted += rem;
-            }
+        let mut cols = line.split('\t');
+        if let (Some(add), Some(rem)) = (cols.next(), cols.next()) {
+            added += add.parse::<usize>().unwrap_or(0);
+            deleted += rem.parse::<usize>().unwrap_or(0);
+            modified += 1;
         }
-        modified += 1;
+    }
+
+    // Untracked files never appear in a diff — count each line as an addition
+    // so the badge reflects all uncommitted work, matching the changes panel.
+    let untracked_output = no_window_cmd("git")
+        .args(["ls-files", "--others", "--exclude-standard"])
+        .current_dir(&*root)
+        .output()
+        .ok()
+        .and_then(|out| {
+            if out.status.success() {
+                Some(String::from_utf8_lossy(&out.stdout).to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+    for name in untracked_output.lines() {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        if let Ok(content) = std::fs::read_to_string(root.join(name)) {
+            added += content.lines().count();
+            modified += 1;
+        }
     }
 
     Ok(GitContext {

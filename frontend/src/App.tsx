@@ -117,7 +117,12 @@ const { t } = useI18n();
     gitRevertFile, gitRevertAll,
   } = useReview();
   const { switching, pickWorkspace } = useWorkspace();
-  const { loadCurrentWorkspace, currentWorkspace } = useStore();
+  const { loadCurrentWorkspace, currentWorkspace, activeRoot } = useStore();
+
+  // The changes panel is scoped to a single active folder (backend workspace_root):
+  // activeRoot when set, otherwise the workspace's first folder.
+  const activeFolderPath = activeRoot || currentWorkspace?.folders?.[0] || '';
+  const activeFolderName = activeFolderPath.split('/').pop() || activeFolderPath.split('\\').pop() || '';
 
   const handleDeleteSessionConfirm = async () => {
     const id = confirmDeleteSession;
@@ -262,6 +267,8 @@ const { t } = useI18n();
           {panelContent === 'review' ? (
             <ReviewPanel
               gitFiles={reviewStatus.changes.git_files}
+              folderName={activeFolderName}
+              folderPath={activeFolderPath}
               onClose={() => setRightPanel(null)}
               onRevert={gitRevertFile}
               onRevertAll={gitRevertAll}

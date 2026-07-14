@@ -52,7 +52,7 @@ pub struct AppState {
     /// Per-session set of tool names the user chose to "always allow" this
     /// session (Review-mode confirmations). In-memory only; cleared on restart.
     pub session_tool_allow: Mutex<HashMap<String, std::collections::HashSet<String>>>,
-    /// Review manager: review-mode toggle + unstaged git changes.
+    /// Review manager: review-mode toggle + uncommitted git changes.
     pub review: Mutex<backend::review::ReviewManager>,
     /// MCP client manager: live connections to external MCP servers and the
     /// tools they expose. Shared into every tool-call context.
