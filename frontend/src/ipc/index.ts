@@ -5,7 +5,7 @@ import type {
   AskUser, BgTaskExited, BgTaskInfo, ChatMessage, CompactResult, ContextWindow,
   EditReviewRequest, GitContext, McpServerStatus, McpToolInfo,
   ModelOption, ModelRole, NodeCode, NodeSummarized, Opener,
-  OpenRouterStatus, SessionInfo, SessionModels, SessionTitle, Settings, StreamDelta, StreamDone,
+  OpenRouterStatus, SessionInfo, SessionModels, SessionTitle, Settings, SkillDetail, SkillSummary, StreamDelta, StreamDone,
   StreamError, StreamTool, StreamUsage, SummarizeProgress, SystemPromptInfo,
   ToolConfirmRequest, ToolInfo, Transcript, TreemapNode, UsageLogEntry, UsageRaw, UsageStats,
 } from '@/types';
@@ -129,4 +129,12 @@ export const ipc = {
   getBgTaskLog: (pid: number) => invoke<string>('get_bg_task_log', { pid }),
   onBgTaskExited: (cb: (p: BgTaskExited) => void) => on<BgTaskExited>('bg_task_exited', cb),
   onUpdateStatus: (cb: (p: any) => void) => on<any>('update_status', cb),
+
+  // Skills
+  loadSkills: (workspaceRoot: string) => invoke<void>('load_skills', { workspaceRoot }),
+  listSkills: () => invoke<SkillSummary[]>('list_skills'),
+  toggleSkill: (name: string) => invoke<boolean>('toggle_skill', { name }),
+  setSkillEnabled: (name: string, enabled: boolean) =>
+    invoke<boolean>('set_skill_enabled', { name, enabled }),
+  getSkill: (name: string) => invoke<SkillDetail>('get_skill', { name }),
 };

@@ -1,0 +1,469 @@
+//! Skills — carregamento e parsing de `.micelio/skills/<nome>/SKILL.md`.
+//!
+//! Segue o padrão Claude Code: cada skill é uma subpasta com um `SKILL.md`
+//! contendo frontmatter YAML + corpo markdown. O registry cacheia skills
+//! descobertas no workspace e fornece os dados para o frontend e para
+//! injeção no system prompt.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+
+use serde::{Deserialize, Serialize};
+
+// ── Tipos ──────────────────────────────────────────────────────────────────
+
+/// Metadados extraídos do frontmatter YAML de um `SKILL.md`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillMeta {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default = "default_display_name", alias = "display-name")]
+    pub display_name: String,
+    #[serde(default)]
+    pub license: String,
+    #[serde(default, alias = "default-enabled")]
+    pub default_enabled: bool,
+    #[serde(default)]
+    pub metadata: HashMap<String, String>,
+}
+
+fn default_display_name() -> String {
+    String::new()
+}
+
+/// Skill completa: metadados + corpo (markdown) + caminho no disco.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Skill {
+    pub meta: SkillMeta,
+    /// Corpo do SKILL.md (o que vai ser injetado no system prompt).
+    pub body: String,
+    /// Caminho absoluto da pasta da skill.
+    pub path: String,
+    /// Se a skill está ativa (habilita/desabilita via UI).
+    #[serde(default)]
+    pub enabled: bool,
+    /// Diretório de origem: "micelio", "claude", "agents" ou "github"
+    /// (`.<source>/skills`, todos no formato Agent Skills / SKILL.md).
+    #[serde(default)]
+    pub source: String,
+}
+
+/// Resumo leve para listar no frontend sem carregar o body.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillSummary {
+    pub name: String,
+    pub display_name: String,
+    pub description: String,
+    pub enabled: bool,
+    /// Caminho absoluto do arquivo de ícone (svg, png, webp), se existir.
+    #[serde(default)]
+    pub icon_path: Option<String>,
+    /// Diretório de origem ("micelio" | "claude" | "agents" | "github").
+    #[serde(default)]
+    pub source: String,
+}
+
+// ── Skills embutidas ────────────────────────────────────────────────────────
+
+/// Skills que acompanham o Micelio, embutidas no binário. Presentes em
+/// qualquer workspace com a menor precedência — uma skill de projeto com o
+/// mesmo nome sobrescreve.
+const BUILTIN_SKILLS: &[&str] = &[
+    include_str!("builtin_skills/skill-creator.md"),
+    include_str!("builtin_skills/commit.md"),
+];
+
+// ── Registry ───────────────────────────────────────────────────────────────
+
+static SKILL_REGISTRY: OnceLock<Mutex<SkillRegistry>> = OnceLock::new();
+
+fn skill_registry() -> &'static Mutex<SkillRegistry> {
+    SKILL_REGISTRY.get_or_init(|| Mutex::new(SkillRegistry::new()))
+}
+
+pub struct SkillRegistry {
+    /// Skills carregadas, indexadas por nome.
+    skills: HashMap<String, Skill>,
+    /// Workspace root onde foram carregadas (pra invalidar no reload).
+    workspace_root: Option<PathBuf>,
+}
+
+impl SkillRegistry {
+    fn new() -> Self {
+        Self {
+            skills: HashMap::new(),
+            workspace_root: None,
+        }
+    }
+
+    /// Carrega (ou recarrega) skills do workspace. Varre os diretórios de
+    /// skills compatíveis (formato Agent Skills / SKILL.md): `.micelio`
+    /// (nativo), `.claude` (Claude Code), `.agents` (padrão aberto) e
+    /// `.github` (Copilot). Em conflito de nome vence o mais específico —
+    /// `.micelio` > `.claude` > `.agents` > `.github`. Skills que já
+    /// existiam mantêm seu estado `enabled`.
+    pub fn load(workspace_root: &Path) {
+        let mut reg = skill_registry().lock().unwrap();
+
+        let mut new_skills: HashMap<String, Skill> = HashMap::new();
+
+        // Builtins primeiro (menor precedência) — qualquer diretório de
+        // projeto sobrescreve por nome.
+        for raw in BUILTIN_SKILLS {
+            match parse_frontmatter(raw) {
+                Ok((meta, body)) => {
+                    let name = meta.name.clone();
+                    let enabled = reg
+                        .skills
+                        .get(&name)
+                        .map(|s| s.enabled)
+                        .unwrap_or(meta.default_enabled);
+                    new_skills.insert(
+                        name,
+                        Skill {
+                            meta,
+                            body,
+                            path: String::new(),
+                            enabled,
+                            source: "builtin".into(),
+                        },
+                    );
+                }
+                Err(e) => eprintln!("[skills] invalid builtin skill: {e}"),
+            }
+        }
+
+        // Ordem de varredura = precedência invertida: os últimos sobrescrevem
+        // em caso de conflito de nome.
+        for (dir, source) in [
+            (".github", "github"),
+            (".agents", "agents"),
+            (".claude", "claude"),
+            (".micelio", "micelio"),
+        ] {
+            let skills_dir = workspace_root.join(dir).join("skills");
+            let Ok(entries) = std::fs::read_dir(&skills_dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let skill_path = entry.path();
+                if !skill_path.is_dir() {
+                    continue;
+                }
+                let skill_file = skill_path.join("SKILL.md");
+                if !skill_file.exists() {
+                    continue;
+                }
+                match parse_skill_file(&skill_file) {
+                    Ok(skill) => {
+                        let name = skill.meta.name.clone();
+                        // Preserva estado enabled se já existia
+                        let enabled = reg
+                            .skills
+                            .get(&name)
+                            .map(|s| s.enabled)
+                            .unwrap_or(skill.meta.default_enabled);
+                        let mut skill = skill;
+                        skill.enabled = enabled;
+                        skill.source = source.to_string();
+                        new_skills.insert(name, skill);
+                    }
+                    Err(e) => {
+                        eprintln!("[skills] skipping {skill_path:?}: {e}");
+                    }
+                }
+            }
+        }
+
+        reg.skills = new_skills;
+        reg.workspace_root = Some(workspace_root.to_path_buf());
+    }
+
+    /// Retorna a lista de skills ativas (enabled).
+    pub fn active_skills() -> Vec<Skill> {
+        let reg = skill_registry().lock().unwrap();
+        reg.skills
+            .values()
+            .filter(|s| s.enabled)
+            .cloned()
+            .collect()
+    }
+
+    /// Retorna summaries de todas as skills carregadas, em ordem alfabética
+    /// (o HashMap não tem ordem estável — sem isso o dock embaralha a cada
+    /// reload).
+    pub fn list_skills() -> Vec<SkillSummary> {
+        let reg = skill_registry().lock().unwrap();
+        let mut list: Vec<SkillSummary> = reg
+            .skills
+            .values()
+            .map(|s| {
+                let icon = skill_icon_path(Path::new(&s.path));
+                SkillSummary {
+                    name: s.meta.name.clone(),
+                    display_name: if s.meta.display_name.is_empty() {
+                        s.meta.name.clone()
+                    } else {
+                        s.meta.display_name.clone()
+                    },
+                    description: s.meta.description.clone(),
+                    enabled: s.enabled,
+                    icon_path: icon,
+                    source: s.source.clone(),
+                }
+            })
+            .collect();
+        list.sort_by(|a, b| a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()));
+        list
+    }
+
+    /// Retorna a skill completa (meta + body) pelo nome.
+    pub fn get_skill(name: &str) -> Option<Skill> {
+        let reg = skill_registry().lock().unwrap();
+        reg.skills.get(name).cloned()
+    }
+
+    /// Define o estado enabled de uma skill. Retorna `false` se não existe.
+    pub fn set_skill_enabled(name: &str, enabled: bool) -> bool {
+        let mut reg = skill_registry().lock().unwrap();
+        if let Some(skill) = reg.skills.get_mut(name) {
+            skill.enabled = enabled;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Alterna o estado enabled de uma skill.
+    pub fn toggle_skill(name: &str) -> bool {
+        let mut reg = skill_registry().lock().unwrap();
+        if let Some(skill) = reg.skills.get_mut(name) {
+            skill.enabled = !skill.enabled;
+            skill.enabled
+        } else {
+            false
+        }
+    }
+
+    /// Retorna o corpo do system prompt adicional com skills ativas.
+    pub fn skills_prompt_section() -> String {
+        let active = Self::active_skills();
+        if active.is_empty() {
+            return String::new();
+        }
+        let mut section = String::from("\n\n── Active Skills ──\n\n");
+        for skill in &active {
+            section.push_str(&skill.body);
+            section.push_str("\n\n");
+        }
+        section
+    }
+}
+
+// ── Parser de SKILL.md ────────────────────────────────────────────────────
+
+/// Dado o caminho de um `SKILL.md`, retorna a skill parseada.
+fn parse_skill_file(path: &Path) -> Result<Skill, String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+
+    let (meta, body) = parse_frontmatter(&raw)?;
+
+    Ok(Skill {
+        meta,
+        body,
+        path: path.parent().unwrap_or(path).to_string_lossy().to_string(),
+        enabled: false,
+        source: String::new(),
+    })
+}
+
+/// Separa frontmatter YAML (delimitado por `---`) do corpo markdown.
+/// Retorna (meta, body).
+fn parse_frontmatter(raw: &str) -> Result<(SkillMeta, String), String> {
+    let trimmed = raw.trim_start();
+    if !trimmed.starts_with("---") {
+        return Err("SKILL.md must start with `---` frontmatter".into());
+    }
+
+    // Pula a primeira linha "---"
+    let after_opener = &trimmed[3..];
+    let end = after_opener
+        .find("\n---")
+        .ok_or_else(|| "missing closing `---` in SKILL.md frontmatter".to_string())?;
+
+    let yaml_str = &after_opener[..end];
+    let body_start = after_opener[end + 4..].trim_start().to_string();
+
+    let meta: SkillMeta =
+        serde_yaml::from_str(yaml_str).map_err(|e| format!("invalid YAML frontmatter: {e}"))?;
+
+    Ok((meta, body_start))
+}
+
+/// Procura um arquivo de ícone (svg, png, webp) na pasta da skill
+/// e retorna o caminho absoluto, se existir.
+fn skill_icon_path(skill_path: &Path) -> Option<String> {
+    for ext in &["svg", "png", "webp"] {
+        let p = skill_path.join(format!("icon.{ext}"));
+        if p.exists() {
+            // resolve para caminho absoluto canonico
+            return p.canonicalize().ok().map(|a| a.to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
+// ── Testes ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // O registry é global (OnceLock); testes que chamam `load` precisam rodar
+    // serializados ou um sobrescreve o estado do outro.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn parse_minimal_skill() {
+        let raw = r#"---
+name: test-skill
+description: A test
+---
+
+# Hello
+
+This is the body."#;
+        let (meta, body) = parse_frontmatter(raw).unwrap();
+        assert_eq!(meta.name, "test-skill");
+        assert_eq!(meta.description, "A test");
+        assert!(meta.license.is_empty());
+        assert!(body.contains("Hello"));
+    }
+
+    #[test]
+    fn parse_full_skill() {
+        let raw = r#"---
+name: code-reviewer
+description: Expert code review
+display-name: Code Reviewer
+license: MIT
+default-enabled: true
+metadata:
+  category: development
+  effort: high
+---
+
+# Code Review
+
+Check for security issues."#;
+        let (meta, body) = parse_frontmatter(raw).unwrap();
+        assert_eq!(meta.name, "code-reviewer");
+        assert_eq!(meta.display_name, "Code Reviewer");
+        assert_eq!(meta.license, "MIT");
+        assert!(meta.default_enabled);
+        assert_eq!(meta.metadata.get("category").unwrap(), "development");
+        assert!(body.contains("security"));
+    }
+
+    #[test]
+    fn parse_missing_frontmatter() {
+        let raw = "Just a regular markdown file.";
+        let result = parse_frontmatter(raw);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must start with `---`"));
+    }
+
+    #[test]
+    fn load_skills_from_directory() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join("micelio-test-skills");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".micelio").join("skills").join("my-skill")).unwrap();
+
+        let skill_content = r#"---
+name: my-skill
+description: A test skill
+---
+
+# My Skill
+
+Hello world!"#;
+        std::fs::write(
+            dir.join(".micelio")
+                .join("skills")
+                .join("my-skill")
+                .join("SKILL.md"),
+            skill_content,
+        )
+        .unwrap();
+
+        SkillRegistry::load(&dir);
+        let skills = SkillRegistry::list_skills();
+        // Builtins are always present; the project skill comes on top.
+        let project: Vec<_> = skills.iter().filter(|s| s.source != "builtin").collect();
+        assert_eq!(project.len(), 1);
+        assert_eq!(project[0].name, "my-skill");
+        assert!(skills.iter().any(|s| s.name == "skill-creator" && s.source == "builtin"));
+        assert!(skills.iter().any(|s| s.name == "commit" && s.source == "builtin"));
+
+        // toggle
+        let enabled = SkillRegistry::toggle_skill("my-skill");
+        assert!(enabled);
+
+        let active = SkillRegistry::active_skills();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].meta.name, "my-skill");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_skills_from_claude_dir_with_micelio_precedence() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join("micelio-test-skills-claude");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let write_skill = |base: &str, name: &str, desc: &str| {
+            let p = dir.join(base).join("skills").join(name);
+            std::fs::create_dir_all(&p).unwrap();
+            std::fs::write(
+                p.join("SKILL.md"),
+                format!("---\nname: {name}\ndescription: {desc}\n---\n\nBody of {name}."),
+            )
+            .unwrap();
+        };
+
+        // Only in one foreign dir each
+        write_skill(".claude", "claude-only", "from claude");
+        write_skill(".agents", "agents-only", "from agents");
+        write_skill(".github", "github-only", "from github");
+        // In several — precedence: micelio > claude > agents > github
+        write_skill(".claude", "shared", "claude version");
+        write_skill(".micelio", "shared", "micelio version");
+        write_skill(".github", "shared-foreign", "github version");
+        write_skill(".agents", "shared-foreign", "agents version");
+
+        SkillRegistry::load(&dir);
+        let skills = SkillRegistry::list_skills();
+        let project: Vec<_> = skills.iter().filter(|s| s.source != "builtin").collect();
+        assert_eq!(project.len(), 5);
+
+        let find = |n: &str| skills.iter().find(|s| s.name == n).unwrap();
+        assert_eq!(find("claude-only").source, "claude");
+        assert_eq!(find("agents-only").source, "agents");
+        assert_eq!(find("github-only").source, "github");
+
+        let shared = find("shared");
+        assert_eq!(shared.source, "micelio");
+        assert_eq!(shared.description, "micelio version");
+
+        let shared_foreign = find("shared-foreign");
+        assert_eq!(shared_foreign.source, "agents");
+        assert_eq!(shared_foreign.description, "agents version");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

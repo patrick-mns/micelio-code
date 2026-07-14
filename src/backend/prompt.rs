@@ -42,14 +42,23 @@ fn detect_locale() -> Option<String> {
     None
 }
 
-/// The system prompt sent to the model each turn. Returns the user's custom
-/// override if they set one in the inspector modal, otherwise the built-in
-/// default (with live OS/locale injection).
+/// The base system prompt: the user's custom override if they set one in the
+/// inspector modal, otherwise the built-in default (with live OS/locale
+/// injection). This is what the inspector shows and edits — active skills are
+/// NOT part of it (they'd get baked into the override on save).
+pub fn base_system_prompt() -> String {
+    crate::backend::config::system_prompt_override().unwrap_or_else(default_system_prompt)
+}
+
+/// The full system prompt sent to the model each turn: the base prompt plus
+/// the bodies of active skills.
 pub fn system_prompt() -> String {
-    if let Some(custom) = crate::backend::config::system_prompt_override() {
-        return custom;
+    let mut prompt = base_system_prompt();
+    let skills_section = crate::backend::skills::SkillRegistry::skills_prompt_section();
+    if !skills_section.is_empty() {
+        prompt.push_str(&skills_section);
     }
-    default_system_prompt()
+    prompt
 }
 
 /// Build the default system prompt, injecting OS + locale so the model never

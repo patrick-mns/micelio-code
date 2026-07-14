@@ -47,6 +47,8 @@ export interface SystemPromptInfo {
   text: string;
   is_custom: boolean;
   default_text: string;
+  /** Active skills section appended at send time (read-only in the inspector) */
+  skills_text: string;
 }
 
 export interface TranscriptItem {
@@ -299,4 +301,30 @@ export interface BgTaskExited {
   pid: number;
   command: string;
   code: number | null;
+}
+
+// ── Skills ───────────────────────────────────────────────────────────────────
+export interface SkillSummary {
+  name: string;
+  display_name: string;
+  description: string;
+  enabled: boolean;
+  icon_path?: string | null;
+  /** Origin directory: "micelio" | "claude" | "agents" | "github" (.<source>/skills) */
+  source: string;
+}
+
+export interface SkillDetail {
+  meta: {
+    name: string;
+    description: string;
+    display_name: string;
+    license: string;
+    default_enabled: boolean;
+    metadata: Record<string, string>;
+  };
+  body: string;
+  path: string;
+  enabled: boolean;
+  source: string;
 }

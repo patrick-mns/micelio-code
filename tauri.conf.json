@@ -23,7 +23,8 @@
           "x": 18,
           "y": 27
         },
-        "resizable": true
+        "resizable": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {

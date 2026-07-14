@@ -17,6 +17,7 @@ const SEG_COLORS: Record<string, string> = {
   Messages: theme.accent,
   Tools: '#5f9fc9',
   'MCP tools': '#5fc9a0',
+  Skills: '#c9a75f',
   'System prompt': '#c97fc9',
   'Free space': theme.border,
 };
@@ -40,10 +41,12 @@ export default function ContextWindow() {
   const [flash, setFlash] = useState<Flash | null>(null); // feedback after compacting
   const ref = useRef<HTMLDivElement | null>(null);
 
-  // Refresh when the conversation changes, the model switches, or a turn ends.
+  // Refresh when the conversation changes, the model switches, a turn ends,
+  // or skills are toggled (their bodies change the prompt budget immediately).
+  const skills = useStore((s) => s.skills);
   useEffect(() => {
     ipc.getContextWindow().then(setInfo).catch(console.error);
-  }, [messages.length, isLoading, chatModel]);
+  }, [messages.length, isLoading, chatModel, skills]);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {

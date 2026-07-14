@@ -21,6 +21,7 @@ interface SystemPromptModalProps {
 export default function SystemPromptModal({ onClose }: SystemPromptModalProps) {
   const [text, setText] = useState<string | null>(null);      // live prompt (rendered)
   const [defaultText, setDefaultText] = useState(''); // built-in default
+  const [skillsText, setSkillsText] = useState('');   // active skills (read-only)
   const [isCustom, setIsCustom] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');       // textarea buffer while editing
@@ -34,6 +35,7 @@ export default function SystemPromptModal({ onClose }: SystemPromptModalProps) {
         setText(info.text);
         setDefaultText(info.default_text);
         setIsCustom(info.is_custom);
+        setSkillsText(info.skills_text);
       })
       .catch((e) => setErr(String(e)));
   }, []);
@@ -146,8 +148,27 @@ export default function SystemPromptModal({ onClose }: SystemPromptModalProps) {
           {err && <div style={systemPromptModalStyles.err}>{err}</div>}
           {text == null && !err && <div style={systemPromptModalStyles.loading}>Loading…</div>}
           {text != null && !editing && (
-            <div className="md" style={systemPromptModalStyles.mdWrap}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="md" style={systemPromptModalStyles.mdWrap}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+              </div>
+              {/* Active skills — appended to the prompt at send time, but
+                  managed from the dock, so they're read-only here. */}
+              {skillsText && (
+                <div style={{ marginTop: 20, borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: theme.text }}>
+                      Active skills
+                    </span>
+                    <span style={systemPromptModalStyles.meta}>
+                      ~{fmtTok(estTokens(skillsText))} tok · appended at send time · manage in the dock
+                    </span>
+                  </div>
+                  <div className="md" style={{ ...systemPromptModalStyles.mdWrap, opacity: 0.75 }}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{skillsText}</ReactMarkdown>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {editing && (

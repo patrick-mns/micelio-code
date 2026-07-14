@@ -6,3 +6,11 @@
 
 /* ── Selection ───────────────────────────────────────────────────────── */
 ::selection { background: rgba(var(--overlay), 0.12); }
+
+/* ── Skill Dock label (appears on icon hover) ────────────────────── */
+.dock-icon-wrapper:hover .dock-label { opacity: 1 !important; }
+
+/* ── Composer textarea with mention overlay ──────────────────────────
+   The textarea's own text is transparent (glyphs are drawn by the mirror
+   overlay behind it), which would also hide the placeholder — restore it. */
+.mention-ta::placeholder { color: var(--color-faint); }

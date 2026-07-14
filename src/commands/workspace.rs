@@ -271,11 +271,14 @@ async fn switch_workspace_internal(state: &State<'_, AppState>, ws: &Workspace) 
 
     // 4. Update memory structures in AppState
     let workspace_root = ws.folders.first().cloned().unwrap_or_else(|| ws.dir());
-    *state.workspace_root.lock().unwrap() = workspace_root;
+    *state.workspace_root.lock().unwrap() = workspace_root.clone();
     *state.current_workspace.lock().unwrap() = Some(ws.clone());
     *state.graph.lock().unwrap() = graph;
     *state.sessions.lock().unwrap() = store;
     *state.current_session.lock().unwrap() = session_id.clone();
+
+    // 5. Load skills from `.micelio/skills/` in the workspace
+    crate::backend::skills::SkillRegistry::load(&workspace_root);
 
     // Clear and resume session history
     let mut histories = state.session_histories.lock().unwrap();
