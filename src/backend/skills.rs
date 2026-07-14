@@ -65,6 +65,16 @@ pub struct SkillSummary {
     pub source: String,
 }
 
+// ── Skills embutidas ────────────────────────────────────────────────────────
+
+/// Skills que acompanham o Micelio, embutidas no binário. Presentes em
+/// qualquer workspace com a menor precedência — uma skill de projeto com o
+/// mesmo nome sobrescreve.
+const BUILTIN_SKILLS: &[&str] = &[
+    include_str!("builtin_skills/skill-creator.md"),
+    include_str!("builtin_skills/commit.md"),
+];
+
 // ── Registry ───────────────────────────────────────────────────────────────
 
 static SKILL_REGISTRY: OnceLock<Mutex<SkillRegistry>> = OnceLock::new();
@@ -98,6 +108,32 @@ impl SkillRegistry {
         let mut reg = skill_registry().lock().unwrap();
 
         let mut new_skills: HashMap<String, Skill> = HashMap::new();
+
+        // Builtins primeiro (menor precedência) — qualquer diretório de
+        // projeto sobrescreve por nome.
+        for raw in BUILTIN_SKILLS {
+            match parse_frontmatter(raw) {
+                Ok((meta, body)) => {
+                    let name = meta.name.clone();
+                    let enabled = reg
+                        .skills
+                        .get(&name)
+                        .map(|s| s.enabled)
+                        .unwrap_or(meta.default_enabled);
+                    new_skills.insert(
+                        name,
+                        Skill {
+                            meta,
+                            body,
+                            path: String::new(),
+                            enabled,
+                            source: "builtin".into(),
+                        },
+                    );
+                }
+                Err(e) => eprintln!("[skills] invalid builtin skill: {e}"),
+            }
+        }
 
         // Ordem de varredura = precedência invertida: os últimos sobrescrevem
         // em caso de conflito de nome.
@@ -366,8 +402,12 @@ Hello world!"#;
 
         SkillRegistry::load(&dir);
         let skills = SkillRegistry::list_skills();
-        assert_eq!(skills.len(), 1);
-        assert_eq!(skills[0].name, "my-skill");
+        // Builtins are always present; the project skill comes on top.
+        let project: Vec<_> = skills.iter().filter(|s| s.source != "builtin").collect();
+        assert_eq!(project.len(), 1);
+        assert_eq!(project[0].name, "my-skill");
+        assert!(skills.iter().any(|s| s.name == "skill-creator" && s.source == "builtin"));
+        assert!(skills.iter().any(|s| s.name == "commit" && s.source == "builtin"));
 
         // toggle
         let enabled = SkillRegistry::toggle_skill("my-skill");
@@ -408,7 +448,8 @@ Hello world!"#;
 
         SkillRegistry::load(&dir);
         let skills = SkillRegistry::list_skills();
-        assert_eq!(skills.len(), 5);
+        let project: Vec<_> = skills.iter().filter(|s| s.source != "builtin").collect();
+        assert_eq!(project.len(), 5);
 
         let find = |n: &str| skills.iter().find(|s| s.name == n).unwrap();
         assert_eq!(find("claude-only").source, "claude");

@@ -35,7 +35,8 @@ export function skillIconForName(name: string): LucideIcon | null {
   if (n.includes('security') || n.includes('audit')) return Shield;
   if (n.includes('db') || n.includes('database') || n.includes('sql')) return Database;
   if (n.includes('api') || n.includes('backend')) return Globe;
-  if (n.includes('git') || n.includes('pr')) return GitBranch;
+  if (n.includes('git') || n.includes('pr') || n.includes('commit')) return GitBranch;
+  if (n.includes('skill')) return Puzzle;
   if (n.includes('devops') || n.includes('ci') || n.includes('cd')) return Wrench;
   if (n.includes('script') || n.includes('terminal')) return FileCode2;
   if (n.includes('template') || n.includes('generate')) return FileText;
