@@ -62,7 +62,9 @@ fn prune_finished(reg: &mut HashMap<u32, BgTask>) {
     finished.sort_by_key(|(_, started)| *started); // oldest first
     let excess = finished.len() - MAX_FINISHED;
     for (pid, _) in finished.into_iter().take(excess) {
-        reg.remove(&pid);
+        if let Some(task) = reg.remove(&pid) {
+            let _ = std::fs::remove_file(&task.log_path); // don't leave orphan logs
+        }
     }
 }
 
@@ -185,12 +187,17 @@ pub fn stop_task(pid: u32) -> bool {
     terminate(pid)
 }
 
-/// Drop all finished tasks from the registry (frontend panel "Clear").
+/// Drop all finished tasks from the registry (frontend panel "Clear"), deleting
+/// each one's log file so `.micelio/bg` doesn't accumulate orphans.
 pub fn clear_finished() {
-    registry()
-        .lock()
-        .unwrap()
-        .retain(|_, t| t.status == BgStatus::Running);
+    registry().lock().unwrap().retain(|_, t| {
+        if t.status == BgStatus::Running {
+            true
+        } else {
+            let _ = std::fs::remove_file(&t.log_path);
+            false
+        }
+    });
 }
 
 /// Terminate the whole session/group of a background task.
