@@ -8,6 +8,7 @@ import QuestionCard, { parseQuestions } from '@/components/QuestionCard';
 import EditApprovalCard from '@/components/EditApprovalCard';
 import ToolConfirmCard from '@/components/ToolConfirmCard';
 import GitContext from '@/components/GitContext';
+import SkillDock from '@/components/SkillDock';
 import SummarizeBanner from '@/components/SummarizeBanner';
 import TranscriptView from '@/components/TranscriptView';
 import CommandPalette from '@/components/CommandPalette';
@@ -15,9 +16,9 @@ import { useWorkspace } from '@/hooks/useWorkspace';
 import { COMMANDS, type Attachment, type CommandContext, type ChatMessageView, type RenderedItem, type SlashCommand } from '@/utils/chatHelpers';
 import { MIN_SCAN_MS } from '@/utils/treemapHelpers';
 import { chatStyles as styles } from '@/utils/theme-styles';
+import type { EditReviewRequest, SkillSummary, ToolConfirmRequest, Usage } from '@/types';
 import type { StreamPart, StreamState } from '@/components/StreamStatus';
 import type { Question } from '@/components/QuestionCard';
-import type { EditReviewRequest, ToolConfirmRequest, Usage } from '@/types';
 
 // The in-flight assistant turn buffered in a ref (a richer StreamState with the
 // thinking text, start time, usage, and a cancel flag).
@@ -44,10 +45,13 @@ export default function Chat() {
     chatModel, setChatModel, summarizeModel, setSummarizeModel,
     sessions, currentSession, setCurrentSession, streamingSession, setStreamingSession,
     draftsBySession, attachmentsBySession, setDraft, setDraftAttachment,
-    prefs, transcriptOpen,
+    prefs, transcriptOpen, currentWorkspace,
   } = useStore();
 
   const { pickWorkspace } = useWorkspace();
+
+  // First folder of the current workspace → passed to SkillDock as workspaceRoot
+  const workspaceRoot: string | null = currentWorkspace?.folders?.[0] ?? null;
 
   const viewingSession: string = currentSession ?? sessions.find((s) => s.active)?.id ?? '';
   const messages = messagesBySession[viewingSession] ?? [];
@@ -74,6 +78,7 @@ export default function Chat() {
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [summarize, setSummarize] = useState<SummarizeState | null>(null);
   const [cmdSelected, setCmdSelected] = useState(0);
+  const [mentionDismissed, setMentionDismissed] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [gitRefreshTick, setGitRefreshTick] = useState(0);
 
@@ -263,9 +268,39 @@ export default function Chat() {
   }, [attachImage]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
+    // Skill dragged from the dock → insert a #mention at the caret
+    const skillName = e.dataTransfer?.getData('application/x-micelio-skill');
+    if (skillName) {
+      e.preventDefault();
+      // Dropping a skill activates it right away (even if already mentioned).
+      ipc
+        .setSkillEnabled(skillName, true)
+        .then(() => ipc.listSkills())
+        .then((list) => useStore.getState().setSkills(list))
+        .catch(console.error);
+      const ta = taRef.current;
+      const current = input;
+      const pos = ta ? ta.selectionStart : current.length;
+      const mention = `#${skillName}`;
+      // Skip if already mentioned (boundary check so '#code' doesn't match
+      // inside an existing '#code-review')
+      const escaped = skillName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`#${escaped}(?![\\w-])`).test(current)) return;
+      const before = current.slice(0, pos);
+      const after = current.slice(pos);
+      const next =
+        (before && !before.endsWith(' ') ? before + ' ' : before) +
+        mention +
+        (after.startsWith(' ') || after === '' ? '' : ' ') +
+        after +
+        (after === '' ? ' ' : '');
+      setInput(next);
+      requestAnimationFrame(() => ta?.focus());
+      return;
+    }
     const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith('image/'));
     if (file) { e.preventDefault(); attachImage(file); }
-  }, [attachImage]);
+  }, [attachImage, input, setInput]);
 
   // ── Send / Cancel / Clear ──────────────────────────────────────────────────
   const send = useCallback(async () => {
@@ -293,6 +328,26 @@ export default function Chat() {
       if (taRef.current) taRef.current.style.height = 'auto';
       await ipc.summarizeAll(sm[1] ? parseInt(sm[1], 10) : undefined).catch(console.error);
       return;
+    }
+
+    // #skill mentions auto-enable the skill before the stream starts, so the
+    // backend injects its body into this message's system prompt.
+    // Only #tokens at the start of the text or after whitespace count — a URL
+    // fragment like site.com/#deploy must not enable a skill.
+    const mentions = [...content.matchAll(/(?:^|\s)#([\w-]+)/g)].map((m) => m[1].toLowerCase());
+    if (mentions.length > 0) {
+      try {
+        const allSkills = await ipc.listSkills();
+        const toEnable = allSkills.filter(
+          (s) => !s.enabled && mentions.includes(s.name.toLowerCase()),
+        );
+        if (toEnable.length > 0) {
+          await Promise.all(toEnable.map((s) => ipc.setSkillEnabled(s.name, true)));
+          useStore.getState().setSkills(await ipc.listSkills());
+        }
+      } catch (e) {
+        console.error('failed to enable mentioned skills', e);
+      }
     }
 
     setInput('');
@@ -382,6 +437,32 @@ export default function Chat() {
   const showPalette = input.startsWith('/') && !input.includes(' ');
   const filteredCmds = showPalette ? COMMANDS.filter((c) => c.cmd.startsWith(input.toLowerCase())) : [];
 
+  // ── #skill mention autocomplete ────────────────────────────────────────────
+  // Triggered by a "#token" being typed at the end of the draft (start of text
+  // or after whitespace). Escape dismisses until the token changes again.
+  const skills = useStore((s) => s.skills);
+  const mentionMatch = !showPalette ? input.match(/(^|\s)#([\w-]*)$/) : null;
+  const mentionQuery = mentionMatch ? mentionMatch[2].toLowerCase() : null;
+  useEffect(() => setMentionDismissed(false), [mentionQuery]);
+  const filteredSkills: SkillSummary[] =
+    mentionQuery != null && !mentionDismissed
+      ? skills.filter((s) => s.name.toLowerCase().startsWith(mentionQuery))
+      : [];
+  // Once the mention is fully typed there is nothing left to complete —
+  // close the palette so Enter sends instead of re-inserting the name.
+  const showSkillPalette =
+    filteredSkills.length > 0 &&
+    !(filteredSkills.length === 1 && filteredSkills[0].name.toLowerCase() === mentionQuery);
+
+  const pickSkill = useCallback(
+    (s: SkillSummary) => {
+      setInput(input.replace(/#[\w-]*$/, `#${s.name} `));
+      setCmdSelected(0);
+      requestAnimationFrame(() => taRef.current?.focus());
+    },
+    [input, setInput],
+  );
+
   const cmdContext: CommandContext = {
     clear,
     tools: async () => {
@@ -421,8 +502,14 @@ export default function Chat() {
       if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); runCommand(filteredCmds[Math.min(cmdSelected, filteredCmds.length - 1)]); return; }
       if (e.key === 'Escape') { e.preventDefault(); setInput(''); return; }
     }
+    if (showSkillPalette) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setCmdSelected((i) => (i + 1) % filteredSkills.length); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setCmdSelected((i) => (i - 1 + filteredSkills.length) % filteredSkills.length); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickSkill(filteredSkills[Math.min(cmdSelected, filteredSkills.length - 1)]); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setMentionDismissed(true); return; }
+    }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-  }, [showPalette, filteredCmds, cmdSelected, runCommand, send]);
+  }, [showPalette, filteredCmds, cmdSelected, runCommand, send, showSkillPalette, filteredSkills, pickSkill]);
 
   const autosize = useCallback((el: HTMLTextAreaElement) => {
     el.style.height = 'auto';
@@ -475,9 +562,9 @@ export default function Chat() {
       />
 
       {/* Footer — QuestionCard, SummarizeBanner, GitContext, Composer */}
-      <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', padding: '0 0 28px', background: 'inherit' }}>
+      <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', padding: '0 0 8px', background: 'inherit' }}>
         <div style={styles.composerFade} />
-        <div style={{ maxWidth: 760, width: '100%', margin: '0 auto', padding: '0 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ maxWidth: 760, width: '100%', margin: '0 auto', padding: '0 24px', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {pendingAsk && (streamingSession == null || streamingSession === viewingSession) && (
             <QuestionCard questions={pendingAsk} onAnswer={answerAsk} onCancel={cancelAsk} />
           )}
@@ -517,7 +604,12 @@ export default function Chat() {
             setCmdSelected={setCmdSelected}
             runCommand={runCommand}
             CommandPalette={CommandPalette}
+            showSkillPalette={showSkillPalette}
+            filteredSkills={filteredSkills}
+            skillSelected={cmdSelected}
+            pickSkill={pickSkill}
           />
+          <SkillDock workspaceRoot={workspaceRoot} />
         </div>
       </div>
     </div>

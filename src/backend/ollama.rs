@@ -290,12 +290,11 @@ pub fn list_models() -> BackendResult<Vec<ModelChoice>> {
             continue;
         }
         let name = trimmed.split_whitespace().next().unwrap_or("").to_string();
-        // Ollama's `list` output doesn't expose modalities, so vision can't be
-        // detected reliably here — default off.
         if !name.is_empty() {
+            let vision = model_supports_vision(&name);
             models.push(ModelChoice {
                 name,
-                vision: false,
+                vision,
             });
         }
     }
@@ -324,6 +323,35 @@ pub fn model_supports_thinking(model: &str) -> bool {
             String::from_utf8_lossy(&o.stdout)
                 .to_lowercase()
                 .contains("thinking")
+        })
+        .unwrap_or(false);
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(model.to_string(), supports);
+    }
+    supports
+}
+
+/// Whether `model` supports image input (vision). Probes `ollama show` for a
+/// "vision" capability string, mirroring the approach used for thinking
+/// detection. Results are cached so each model is probed at most once.
+pub fn model_supports_vision(model: &str) -> bool {
+    static CACHE: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(guard) = cache.lock() {
+        if let Some(value) = guard.get(model) {
+            return *value;
+        }
+    }
+    // `ollama show` lists a "Capabilities" section; "vision" appears there
+    // only for multimodal models.
+    let supports = no_window_cmd("ollama")
+        .args(["show", model])
+        .output()
+        .ok()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .to_lowercase()
+                .contains("vision")
         })
         .unwrap_or(false);
     if let Ok(mut guard) = cache.lock() {

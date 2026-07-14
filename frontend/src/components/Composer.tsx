@@ -1,7 +1,11 @@
-import React, { type ComponentType, type RefObject } from 'react';
+import React, { useRef, type ComponentType, type RefObject } from 'react';
 import { ArrowElbowDownLeft, Stop, Broom, ImageSquare, X } from '@phosphor-icons/react';
 import { theme } from '@/theme';
+import { useStore } from '@/store';
+import { renderInlineMentions } from '@/utils/skillMentions';
 import ModelRolesSelector from '@/components/ModelRolesSelector';
+import SuggestPalette from '@/components/SuggestPalette';
+import type { SkillSummary } from '@/types';
 import ModeSelector from '@/components/ModeSelector';
 import { chatStyles as styles } from '@/utils/theme-styles';
 import type { Attachment, SlashCommand } from '@/utils/chatHelpers';
@@ -34,6 +38,10 @@ interface ComposerProps {
   setCmdSelected: (n: number) => void;
   runCommand: (command: SlashCommand) => void;
   CommandPalette: ComponentType<CommandPaletteComponentProps>;
+  showSkillPalette: boolean;
+  filteredSkills: SkillSummary[];
+  skillSelected: number;
+  pickSkill: (skill: SkillSummary) => void;
 }
 
 export default function Composer({
@@ -41,12 +49,27 @@ export default function Composer({
   attachment, setAttachment, attachImage, fileInputRef, taRef, isLoading,
   onDrop, autosize, showPalette, filteredCmds, cmdSelected, setCmdSelected,
   runCommand, CommandPalette,
+  showSkillPalette, filteredSkills, skillSelected, pickSkill,
 }: ComposerProps) {
+  const skills = useStore((s) => s.skills);
+  const overlayRef = useRef<HTMLDivElement>(null);
   return (
     <div style={{ position: 'relative' }}>
       {showPalette && (
         <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, zIndex: 10 }}>
           <CommandPalette commands={filteredCmds} selected={cmdSelected} onPick={runCommand} />
+        </div>
+      )}
+      {showSkillPalette && (
+        <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, zIndex: 10 }}>
+          <SuggestPalette
+            items={filteredSkills}
+            selected={skillSelected}
+            onPick={pickSkill}
+            getKey={(s) => s.name}
+            getLabel={(s) => `#${s.name}`}
+            getDesc={(s) => s.description || s.display_name}
+          />
         </div>
       )}
       <div style={styles.card} onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
@@ -61,16 +84,50 @@ export default function Composer({
               </div>
             </div>
           )}
-          <textarea
-            ref={taRef}
-            value={input}
-            onChange={(e) => { setInput(e.target.value); setCmdSelected(0); autosize(e.target); }}
-            onKeyDown={onKeyDown}
-            onPaste={onPaste}
-            placeholder="Type a prompt or /command..."
-            rows={2}
-            style={styles.textarea}
-          />
+          {/* Mirrored highlight: the overlay renders the same text (with
+              #skill mentions in accent) behind a transparent-text textarea.
+              Both share styles.textarea metrics, so glyphs align 1:1 and the
+              caret/selection stay native. */}
+          <div style={{ position: 'relative' }}>
+            <div
+              ref={overlayRef}
+              aria-hidden
+              style={{
+                ...styles.textarea,
+                position: 'absolute',
+                inset: 0,
+                overflow: 'hidden',
+                pointerEvents: 'none',
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'break-word',
+                padding: 0,
+              }}
+            >
+              {renderInlineMentions(input, skills)}
+              {'​' /* keeps a trailing newline's line box rendered */}
+            </div>
+            <textarea
+              ref={taRef}
+              className="mention-ta"
+              value={input}
+              onChange={(e) => { setInput(e.target.value); setCmdSelected(0); autosize(e.target); }}
+              onKeyDown={onKeyDown}
+              onPaste={onPaste}
+              onScroll={(e) => {
+                if (overlayRef.current) overlayRef.current.scrollTop = e.currentTarget.scrollTop;
+              }}
+              placeholder="Type a prompt or /command..."
+              rows={2}
+              style={{
+                ...styles.textarea,
+                display: 'block',
+                position: 'relative',
+                color: 'transparent',
+                caretColor: theme.text,
+                padding: 0,
+              }}
+            />
+          </div>
           <input
             ref={fileInputRef}
             type="file"

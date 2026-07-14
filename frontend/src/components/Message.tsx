@@ -6,6 +6,7 @@ import { useStore } from '@/store';
 import { theme } from '@/theme';
 import { mdComponents } from '@/components/MdComponents';
 import { fmtUsd, fmtTok, type ChatMessageView } from '@/utils/chatHelpers';
+import { renderSkillMentions } from '@/utils/skillMentions';
 import { chatStyles as styles } from '@/utils/theme-styles';
 
 interface MessageProps {
@@ -17,6 +18,7 @@ interface MessageProps {
 export default function Message({ msg, msgKey, hovered }: MessageProps) {
   const [copied, setCopied] = useState(false);
   const showCost = useStore((s) => s.settings?.show_cost);
+  const skills = useStore((s) => s.skills);
   const isUser = msg.role === 'user';
   const usage = !isUser && showCost ? msg.usage : null;
   const tok = usage ? (usage.prompt_tokens || 0) + (usage.completion_tokens || 0) : 0;
@@ -40,7 +42,7 @@ export default function Message({ msg, msgKey, hovered }: MessageProps) {
       <div style={{ maxWidth: isUser ? '72%' : '100%' }}>
         {isUser ? (
           <div style={styles.userBubble}>
-            {msg.content && <div>{msg.content}</div>}
+            {msg.content && <div>{renderSkillMentions(msg.content, skills)}</div>}
             {msg.attachment && (
               <div style={{ ...styles.msgAttach, marginTop: msg.content ? 8 : 0 }}>
                 {msg.attachment.preview && (

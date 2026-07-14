@@ -40,10 +40,12 @@ export default function ContextWindow() {
   const [flash, setFlash] = useState<Flash | null>(null); // feedback after compacting
   const ref = useRef<HTMLDivElement | null>(null);
 
-  // Refresh when the conversation changes, the model switches, or a turn ends.
+  // Refresh when the conversation changes, the model switches, a turn ends,
+  // or skills are toggled (their bodies change the prompt budget immediately).
+  const skills = useStore((s) => s.skills);
   useEffect(() => {
     ipc.getContextWindow().then(setInfo).catch(console.error);
-  }, [messages.length, isLoading, chatModel]);
+  }, [messages.length, isLoading, chatModel, skills]);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
