@@ -844,9 +844,9 @@ export const toastsStyles: Record<string, CSSProperties> = {
 // ── Chat / Message / Composer ────────────────────────────────────────────
 export const chatStyles: Record<string, CSSProperties> = {
   root: { width: '100%', flex: 1, display: 'flex', flexDirection: 'column', background: theme.bg, position: 'relative', minHeight: 0 },
-  scroll: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '12px 0', scrollBehavior: 'smooth' },
-  col: { margin: '0 auto', display: 'flex', flexDirection: 'column' },
-  msgRow: { display: 'flex', marginBottom: 2, padding: '3px 0' },
+  // No margin: rows live inside Virtuoso items, whose heights are measured by
+  // ResizeObserver — margins are invisible to it. Spacing comes from padding.
+  msgRow: { display: 'flex', padding: '3px 0' },
   userBubble: { background: theme.card, borderRadius: "var(--radius-lg)", padding: '7px 12px', color: theme.text, fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
   msgAttach: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', background: theme.bgDeep, border: `1px solid ${theme.border}`, borderRadius: "var(--radius-md)", width: 'fit-content' },
   msgAttachThumb: { width: 26, height: 26, borderRadius: 5, objectFit: 'cover', display: 'block', flexShrink: 0 },
