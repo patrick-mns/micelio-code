@@ -300,3 +300,26 @@ export interface BgTaskExited {
   command: string;
   code: number | null;
 }
+
+// ── Skills ───────────────────────────────────────────────────────────────────
+export interface SkillSummary {
+  name: string;
+  display_name: string;
+  description: string;
+  enabled: boolean;
+  icon_path?: string | null;
+}
+
+export interface SkillDetail {
+  meta: {
+    name: string;
+    description: string;
+    display_name: string;
+    license: string;
+    default_enabled: boolean;
+    metadata: Record<string, string>;
+  };
+  body: string;
+  path: string;
+  enabled: boolean;
+}

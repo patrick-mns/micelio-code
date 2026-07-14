@@ -7,5 +7,6 @@ pub mod openers;
 pub mod review;
 pub mod sessions;
 pub mod settings;
+pub mod skills;
 pub mod updater;
 pub mod workspace;

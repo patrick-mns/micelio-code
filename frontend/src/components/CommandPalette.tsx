@@ -1,5 +1,5 @@
-import React, { type CSSProperties } from 'react';
-import { commandPaletteStyles } from '@/utils/theme-styles';
+import React from 'react';
+import SuggestPalette from '@/components/SuggestPalette';
 import type { SlashCommand } from '@/utils/chatHelpers';
 
 interface CommandPaletteProps {
@@ -8,25 +8,16 @@ interface CommandPaletteProps {
   onPick: (command: SlashCommand) => void;
 }
 
-// Floating command list shown above the composer while the input starts
-// with "/". Purely presentational — the parent owns filtering, the selected
-// index, and what each command does on run.
+// "/" command list — a thin wrapper over the generic SuggestPalette.
 export default function CommandPalette({ commands, selected, onPick }: CommandPaletteProps) {
-  if (commands.length === 0) return null;
   return (
-    <div style={commandPaletteStyles.wrap}>
-      {commands.map((c, i) => (
-        <button
-          key={c.cmd}
-          className={i === selected ? 'cmd-row is-active' : 'cmd-row'}
-          onMouseDown={(e) => { e.preventDefault(); onPick(c); }}
-          style={commandPaletteStyles.row}
-        >
-          <span style={commandPaletteStyles.cmd}>{c.cmd}</span>
-          <span style={commandPaletteStyles.desc}>{c.desc}</span>
-        </button>
-      ))}
-    </div>
+    <SuggestPalette
+      items={commands}
+      selected={selected}
+      onPick={onPick}
+      getKey={(c) => c.cmd}
+      getLabel={(c) => c.cmd}
+      getDesc={(c) => c.desc}
+    />
   );
 }
-

@@ -371,6 +371,11 @@ pub fn run() {
             commands::updater::get_app_version,
             commands::updater::start_update_download,
             commands::updater::install_and_restart,
+            commands::skills::load_skills,
+            commands::skills::list_skills,
+            commands::skills::toggle_skill,
+            commands::skills::set_skill_enabled,
+            commands::skills::get_skill,
         ])
         .run(tauri::generate_context!())
         .expect("error running Tauri app");
