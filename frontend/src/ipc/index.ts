@@ -132,6 +132,7 @@ export const ipc = {
   onUpdateStatus: (cb: (p: any) => void) => on<any>('update_status', cb),
 
   // Skills
+  onSkillsChanged: (cb: () => void) => on<void>('skills_changed', cb),
   loadSkills: (workspaceRoot: string) => invoke<void>('load_skills', { workspaceRoot }),
   listSkills: () => invoke<SkillSummary[]>('list_skills'),
   toggleSkill: (name: string) => invoke<boolean>('toggle_skill', { name }),

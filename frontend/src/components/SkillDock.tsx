@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { ipc } from '@/ipc';
 import { useStore } from '@/store';
 import type { SkillSummary } from '@/types';
@@ -38,6 +39,19 @@ export default function SkillDock({ workspaceRoot }: SkillDockProps) {
       .then((list) => setSkills(list))
       .catch(console.error)
       .finally(() => setLoading(false));
+  }, [workspaceRoot]);
+
+  // Listen for live skill changes (filesystem watcher)
+  useEffect(() => {
+    if (!workspaceRoot) return;
+    let unlisten: UnlistenFn | undefined;
+    ipc.onSkillsChanged(() => {
+      ipc
+        .listSkills()
+        .then((list) => setSkills(list))
+        .catch(console.error);
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
   }, [workspaceRoot]);
 
   // macOS Dock model: icons change their REAL width/height with a cosine

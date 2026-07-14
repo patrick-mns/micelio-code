@@ -14,6 +14,7 @@ pub mod sessions;
 pub mod symbols;
 pub mod review;
 pub mod skills;
+pub mod skill_watcher;
 pub mod tokens;
 pub mod tools;
 pub mod updater;

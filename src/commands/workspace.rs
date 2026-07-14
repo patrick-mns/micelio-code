@@ -279,6 +279,8 @@ async fn switch_workspace_internal(state: &State<'_, AppState>, ws: &Workspace) 
 
     // 5. Load skills from `.micelio/skills/` in the workspace
     crate::backend::skills::SkillRegistry::load(&workspace_root);
+    // Start watching skill directories for changes (hot-reload)
+    crate::backend::skill_watcher::watch_workspace(&workspace_root);
 
     // Clear and resume session history
     let mut histories = state.session_histories.lock().unwrap();

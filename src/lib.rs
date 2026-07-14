@@ -250,6 +250,10 @@ pub fn run() {
                 });
             }
 
+            // Start the skills filesystem watcher (debounce thread). It will
+            // wait until `watch_workspace` is called to begin watching.
+            backend::skill_watcher::init(app.handle().clone());
+
             // Remove native window decorations on Windows/Linux so the app can
             // draw its own title-bar buttons (minimize/maximize/close) inside the
             // custom header, matching the macOS traffic-light experience.
