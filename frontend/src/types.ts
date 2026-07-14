@@ -47,6 +47,8 @@ export interface SystemPromptInfo {
   text: string;
   is_custom: boolean;
   default_text: string;
+  /** Active skills section appended at send time (read-only in the inspector) */
+  skills_text: string;
 }
 
 export interface TranscriptItem {

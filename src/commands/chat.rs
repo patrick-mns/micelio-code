@@ -520,6 +520,9 @@ pub struct SystemPromptInfo {
     /// The built-in default, so the modal can preview/restore it without a
     /// second round-trip.
     pub default_text: String,
+    /// Active skills section appended at send time — shown read-only in the
+    /// inspector (it's part of the prompt, but not editable there).
+    pub skills_text: String,
 }
 
 #[tauri::command]
@@ -531,6 +534,9 @@ pub async fn get_system_prompt() -> Result<SystemPromptInfo, String> {
         text: crate::backend::prompt::base_system_prompt(),
         is_custom: crate::backend::config::system_prompt_override().is_some(),
         default_text: crate::backend::prompt::default_system_prompt(),
+        skills_text: crate::backend::skills::SkillRegistry::skills_prompt_section()
+            .trim()
+            .to_string(),
     })
 }
 
