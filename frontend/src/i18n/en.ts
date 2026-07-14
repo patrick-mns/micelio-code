@@ -6,6 +6,7 @@ const en = {
   // ── App / Layout ─────────────────────────────────────────────────────
   app: {
     sidebarToggle: 'Toggle conversations',
+    currentSession: 'Current session',
   },
   tabs: {
     chat: 'Chat',

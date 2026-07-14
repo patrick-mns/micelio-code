@@ -8,6 +8,7 @@ import SystemPromptModal from '@/components/SystemPromptModal';
 import AboutModal from '@/components/AboutModal';
 import UpdateModal from '@/components/UpdateModal';
 import Sidebar from '@/components/Sidebar';
+import SessionBadge from '@/components/SessionBadge';
 import ConfirmModal from '@/components/ConfirmModal';
 import Onboarding from '@/components/Onboarding';
 import ScanOverlay from '@/components/ScanOverlay';
@@ -191,6 +192,7 @@ const { t } = useI18n();
               >
                 <SidebarSimple size={18} weight={sidebarOpen ? 'fill' : 'regular'} />
               </button>
+              <SessionBadge />
             </div>
 
             {/* --- Center (draggable on all platforms) --- */}
