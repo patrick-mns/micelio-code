@@ -17,7 +17,6 @@ const SEG_COLORS: Record<string, string> = {
   Messages: theme.accent,
   Tools: '#5f9fc9',
   'MCP tools': '#5fc9a0',
-  Skills: '#c9a75f',
   'System prompt': '#c97fc9',
   'Free space': theme.border,
 };

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.8.0...micelio-v0.9.0) (2026-07-13)
+
+
+### Features
+
+* MCP client, Review confirmations, and UI fixes ([9b3c605](https://github.com/patrick-mns/micelio-code/commit/9b3c605018b0ec458962b3a115fc9a1f230944ed))
+
 ## [0.8.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.7.0...micelio-v0.8.0) (2026-07-11)
 
 

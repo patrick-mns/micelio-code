@@ -16,9 +16,9 @@ import { useWorkspace } from '@/hooks/useWorkspace';
 import { COMMANDS, type Attachment, type CommandContext, type ChatMessageView, type RenderedItem, type SlashCommand } from '@/utils/chatHelpers';
 import { MIN_SCAN_MS } from '@/utils/treemapHelpers';
 import { chatStyles as styles } from '@/utils/theme-styles';
+import type { EditReviewRequest, SkillSummary, ToolConfirmRequest, Usage } from '@/types';
 import type { StreamPart, StreamState } from '@/components/StreamStatus';
 import type { Question } from '@/components/QuestionCard';
-import type { EditReviewRequest, SkillSummary, ToolConfirmRequest, Usage } from '@/types';
 
 // The in-flight assistant turn buffered in a ref (a richer StreamState with the
 // thinking text, start time, usage, and a cancel flag).
