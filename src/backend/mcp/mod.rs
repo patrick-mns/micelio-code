@@ -70,6 +70,11 @@ pub struct McpServerStatus {
 }
 
 type Client = RunningService<RoleClient, ()>;
+type McpConnectResult = (
+    String,
+    String,
+    Result<(Client, Vec<rmcp::model::Tool>), String>,
+);
 
 #[derive(Default)]
 struct State {
@@ -114,11 +119,7 @@ impl McpManager {
 
         // Fan out every enabled server's connect onto the runtime; disabled
         // entries are recorded directly.
-        let mut set: tokio::task::JoinSet<(
-            String,
-            String,
-            Result<(Client, Vec<rmcp::model::Tool>), String>,
-        )> = tokio::task::JoinSet::new();
+        let mut set: tokio::task::JoinSet<McpConnectResult> = tokio::task::JoinSet::new();
         for (name, server) in cfg.mcp_servers {
             let transport = if server.is_stdio() { "stdio" } else { "http" };
             if !server.enabled {

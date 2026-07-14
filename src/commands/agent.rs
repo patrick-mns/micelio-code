@@ -542,6 +542,7 @@ pub fn run_tool_calls(
 /// third element is `Some(path)` only when a file was actually written to
 /// disk this call, so the caller can dirty-track just the files that really
 /// changed (a rejected review-mode edit does not count).
+#[allow(clippy::too_many_arguments)]
 fn execute_tool_call(
     app: &AppHandle,
     history: &mut Vec<Message>,

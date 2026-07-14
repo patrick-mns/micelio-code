@@ -127,7 +127,7 @@ impl Provider for OpenAiCompatProvider {
         });
         let tools_json = crate::backend::tools::tools_json();
         if !tools_json.trim().is_empty() && tools_json != "[]" {
-            if let Ok(tools) = serde_json::from_str::<Vec<serde_json::Value>>(&tools_json) {
+            if let Ok(tools) = serde_json::from_str::<Vec<serde_json::Value>>(tools_json) {
                 if !tools.is_empty() {
                     let _body = body;
                     // tools go into a new object so we can mutate it
