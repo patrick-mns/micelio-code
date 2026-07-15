@@ -18,10 +18,13 @@ interface MessageProps {
 export default function Message({ msg, msgKey, hovered }: MessageProps) {
   const [copied, setCopied] = useState(false);
   const showCost = useStore((s) => s.settings?.show_cost);
+  const showModel = useStore((s) => s.settings?.show_model);
   const skills = useStore((s) => s.skills);
   const isUser = msg.role === 'user';
-  const usage = !isUser && showCost ? msg.usage : null;
+  const rawUsage = !isUser ? msg.usage : undefined;
+  const usage = showCost ? rawUsage : null;
   const tok = usage ? (usage.prompt_tokens || 0) + (usage.completion_tokens || 0) : 0;
+  const model = showModel ? rawUsage?.model?.replace(/:latest$/, '') : null;
 
   const copy = () => {
     navigator.clipboard.writeText(msg.content);
@@ -73,9 +76,11 @@ export default function Message({ msg, msgKey, hovered }: MessageProps) {
           >
             {copied ? <Check size={12} color={theme.success} /> : <Copy size={12} color={theme.dim} />}
           </button>
-          {usage && (
+          {(usage || model) && (
             <div style={styles.usage}>
-              {fmtTok(tok)} tok · {fmtUsd(usage.cost || 0)}
+              {usage && `${fmtTok(tok)} tok · ${fmtUsd(usage.cost || 0)}`}
+              {usage && model && ' · '}
+              {model}
             </div>
           )}
         </div>

@@ -17,6 +17,11 @@ export default function ChatSettings() {
     ipc.setShowCost(v).catch(console.error);
   };
 
+  const toggleShowModel = (v: boolean) => {
+    setSettings({ ...settings!, show_model: v });
+    ipc.setShowModel(v).catch(console.error);
+  };
+
   return (
     <Section title="CHAT">
       <Toggle label="Stream responses" desc="Show tokens as they arrive" value={prefs.streamEnabled} onChange={(v) => setPref('streamEnabled', v)} />
@@ -32,6 +37,12 @@ export default function ChatSettings() {
         desc="Show token usage and price under each reply (when the provider reports it, e.g. OpenRouter)"
         value={settings?.show_cost ?? false}
         onChange={toggleShowCost}
+      />
+      <Toggle
+        label="Show model used"
+        desc="Show which model produced each reply under the message"
+        value={settings?.show_model ?? false}
+        onChange={toggleShowModel}
       />
       <Toggle label="Show thinking" desc="Display the model's reasoning blocks" value={prefs.showThinking} onChange={(v) => setPref('showThinking', v)} />
       <Toggle label="Show tool results" desc="Display tool call output in the transcript" value={prefs.showTools} onChange={(v) => setPref('showTools', v)} />

@@ -280,6 +280,17 @@ pub fn save_show_cost(on: bool) {
     write_value("show_cost", if on { "true" } else { "false" });
 }
 
+/// Whether to show which model produced each assistant reply. Defaults to
+/// `false` (off) until enabled.
+pub fn show_model() -> bool {
+    read_trimmed("show_model").is_some_and(|s| s == "true")
+}
+
+/// Persists the show-model toggle. Best-effort.
+pub fn save_show_model(on: bool) {
+    write_value("show_model", if on { "true" } else { "false" });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

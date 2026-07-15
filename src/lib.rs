@@ -331,6 +331,7 @@ pub fn run() {
             commands::settings::get_version,
             commands::settings::set_auto_summarize,
             commands::settings::set_show_cost,
+            commands::settings::set_show_model,
             commands::workspace::get_current_workspace,
             commands::workspace::list_all_workspaces,
             commands::workspace::set_active_root,
