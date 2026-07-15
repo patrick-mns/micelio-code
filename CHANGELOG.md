@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.12.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.11.0...micelio-v0.12.0) (2026-07-15)
+
+
+### Features
+
+* **bg:** show source folder, order newest-first, and cap finished tasks ([7daec8d](https://github.com/patrick-mns/micelio-code/commit/7daec8d2d9d9cd45b4bbf04a4ccbdfb4138c8289))
+* **providers:** configurable OpenAI-compatible endpoints ([40ed8da](https://github.com/patrick-mns/micelio-code/commit/40ed8da8421ae3e5ce8922f37c35aba4cf9b1750))
+* **skills:** hot-reload skills via filesystem watcher ([b8d26dc](https://github.com/patrick-mns/micelio-code/commit/b8d26dc02ec60054942c930e9e846a68cca9b05b))
+* **ui:** show active session badge in header and load session on startup ([792f422](https://github.com/patrick-mns/micelio-code/commit/792f422df7b7a6f5612d78358fb70e39f675aebe))
+
+
+### Bug Fixes
+
+* **bg:** delete task logs when tasks leave the registry ([2c0d451](https://github.com/patrick-mns/micelio-code/commit/2c0d451d6aa819874077a692d53eda812c38626f))
+* **git:** count staged and untracked changes in badge and changes panel ([9eb98a8](https://github.com/patrick-mns/micelio-code/commit/9eb98a8f2f94cb3f4a6a671629806a0a24fdaef2))
+* **git:** match per-file changes counts to git via LCS diff ([514f78f](https://github.com/patrick-mns/micelio-code/commit/514f78f362cb53855d8d93a9bba13a47ccd58351))
+* **git:** revert of a new file removes it in the changes panel ([fc055f2](https://github.com/patrick-mns/micelio-code/commit/fc055f2850776938c225079412f6f7922c99751a))
+* **ui:** render native controls in the app theme ([66b6d18](https://github.com/patrick-mns/micelio-code/commit/66b6d18e552853bd0b9dae3ee54feebcfe0a9599))
+
+
+### Performance Improvements
+
+* **ui:** virtualize chat message list to fix long-context jank ([506a6da](https://github.com/patrick-mns/micelio-code/commit/506a6daeb8d8275078e970c2d28f94366c388b8c))
+
 ## [0.11.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.10.0...micelio-v0.11.0) (2026-07-14)
 
 
