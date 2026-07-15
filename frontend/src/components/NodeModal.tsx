@@ -1,22 +1,6 @@
 import React, { useEffect, useState, type CSSProperties } from 'react';
 import { nodeModalStyles } from '@/utils/theme-styles';
 import { fmtCount } from '@/utils/formatters';
-import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import rust from 'react-syntax-highlighter/dist/esm/languages/prism/rust';
-import javascript from 'react-syntax-highlighter/dist/esm/languages/prism/javascript';
-import jsx from 'react-syntax-highlighter/dist/esm/languages/prism/jsx';
-import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript';
-import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
-import python from 'react-syntax-highlighter/dist/esm/languages/prism/python';
-import go from 'react-syntax-highlighter/dist/esm/languages/prism/go';
-import json from 'react-syntax-highlighter/dist/esm/languages/prism/json';
-import toml from 'react-syntax-highlighter/dist/esm/languages/prism/toml';
-import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
-import markdown from 'react-syntax-highlighter/dist/esm/languages/prism/markdown';
-import markup from 'react-syntax-highlighter/dist/esm/languages/prism/markup';
-import css from 'react-syntax-highlighter/dist/esm/languages/prism/css';
-import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { X, Sparkle, Warning, Lock, LockOpen } from '@phosphor-icons/react';
@@ -25,22 +9,18 @@ import { useStore } from '@/store';
 import { theme, KIND_COLORS } from '@/theme';
 import type { NodeCode, TreemapNode } from '@/types';
 import Modal from '@/components/Modal';
-
-// Register only the languages the backend's lang_from_path can emit, so the
-// modal doesn't pull Prism's entire language set into the bundle.
-for (const [name, def] of Object.entries({
-  rust, javascript, jsx, typescript, tsx, python, go, json, toml, yaml, markdown, markup, css, bash,
-})) {
-  SyntaxHighlighter.registerLanguage(name, def);
-}
+import CodeViewer from '@/components/CodeViewer';
 
 function kindColor(kind: string): string {
   return KIND_COLORS[kind] ?? '#2563eb';
 }
 
-// Above this, inline syntax highlighting (Prism) blocks the main thread long
-// enough to freeze the window, so we show a notice instead of rendering.
-const MAX_PREVIEW_CHARS = 80_000;
+// The viewer virtualizes the DOM, so line count no longer drives the cost —
+// what's left is Prism tokenizing the whole file, which is linear and cheap
+// (~120ms for 600k chars). This cap is really a guard against the pathological
+// case virtualizing can't help: a minified bundle, where the whole file is one
+// enormous line and so a single unsplittable row.
+const MAX_PREVIEW_CHARS = 400_000;
 
 interface NodeModalProps {
   node: TreemapNode;
@@ -186,8 +166,9 @@ export default function NodeModal({ node, onClose }: NodeModalProps) {
               <Warning size={22} weight="fill" color={theme.warn} />
               <div style={nodeModalStyles.tooLargeTitle}>File too large to preview</div>
               <div style={nodeModalStyles.tooLargeText}>
-                This file is ~{fmtCount(code.code.length)} characters. Rendering it inline
-                would freeze the app. Optimized previews for large files are on the way.
+                This file is ~{fmtCount(code.code.length)} characters — past the point where
+                highlighting it stays responsive. Files this size are usually generated or
+                minified; open it in an editor instead.
               </div>
             </div>
           )}
@@ -200,25 +181,7 @@ export default function NodeModal({ node, onClose }: NodeModalProps) {
 
           {codeState === 'ready' && code && code.code.length <= MAX_PREVIEW_CHARS && code.language !== 'markdown' && (
             <div style={nodeModalStyles.codeWrap}>
-              <SyntaxHighlighter
-                language={code.language}
-                style={oneDark}
-                showLineNumbers
-                startingLineNumber={code.start_line}
-                wrapLongLines={false}
-                customStyle={{
-                  margin: 0,
-                  background: theme.codeBg,
-                  fontSize: 12.5,
-                  borderRadius: 10,
-                  border: `1px solid ${theme.border}`,
-                  flex: 1,
-                  overflow: 'auto',
-                }}
-                codeTagProps={{ style: { background: 'transparent', fontFamily: 'ui-monospace, SFMono-Regular, monospace' } }}
-              >
-                {code.code}
-              </SyntaxHighlighter>
+              <CodeViewer code={code.code} language={code.language} startLine={code.start_line} />
             </div>
           )}
 
