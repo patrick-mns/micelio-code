@@ -1,10 +1,12 @@
 name: Rust
 
+# dev is where the work happens and main only receives finished branches, so
+# gating on main alone means nothing is ever checked before it lands.
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,7 +18,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    
+
+    # Formatting needs neither the Tauri system libraries nor a compile, so it
+    # runs first: a whitespace-only failure comes back in seconds.
+    - name: Check formatting
+      run: cargo fmt --check
+
     - name: Install dependencies (Tauri)
       run: |
         sudo apt-get update
@@ -27,5 +34,7 @@ jobs:
 
     - name: Build
       run: cargo build
+    - name: Clippy
+      run: cargo clippy --all-targets -- -D warnings
     - name: Run tests
       run: cargo test

@@ -1,0 +1,40 @@
+name: Frontend
+
+# Nothing checked the frontend before this: a type error or a broken build only
+# showed up when someone ran it locally.
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+
+jobs:
+  check:
+
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-node@v4
+      with:
+        # Matches the version used locally; there's no .nvmrc or engines field
+        # to read it from, so it's pinned here.
+        node-version: 22
+        cache: npm
+        # The lockfile isn't at the repo root, and the cache key is resolved
+        # before `defaults.run.working-directory` applies.
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install
+      run: npm ci
+
+    - name: Typecheck
+      run: npm run typecheck
+
+    - name: Build
+      run: npm run build
