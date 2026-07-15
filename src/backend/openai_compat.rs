@@ -2,38 +2,19 @@
 //! speaks the OpenAI Chat Completions wire format (/v1/chat/completions,
 //! /v1/models, SSE streaming, function/tool calling).
 //!
-//! Concrete instances: OpenRouter, LiteLLM (H2O), or any other OpenAI-
-//! compatible gateway.  Each is a separate [`OpenAiCompatProvider`] const
-//! with its own base URL, key source, and feature flags.
+//! Instances are built at runtime from [`config::ProviderConfig`], one per
+//! endpoint the user configured (OpenRouter, LiteLLM, vLLM, llama.cpp, …), so
+//! adding a gateway is data, not code.
 
 #![allow(dead_code)]
 
-use crate::backend::config;
+use crate::backend::config::{ProviderConfig, ProviderFlavor};
 use crate::backend::error::{BackendError, BackendResult};
 use crate::backend::llm::{
-    AssistantResponse, ChatStream, Message, ModelChoice, Provider, ProviderKind, StreamEvent,
-    ToolCall,
+    AssistantResponse, ChatStream, Message, ModelChoice, Provider, StreamEvent, ToolCall,
 };
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
-
-// ── Instances ───────────────────────────────────────────────────────────────────
-
-pub const OPENROUTER: OpenAiCompatProvider = OpenAiCompatProvider {
-    kind: ProviderKind::OpenRouter,
-    name: "openrouter",
-    get_base_url: || "https://openrouter.ai/api/v1".to_string(),
-    get_key: config::openrouter_key,
-    openrouter_extensions: true,
-};
-
-pub const LITELLM: OpenAiCompatProvider = OpenAiCompatProvider {
-    kind: ProviderKind::LiteLLM,
-    name: "litellm",
-    get_base_url: config::litellm_base_url,
-    get_key: config::litellm_key,
-    openrouter_extensions: false,
-};
 
 // ── Params & ctx cache ──────────────────────────────────────────────────────────
 
@@ -44,43 +25,72 @@ fn ctx_cache() -> &'static Mutex<HashMap<String, usize>> {
 }
 
 pub struct OpenAiCompatProvider {
-    kind: ProviderKind,
-    name: &'static str,
-    /// Returns the base URL for this provider (may include /v1 path).
-    get_base_url: fn() -> String,
-    /// Returns the API key for this provider instance, or `None` if not set
-    /// (provider will contribute nothing to the catalog).
-    get_key: fn() -> Option<String>,
+    /// Stable id of the configured endpoint (matches `ProviderConfig::id`).
+    id: String,
+    /// Display label shown as the catalog section header.
+    label: String,
+    /// Base URL for this endpoint (may include the /v1 path).
+    base_url: String,
+    /// API key, or `None` when the endpoint needs no auth (local vLLM etc.) —
+    /// in that case no Authorization header is sent.
+    api_key: Option<String>,
     /// Whether to include OpenRouter-specific request fields (`reasoning`,
-    /// `usage`) and attribution headers (Referer, X-Title).  Only true for
-    /// the OpenRouter instance.
+    /// `usage`) and attribution headers (Referer, X-Title).
     openrouter_extensions: bool,
 }
 
-impl Provider for OpenAiCompatProvider {
-    fn kind(&self) -> ProviderKind {
-        self.kind
+impl OpenAiCompatProvider {
+    /// Build a live provider from a configured endpoint.
+    pub fn from_config(c: &ProviderConfig) -> Self {
+        let key = c.api_key.trim();
+        Self {
+            id: c.id.clone(),
+            label: c.name.clone(),
+            base_url: c.base_url.trim().trim_end_matches('/').to_string(),
+            api_key: (!key.is_empty()).then(|| key.to_string()),
+            openrouter_extensions: c.flavor == ProviderFlavor::Openrouter,
+        }
     }
 
-    fn name(&self) -> &'static str {
-        self.name
+    /// Apply auth + vendor headers to a request. A keyless endpoint gets no
+    /// Authorization header rather than being disabled.
+    fn with_headers(&self, req: ureq::Request) -> ureq::Request {
+        let mut req = match &self.api_key {
+            Some(key) => req.set("Authorization", &format!("Bearer {key}")),
+            None => req,
+        };
+        if self.openrouter_extensions {
+            req = req
+                .set(
+                    "HTTP-Referer",
+                    "https://github.com/patrick-mns/minimal-context",
+                )
+                .set("X-Title", "Micelio Code");
+        }
+        req
+    }
+}
+
+impl Provider for OpenAiCompatProvider {
+    fn id(&self) -> String {
+        self.id.clone()
+    }
+
+    fn label(&self) -> String {
+        self.label.clone()
     }
 
     fn list_models(&self) -> BackendResult<Vec<ModelChoice>> {
-        let Some(key) = (self.get_key)() else {
-            return Ok(Vec::new());
-        };
-        let base = (self.get_base_url)();
-        if base.is_empty() {
+        if self.base_url.is_empty() {
             return Ok(Vec::new());
         }
-        let resp = ureq::get(&format!("{}/models", base))
-            .set("Authorization", &format!("Bearer {key}"))
+        let resp = self
+            .with_headers(ureq::get(&format!("{}/models", self.base_url)))
             .call()
-            .map_err(|e| BackendError::Provider(format!("{} models: {e}", self.name)))?;
+            .map_err(|e| BackendError::Provider(format!("{} models: {e}", self.label)))?;
         let json: serde_json::Value = resp
             .into_json()
-            .map_err(|e| BackendError::Provider(format!("{} models parse: {e}", self.name)))?;
+            .map_err(|e| BackendError::Provider(format!("{} models parse: {e}", self.label)))?;
         let mut out = Vec::new();
         if let Some(arr) = json["data"].as_array() {
             if let Ok(mut cache) = ctx_cache().lock() {
@@ -113,8 +123,12 @@ impl Provider for OpenAiCompatProvider {
             .unwrap_or(128_000)
     }
 
-    fn chat(&self, model: &str, history: &[Message], debug: bool) -> BackendResult<AssistantResponse> {
-        let key = self.require_key()?;
+    fn chat(
+        &self,
+        model: &str,
+        history: &[Message],
+        debug: bool,
+    ) -> BackendResult<AssistantResponse> {
         let body = serde_json::json!({
             "model": model,
             "messages": to_openai_messages(history),
@@ -122,13 +136,13 @@ impl Provider for OpenAiCompatProvider {
         });
         let tools_json = crate::backend::tools::tools_json();
         if !tools_json.trim().is_empty() && tools_json != "[]" {
-            if let Ok(tools) = serde_json::from_str::<Vec<serde_json::Value>>(&tools_json) {
+            if let Ok(tools) = serde_json::from_str::<Vec<serde_json::Value>>(tools_json) {
                 if !tools.is_empty() {
                     let _body = body;
                     // tools go into a new object so we can mutate it
                     let mut b = _body;
                     b["tools"] = serde_json::Value::Array(tools);
-                    let json = self.post_json(&key, "/chat/completions", b, debug)?;
+                    let json = self.post_json("/chat/completions", b, debug)?;
                     let msg = &json["choices"][0]["message"];
                     let content = msg["content"].as_str().unwrap_or("").to_string();
                     let thinking = msg["reasoning_content"]
@@ -137,11 +151,15 @@ impl Provider for OpenAiCompatProvider {
                         .unwrap_or("")
                         .to_string();
                     let tool_call = extract_tool_call(msg);
-                    return Ok(AssistantResponse { content, thinking, tool_call });
+                    return Ok(AssistantResponse {
+                        content,
+                        thinking,
+                        tool_call,
+                    });
                 }
             }
         }
-        let json = self.post_json(&key, "/chat/completions", body, debug)?;
+        let json = self.post_json("/chat/completions", body, debug)?;
         let msg = &json["choices"][0]["message"];
         let content = msg["content"].as_str().unwrap_or("").to_string();
         let thinking = msg["reasoning_content"]
@@ -150,11 +168,20 @@ impl Provider for OpenAiCompatProvider {
             .unwrap_or("")
             .to_string();
         let tool_call = extract_tool_call(msg);
-        Ok(AssistantResponse { content, thinking, tool_call })
+        Ok(AssistantResponse {
+            content,
+            thinking,
+            tool_call,
+        })
     }
 
-    fn chat_simple(&self, model: &str, system: &str, user: &str, debug: bool) -> BackendResult<String> {
-        let key = self.require_key()?;
+    fn chat_simple(
+        &self,
+        model: &str,
+        system: &str,
+        user: &str,
+        debug: bool,
+    ) -> BackendResult<String> {
         let body = serde_json::json!({
             "model": model,
             "messages": [
@@ -163,7 +190,7 @@ impl Provider for OpenAiCompatProvider {
             ],
             "stream": false,
         });
-        let json = self.post_json(&key, "/chat/completions", body, debug)?;
+        let json = self.post_json("/chat/completions", body, debug)?;
         Ok(json["choices"][0]["message"]["content"]
             .as_str()
             .unwrap_or("")
@@ -178,7 +205,6 @@ impl Provider for OpenAiCompatProvider {
         prompt: &str,
         debug: bool,
     ) -> BackendResult<String> {
-        let key = self.require_key()?;
         let body = serde_json::json!({
             "model": model,
             "messages": [{
@@ -190,7 +216,7 @@ impl Provider for OpenAiCompatProvider {
             }],
             "stream": false,
         });
-        let json = self.post_json(&key, "/chat/completions", body, debug)?;
+        let json = self.post_json("/chat/completions", body, debug)?;
         Ok(json["choices"][0]["message"]["content"]
             .as_str()
             .unwrap_or("")
@@ -203,7 +229,6 @@ impl Provider for OpenAiCompatProvider {
         history: &[Message],
         tools_json: &str,
     ) -> BackendResult<Box<dyn ChatStream>> {
-        let key = self.require_key()?;
         let mut body = serde_json::json!({
             "model": model,
             "messages": to_openai_messages(history),
@@ -231,23 +256,18 @@ impl Provider for OpenAiCompatProvider {
 
         // The POST blocks only until response headers arrive (fast); the body
         // is read incrementally on a worker thread feeding the channel.
-        let mut req = ureq::post(&format!("{}/chat/completions", (self.get_base_url)()))
-            .set("Authorization", &format!("Bearer {key}"));
-        if self.openrouter_extensions {
-            req = req
-                .set("HTTP-Referer", "https://github.com/patrick-mns/minimal-context")
-                .set("X-Title", "Micelio Code");
-        }
-        let resp = req
-            .set("Accept", "text/event-stream")
-            .send_json(body);
+        let req = self.with_headers(ureq::post(&format!("{}/chat/completions", self.base_url)));
+        let resp = req.set("Accept", "text/event-stream").send_json(body);
         let resp = match resp {
             Ok(r) => r,
             Err(ureq::Error::Status(code, r)) => {
                 let detail = r.into_string().unwrap_or_default();
-                return Err(BackendError::Http { status: code, detail });
+                return Err(BackendError::Http {
+                    status: code,
+                    detail,
+                });
             }
-            Err(e) => return Err(BackendError::Provider(format!("{}: {e}", self.name))),
+            Err(e) => return Err(BackendError::Provider(format!("{}: {e}", self.label))),
         };
 
         let (tx, rx) = std::sync::mpsc::channel();
@@ -373,42 +393,29 @@ impl Provider for OpenAiCompatProvider {
 }
 
 impl OpenAiCompatProvider {
-    fn require_key(&self) -> BackendResult<String> {
-        (self.get_key)().ok_or_else(|| {
-            BackendError::Provider(format!(
-                "no {} API key set (Settings → Providers)",
-                self.name
-            ))
-        })
-    }
-
     fn post_json(
         &self,
-        key: &str,
         path: &str,
         body: serde_json::Value,
         debug: bool,
     ) -> BackendResult<serde_json::Value> {
         if debug {
-            println!("[{}] POST {path}\n{body}", self.name);
+            println!("[{}] POST {path}\n{body}", self.label);
         }
-        let mut req = ureq::post(&format!("{}{}", (self.get_base_url)(), path))
-            .set("Authorization", &format!("Bearer {key}"));
-        if self.openrouter_extensions {
-            req = req
-                .set("HTTP-Referer", "https://github.com/patrick-mns/minimal-context")
-                .set("X-Title", "Micelio Code");
-        }
+        let req = self.with_headers(ureq::post(&format!("{}{}", self.base_url, path)));
         let result = req.send_json(body);
         match result {
             Ok(resp) => resp
                 .into_json()
-                .map_err(|e| BackendError::Provider(format!("{} parse: {e}", self.name))),
+                .map_err(|e| BackendError::Provider(format!("{} parse: {e}", self.label))),
             Err(ureq::Error::Status(code, resp)) => {
                 let detail = resp.into_string().unwrap_or_default();
-                Err(BackendError::Http { status: code, detail })
+                Err(BackendError::Http {
+                    status: code,
+                    detail,
+                })
             }
-            Err(e) => Err(BackendError::Provider(format!("{}: {e}", self.name))),
+            Err(e) => Err(BackendError::Provider(format!("{}: {e}", self.label))),
         }
     }
 }
@@ -429,7 +436,11 @@ fn extract_tool_call(msg: &serde_json::Value) -> Option<ToolCall> {
                 other => other.to_string(),
             };
             let id = call["id"].as_str().map(|s| s.to_string());
-            Some(ToolCall { name, arguments, id })
+            Some(ToolCall {
+                name,
+                arguments,
+                id,
+            })
         })
 }
 
@@ -517,5 +528,101 @@ impl ChatStream for SseStream {
             events.push(ev);
         }
         Ok(events)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+
+    fn cfg(base_url: &str, api_key: &str) -> ProviderConfig {
+        ProviderConfig {
+            id: "test".into(),
+            name: "Test".into(),
+            base_url: base_url.into(),
+            api_key: api_key.into(),
+            enabled: true,
+            flavor: ProviderFlavor::Openai,
+        }
+    }
+
+    /// One-shot `/models` server. Returns its base URL and the Authorization
+    /// header it saw (None when the client sent none).
+    fn spawn_models_server() -> (String, std::thread::JoinHandle<Option<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(&stream);
+            let mut auth = None;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap() == 0 || line == "\r\n" {
+                    break;
+                }
+                if let Some(v) = line.strip_prefix("Authorization: ") {
+                    auth = Some(v.trim().to_string());
+                }
+            }
+            let body = r#"{"data":[{"id":"llama-3","context_length":8192},{"id":"gpt-4o","architecture":{"input_modalities":["text","image"]}}]}"#;
+            let mut stream = &stream;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+            auth
+        });
+        (format!("http://127.0.0.1:{port}"), handle)
+    }
+
+    #[test]
+    fn from_config_maps_fields_and_treats_blank_key_as_none() {
+        let p = OpenAiCompatProvider::from_config(&cfg("https://x.dev/v1/", "  sk-abc  "));
+        assert_eq!(p.base_url, "https://x.dev/v1", "trailing slash trimmed");
+        assert_eq!(p.api_key.as_deref(), Some("sk-abc"), "key trimmed");
+        assert!(!p.openrouter_extensions);
+
+        let keyless = OpenAiCompatProvider::from_config(&cfg("http://localhost:8000/v1", "   "));
+        assert_eq!(keyless.api_key, None, "blank key means no auth");
+    }
+
+    #[test]
+    fn openrouter_flavor_enables_extensions() {
+        let mut c = cfg("https://openrouter.ai/api/v1", "k");
+        c.flavor = ProviderFlavor::Openrouter;
+        assert!(OpenAiCompatProvider::from_config(&c).openrouter_extensions);
+    }
+
+    #[test]
+    fn list_models_parses_catalog_and_sends_key() {
+        let (base, server) = spawn_models_server();
+        let p = OpenAiCompatProvider::from_config(&cfg(&base, "sk-test"));
+        let models = p.list_models().unwrap();
+
+        assert_eq!(models.len(), 2);
+        // Sorted by name, and image modality drives the vision flag.
+        assert_eq!(models[0].name, "gpt-4o");
+        assert!(models[0].vision);
+        assert_eq!(models[1].name, "llama-3");
+        assert!(!models[1].vision);
+        assert_eq!(p.context_length("llama-3"), 8192);
+        assert_eq!(server.join().unwrap().as_deref(), Some("Bearer sk-test"));
+    }
+
+    /// A keyless endpoint (local vLLM, llama.cpp) must still list its models —
+    /// it previously returned an empty catalog and looked broken.
+    #[test]
+    fn keyless_endpoint_lists_models_without_auth_header() {
+        let (base, server) = spawn_models_server();
+        let p = OpenAiCompatProvider::from_config(&cfg(&base, ""));
+        let models = p.list_models().unwrap();
+
+        assert_eq!(models.len(), 2, "keyless endpoint still lists models");
+        assert_eq!(server.join().unwrap(), None, "no Authorization header sent");
     }
 }

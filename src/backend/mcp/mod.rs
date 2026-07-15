@@ -70,6 +70,11 @@ pub struct McpServerStatus {
 }
 
 type Client = RunningService<RoleClient, ()>;
+type McpConnectResult = (
+    String,
+    String,
+    Result<(Client, Vec<rmcp::model::Tool>), String>,
+);
 
 #[derive(Default)]
 struct State {
@@ -114,8 +119,7 @@ impl McpManager {
 
         // Fan out every enabled server's connect onto the runtime; disabled
         // entries are recorded directly.
-        let mut set: tokio::task::JoinSet<(String, String, Result<(Client, Vec<rmcp::model::Tool>), String>)> =
-            tokio::task::JoinSet::new();
+        let mut set: tokio::task::JoinSet<McpConnectResult> = tokio::task::JoinSet::new();
         for (name, server) in cfg.mcp_servers {
             let transport = if server.is_stdio() { "stdio" } else { "http" };
             if !server.enabled {
@@ -371,7 +375,11 @@ fn friendly_error(raw: &str) -> String {
     if low.contains("dns") || low.contains("resolve") || low.contains("name or service") {
         return "Couldn't resolve the server host. Check the URL.".into();
     }
-    if low.contains("401") || low.contains("403") || low.contains("unauthorized") || low.contains("forbidden") {
+    if low.contains("401")
+        || low.contains("403")
+        || low.contains("unauthorized")
+        || low.contains("forbidden")
+    {
         return "The server rejected the connection — authentication may be required.".into();
     }
     if low.contains("404") {

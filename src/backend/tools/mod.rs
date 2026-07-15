@@ -440,7 +440,10 @@ pub fn confirm_summary(name: &str, arguments: &str) -> (String, String) {
                 .strip_prefix(crate::backend::mcp::MCP_PREFIX)
                 .unwrap_or(other);
             let (server, tool) = rest.split_once("__").unwrap_or(("", rest));
-            (format!("Call MCP tool: {tool}"), format!("server: {server}"))
+            (
+                format!("Call MCP tool: {tool}"),
+                format!("server: {server}"),
+            )
         }
         other => (other.to_string(), String::new()),
     }
@@ -604,10 +607,19 @@ mod tests {
     fn chat_mode_allows_reads_but_not_writes() {
         assert!(chat_mode_allows("vision", r#"{"path":"a.png"}"#));
         assert!(chat_mode_allows("search", r#"{"pattern":"x"}"#));
-        assert!(chat_mode_allows("file", r#"{"action":"read","path":"a.rs"}"#));
+        assert!(chat_mode_allows(
+            "file",
+            r#"{"action":"read","path":"a.rs"}"#
+        ));
         // file write/edit and legacy write names are blocked.
-        assert!(!chat_mode_allows("file", r#"{"action":"write","path":"a.rs"}"#));
-        assert!(!chat_mode_allows("file", r#"{"action":"edit","path":"a.rs"}"#));
+        assert!(!chat_mode_allows(
+            "file",
+            r#"{"action":"write","path":"a.rs"}"#
+        ));
+        assert!(!chat_mode_allows(
+            "file",
+            r#"{"action":"edit","path":"a.rs"}"#
+        ));
         assert!(!chat_mode_allows("write_file", r#"{"path":"a.rs"}"#));
         // Mutating tools are always blocked in chat mode.
         assert!(!chat_mode_allows("terminal", r#"{"command":"ls"}"#));
@@ -619,11 +631,20 @@ mod tests {
     fn needs_review_confirmation_covers_side_effecting_tools() {
         // Side-effecting non-file tools require a generic confirmation.
         assert!(needs_review_confirmation("terminal", r#"{"command":"ls"}"#));
-        assert!(needs_review_confirmation("context_node", r#"{"label":"x"}"#));
+        assert!(needs_review_confirmation(
+            "context_node",
+            r#"{"label":"x"}"#
+        ));
         // bg only when stopping a process; list/logs are read-only.
-        assert!(needs_review_confirmation("bg", r#"{"action":"stop","pid":42}"#));
+        assert!(needs_review_confirmation(
+            "bg",
+            r#"{"action":"stop","pid":42}"#
+        ));
         assert!(!needs_review_confirmation("bg", r#"{"action":"list"}"#));
-        assert!(!needs_review_confirmation("bg", r#"{"action":"logs","pid":42}"#));
+        assert!(!needs_review_confirmation(
+            "bg",
+            r#"{"action":"logs","pid":42}"#
+        ));
         // file has its own diff-based flow; read-only tools never gate.
         assert!(!needs_review_confirmation("file", r#"{"action":"write"}"#));
         assert!(!needs_review_confirmation("search", r#"{"pattern":"x"}"#));
@@ -634,7 +655,10 @@ mod tests {
     fn confirm_summary_describes_the_action() {
         assert_eq!(
             confirm_summary("terminal", r#"{"command":"npm run build"}"#),
-            ("Run terminal command".to_string(), "npm run build".to_string())
+            (
+                "Run terminal command".to_string(),
+                "npm run build".to_string()
+            )
         );
         assert_eq!(
             confirm_summary("bg", r#"{"action":"stop","pid":42}"#).1,

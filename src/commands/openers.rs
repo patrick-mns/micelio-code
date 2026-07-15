@@ -38,26 +38,10 @@ pub async fn list_openers() -> Result<Vec<Opener>, String> {
     // On Windows, PATHEXT lets us call "code", "cursor" without .cmd/.exe,
     // but which_exists uses where.exe which resolves them.
     for (id, name, bins) in &[
-        (
-            "cursor",
-            "Cursor",
-            &["cursor", "cursor.exe"] as &[&str],
-        ),
-        (
-            "vscode",
-            "VS Code",
-            &["code", "code.cmd"],
-        ),
-        (
-            "windsurf",
-            "Windsurf",
-            &["windsurf", "windsurf.exe"],
-        ),
-        (
-            "zed",
-            "Zed",
-            &["zed", "zed.exe"],
-        ),
+        ("cursor", "Cursor", &["cursor", "cursor.exe"] as &[&str]),
+        ("vscode", "VS Code", &["code", "code.cmd"]),
+        ("windsurf", "Windsurf", &["windsurf", "windsurf.exe"]),
+        ("zed", "Zed", &["zed", "zed.exe"]),
         ("idea", "IntelliJ IDEA", &["idea", "idea.exe"]),
     ] {
         if bins.iter().any(|b| which_exists(b)) {
@@ -112,9 +96,11 @@ pub async fn list_openers() -> Result<Vec<Opener>, String> {
     #[cfg(target_os = "linux")]
     {
         // Try common terminal emulators
-        for (id, name, bins) in &[
-            ("terminal", "Terminal", &["gnome-terminal", "xterm", "x-terminal-emulator"] as &[&str]),
-        ] {
+        for (id, name, bins) in &[(
+            "terminal",
+            "Terminal",
+            &["gnome-terminal", "xterm", "x-terminal-emulator"] as &[&str],
+        )] {
             if bins.iter().any(|b| which_exists(b)) {
                 openers.push(Opener {
                     id: id.to_string(),
@@ -140,7 +126,9 @@ pub async fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     let status = std::process::Command::new("xdg-open").arg(&url).spawn();
 
-    status.map(|_| ()).map_err(|e| format!("failed to open URL: {e}"))
+    status
+        .map(|_| ())
+        .map_err(|e| format!("failed to open URL: {e}"))
 }
 
 /// Open the workspace directory in the given app.
@@ -152,37 +140,37 @@ pub async fn open_in(state: State<'_, AppState>, app: String) -> Result<(), Stri
     let result = match app.as_str() {
         "finder" => open_finder(&path),
         "terminal" => open_terminal(&path),
-        "iterm" if cfg!(target_os = "macos") => {
-            std::process::Command::new("open")
-                .args(["-a", "iTerm", &path])
-                .spawn()
-        }
-        "ghostty" if cfg!(target_os = "macos") => {
-            std::process::Command::new("open")
-                .args(["-a", "Ghostty", &path])
-                .spawn()
-        }
-        "warp" if cfg!(target_os = "macos") => {
-            std::process::Command::new("open")
-                .args(["-a", "Warp", &path])
-                .spawn()
-        }
-        "alacritty" if cfg!(target_os = "macos") => {
-            std::process::Command::new("open")
-                .args(["-a", "Alacritty", &path])
-                .spawn()
-        }
+        "iterm" if cfg!(target_os = "macos") => std::process::Command::new("open")
+            .args(["-a", "iTerm", &path])
+            .spawn(),
+        "ghostty" if cfg!(target_os = "macos") => std::process::Command::new("open")
+            .args(["-a", "Ghostty", &path])
+            .spawn(),
+        "warp" if cfg!(target_os = "macos") => std::process::Command::new("open")
+            .args(["-a", "Warp", &path])
+            .spawn(),
+        "alacritty" if cfg!(target_os = "macos") => std::process::Command::new("open")
+            .args(["-a", "Alacritty", &path])
+            .spawn(),
         "wt" if cfg!(windows) => std::process::Command::new("wt").arg(&path).spawn(),
         "vscode" => {
             let bin = if cfg!(windows) { "code.cmd" } else { "code" };
             std::process::Command::new(bin).arg(&path).spawn()
         }
         "cursor" => {
-            let bin = if cfg!(windows) { "cursor.exe" } else { "cursor" };
+            let bin = if cfg!(windows) {
+                "cursor.exe"
+            } else {
+                "cursor"
+            };
             std::process::Command::new(bin).arg(&path).spawn()
         }
         "windsurf" => {
-            let bin = if cfg!(windows) { "windsurf.exe" } else { "windsurf" };
+            let bin = if cfg!(windows) {
+                "windsurf.exe"
+            } else {
+                "windsurf"
+            };
             std::process::Command::new(bin).arg(&path).spawn()
         }
         "zed" => std::process::Command::new("zed").arg(&path).spawn(),
@@ -223,7 +211,11 @@ fn open_terminal(path: &str) -> std::io::Result<std::process::Child> {
     std::process::Command::new("x-terminal-emulator")
         .arg(path)
         .spawn()
-        .or_else(|_| std::process::Command::new("gnome-terminal").arg(path).spawn())
+        .or_else(|_| {
+            std::process::Command::new("gnome-terminal")
+                .arg(path)
+                .spawn()
+        })
         .or_else(|_| std::process::Command::new("xterm").arg(path).spawn())
 }
 

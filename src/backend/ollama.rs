@@ -36,11 +36,11 @@ static MODEL_CONTEXT_CACHE: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::
 pub struct OllamaProvider;
 
 impl crate::backend::llm::Provider for OllamaProvider {
-    fn kind(&self) -> crate::backend::llm::ProviderKind {
-        crate::backend::llm::ProviderKind::Ollama
+    fn id(&self) -> String {
+        crate::backend::llm::OLLAMA_ID.to_string()
     }
-    fn name(&self) -> &'static str {
-        "ollama"
+    fn label(&self) -> String {
+        "Ollama".to_string()
     }
     fn list_models(&self) -> BackendResult<Vec<ModelChoice>> {
         list_models()
@@ -292,10 +292,7 @@ pub fn list_models() -> BackendResult<Vec<ModelChoice>> {
         let name = trimmed.split_whitespace().next().unwrap_or("").to_string();
         if !name.is_empty() {
             let vision = model_supports_vision(&name);
-            models.push(ModelChoice {
-                name,
-                vision,
-            });
+            models.push(ModelChoice { name, vision });
         }
     }
     Ok(models)

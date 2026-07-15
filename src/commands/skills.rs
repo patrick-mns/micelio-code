@@ -7,6 +7,7 @@ pub fn load_skills(workspace_root: String) -> Result<(), String> {
         return Err(format!("workspace root does not exist: {workspace_root}"));
     }
     SkillRegistry::load(&path);
+    crate::backend::skill_watcher::watch_workspace(&path);
     Ok(())
 }
 

@@ -64,7 +64,12 @@ export const workspaceSlice: StateCreator<
       // never built (missing graph.json) loads empty — build it in the
       // background instead of freezing the app before the window appears.
       if (ws) {
+        await get().loadSessions();
         await get().refreshGraph();
+        // Set the active session so the header badge and chat view work
+        // without requiring the user to click a session in the sidebar first.
+        const activeSession = get().sessions.find((s) => s.active)?.id ?? get().sessions[0]?.id ?? null;
+        get().setCurrentSession(activeSession);
         if (get().graphNodes.length === 0 && ws.folders.length > 0) get().backgroundScan();
       }
       return ws;

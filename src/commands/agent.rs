@@ -43,7 +43,7 @@ const KEEP_RECENT_TOOL_RESULTS: usize = 6;
 #[allow(clippy::too_many_arguments)]
 pub fn run_agent_loop(
     app: AppHandle,
-    provider: &'static dyn llm::Provider,
+    provider: Arc<dyn llm::Provider>,
     model: String,
     workspace_root: std::path::PathBuf,
     graph_json: String,
@@ -57,7 +57,7 @@ pub fn run_agent_loop(
     // Chat mode advertises only a read-only subset of tools (see
     // CHAT_MODE_TOOLS); every other mode gets the full toolset. The subset is
     // computed once and reused for every streamed round this turn.
-let mcp = app.state::<AppState>().mcp.clone();
+    let mcp = app.state::<AppState>().mcp.clone();
     let tools_advert = tools::all_tools_json(Some(&mcp), mode == AgentMode::Chat);
     // Chat mode can't write/edit files, so a "change this file" request can
     // never be satisfied there — suppress the tool-nudge retry.
@@ -310,15 +310,20 @@ let mcp = app.state::<AppState>().mcp.clone();
             }
             if identical_calls >= MAX_IDENTICAL_CALLS {
                 history.push(Message::assistant(content_acc));
-                let summary =
-                    force_stop_summary(&app, provider, &model, &mut history, &session_id_ref);
+                let summary = force_stop_summary(
+                    &app,
+                    provider.as_ref(),
+                    &model,
+                    &mut history,
+                    &session_id_ref,
+                );
                 finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
                 return;
             }
 
             let (summaries, any_error) = run_tool_calls(
                 &app,
-                provider,
+                provider.as_ref(),
                 &mut history,
                 content_acc,
                 tool_calls,
@@ -340,8 +345,13 @@ let mcp = app.state::<AppState>().mcp.clone();
             // Too many consecutive errors: force the model to tell the user
             // what went wrong and stop the agentic loop.
             if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
-                let summary =
-                    force_stop_summary(&app, provider, &model, &mut history, &session_id_ref);
+                let summary = force_stop_summary(
+                    &app,
+                    provider.as_ref(),
+                    &model,
+                    &mut history,
+                    &session_id_ref,
+                );
                 finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
                 return;
             }
@@ -371,8 +381,13 @@ let mcp = app.state::<AppState>().mcp.clone();
             // and hard-stop machinery fires instead of silently finishing.
             consecutive_errors += 1;
             if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
-                let summary =
-                    force_stop_summary(&app, provider, &model, &mut history, &session_id_ref);
+                let summary = force_stop_summary(
+                    &app,
+                    provider.as_ref(),
+                    &model,
+                    &mut history,
+                    &session_id_ref,
+                );
                 finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
                 return;
             }
@@ -391,7 +406,13 @@ let mcp = app.state::<AppState>().mcp.clone();
         // If tools ran but the model produced no text summary, request one so
         // the user always gets a meaningful response.
         let final_content = if did_any_tool && content.is_empty() {
-            request_summary(&app, provider, &model, &mut history, &session_id_ref)
+            request_summary(
+                &app,
+                provider.as_ref(),
+                &model,
+                &mut history,
+                &session_id_ref,
+            )
         } else {
             content
         };
@@ -408,7 +429,13 @@ let mcp = app.state::<AppState>().mcp.clone();
 
     // Safety valve: too many rounds — ask model for a summary so the user
     // always gets a final response, then finish.
-    let summary_content = request_summary(&app, provider, &model, &mut history, &session_id_ref);
+    let summary_content = request_summary(
+        &app,
+        provider.as_ref(),
+        &model,
+        &mut history,
+        &session_id_ref,
+    );
     finish(
         &app,
         &history,
@@ -542,6 +569,7 @@ pub fn run_tool_calls(
 /// third element is `Some(path)` only when a file was actually written to
 /// disk this call, so the caller can dirty-track just the files that really
 /// changed (a rejected review-mode edit does not count).
+#[allow(clippy::too_many_arguments)]
 fn execute_tool_call(
     app: &AppHandle,
     history: &mut Vec<Message>,
@@ -628,7 +656,12 @@ fn execute_tool_call(
         return (summary, false, None);
     }
 
-    let ws = app.state::<AppState>().current_workspace.lock().unwrap().clone();
+    let ws = app
+        .state::<AppState>()
+        .current_workspace
+        .lock()
+        .unwrap()
+        .clone();
     let workspace_roots = match ws {
         Some(w) if !w.folders.is_empty() => w.folders,
         _ => vec![workspace_root.to_path_buf()],
@@ -731,10 +764,7 @@ fn execute_tool_call(
 
             match decision {
                 crate::backend::review::ConfirmDecision::Reject => {
-                    let msg = format!(
-                        "`{}` was rejected by the user — it was not run.",
-                        call.name
-                    );
+                    let msg = format!("`{}` was rejected by the user — it was not run.", call.name);
                     let summary = format!("{} blocked\n{msg}", call.name);
                     let _ = app.emit(
                         "stream_tool",
@@ -761,8 +791,8 @@ fn execute_tool_call(
     }
 
     let (is_error, tool_content, touched) = if review_on {
-        let path = tools::get_string_field(&call.arguments, "path")
-            .unwrap_or_else(|| "unknown".into());
+        let path =
+            tools::get_string_field(&call.arguments, "path").unwrap_or_else(|| "unknown".into());
         let full_path = workspace_root.join(&path);
         let original = std::fs::read_to_string(&full_path).unwrap_or_default();
 

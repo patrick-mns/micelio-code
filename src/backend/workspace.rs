@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workspace {
@@ -10,11 +10,7 @@ pub struct Workspace {
 
 impl Workspace {
     pub fn new(id: String, name: String, folders: Vec<PathBuf>) -> Self {
-        Self {
-            id,
-            name,
-            folders,
-        }
+        Self { id, name, folders }
     }
 
     /// Onde os dados deste workspace em específico ficam armazenados (sessions.db, graph.json, etc)

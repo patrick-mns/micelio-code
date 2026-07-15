@@ -3,6 +3,7 @@
 //! `~/.micelio/last_workspace` (distinct from the per-workspace
 //! `<workspace>/.micelio/` data dirs).
 
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Current app data dir name (per-workspace and under `$HOME`).
@@ -75,7 +76,8 @@ fn write_value(key: &str, value: &str) {
 }
 
 /// OpenRouter API key, from `OPENROUTER_API_KEY` or `~/.micelio/openrouter_key`.
-/// None/empty = provider disabled (contributes nothing to the catalog).
+/// Legacy single-slot config: only read to seed `providers.json` on upgrade
+/// (see [`migrate_legacy_providers`]).
 pub fn openrouter_key() -> Option<String> {
     if let Ok(k) = std::env::var("OPENROUTER_API_KEY") {
         let k = k.trim().to_string();
@@ -86,13 +88,8 @@ pub fn openrouter_key() -> Option<String> {
     read_trimmed("openrouter_key")
 }
 
-/// Persists the OpenRouter API key (best-effort). Empty clears it.
-pub fn save_openrouter_key(key: &str) {
-    write_value("openrouter_key", key.trim());
-}
-
 /// LiteLLM API key, from `LITELLM_API_KEY` or `~/.micelio/litellm_key`.
-/// None/empty = provider disabled (contributes nothing to the catalog).
+/// Legacy single-slot config: only read to seed `providers.json` on upgrade.
 pub fn litellm_key() -> Option<String> {
     if let Ok(k) = std::env::var("LITELLM_API_KEY") {
         let k = k.trim().to_string();
@@ -103,13 +100,8 @@ pub fn litellm_key() -> Option<String> {
     read_trimmed("litellm_key")
 }
 
-/// Persists the LiteLLM API key (best-effort). Empty clears it.
-pub fn save_litellm_key(key: &str) {
-    write_value("litellm_key", key.trim());
-}
-
 /// LiteLLM base URL, from `LITELLM_BASE_URL` env or `~/.micelio/litellm_base_url`.
-/// Empty string = provider disabled (no default).
+/// Legacy single-slot config: only read to seed `providers.json` on upgrade.
 pub fn litellm_base_url() -> String {
     if let Ok(url) = std::env::var("LITELLM_BASE_URL") {
         let url = url.trim().to_string();
@@ -120,9 +112,87 @@ pub fn litellm_base_url() -> String {
     read_trimmed("litellm_base_url").unwrap_or_default()
 }
 
-/// Persists the LiteLLM base URL (best-effort). Empty resets to default.
-pub fn save_litellm_base_url(url: &str) {
-    write_value("litellm_base_url", url.trim());
+// ── OpenAI-compatible endpoints ─────────────────────────────────────────────
+
+/// Wire flavor of an OpenAI-compatible endpoint. Everything speaks the same
+/// `/models` + `/chat/completions` shape; this only selects vendor extensions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProviderFlavor {
+    /// Plain gateway: LiteLLM, vLLM, llama.cpp, LM Studio, Groq, Together…
+    #[default]
+    Openai,
+    /// OpenRouter: `reasoning`/`usage` request fields + attribution headers.
+    Openrouter,
+}
+
+/// One configured OpenAI-compatible endpoint. An empty `api_key` means the
+/// endpoint needs no auth (common for a local vLLM or llama.cpp server).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderConfig {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "enabled_default")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub flavor: ProviderFlavor,
+}
+
+fn enabled_default() -> bool {
+    true
+}
+
+const PROVIDERS_FILE: &str = "providers.json";
+
+/// Configured endpoints. Until the list has been saved once, this derives from
+/// the old single-slot OpenRouter/LiteLLM settings so an upgrade keeps working
+/// — see [`migrate_legacy_providers`]. Pure: the seed is persisted only when
+/// the user actually saves an edit.
+pub fn providers() -> Vec<ProviderConfig> {
+    if let Some(raw) = read_trimmed(PROVIDERS_FILE) {
+        if let Ok(list) = serde_json::from_str::<Vec<ProviderConfig>>(&raw) {
+            return list;
+        }
+    }
+    migrate_legacy_providers()
+}
+
+/// Persists the endpoint list (best-effort, like every other config write).
+pub fn save_providers(list: &[ProviderConfig]) {
+    if let Ok(json) = serde_json::to_string_pretty(list) {
+        write_value(PROVIDERS_FILE, &json);
+    }
+}
+
+/// Build the initial list from the legacy config. Reads through the old
+/// accessors so a key that only ever lived in `OPENROUTER_API_KEY` /
+/// `LITELLM_API_KEY` is carried over too; from then on `providers.json` is the
+/// source of truth and those env vars are no longer consulted.
+fn migrate_legacy_providers() -> Vec<ProviderConfig> {
+    let mut out = vec![ProviderConfig {
+        id: "openrouter".to_string(),
+        name: "OpenRouter".to_string(),
+        base_url: "https://openrouter.ai/api/v1".to_string(),
+        api_key: openrouter_key().unwrap_or_default(),
+        enabled: true,
+        flavor: ProviderFlavor::Openrouter,
+    }];
+
+    let litellm_url = litellm_base_url();
+    if !litellm_url.is_empty() {
+        out.push(ProviderConfig {
+            id: "litellm".to_string(),
+            name: "LiteLLM".to_string(),
+            base_url: litellm_url,
+            api_key: litellm_key().unwrap_or_default(),
+            enabled: true,
+            flavor: ProviderFlavor::Openai,
+        });
+    }
+    out
 }
 
 /// Last workspace path, if it was saved and still exists as a directory.
@@ -213,6 +283,40 @@ pub fn save_show_cost(on: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_config_defaults_keep_endpoints_usable() {
+        // An entry written by an older build (or hand-edited) omits the newer
+        // fields; defaulting `enabled` to false would silently drop someone's
+        // endpoint from the catalog.
+        let list: Vec<ProviderConfig> =
+            serde_json::from_str(r#"[{"id":"a","name":"A","base_url":"http://x/v1"}]"#).unwrap();
+        assert_eq!(list.len(), 1);
+        assert!(list[0].enabled, "missing `enabled` defaults to on");
+        assert_eq!(list[0].flavor, ProviderFlavor::Openai);
+        assert_eq!(list[0].api_key, "");
+    }
+
+    #[test]
+    fn provider_config_roundtrips() {
+        let original = vec![ProviderConfig {
+            id: "openrouter".into(),
+            name: "OpenRouter".into(),
+            base_url: "https://openrouter.ai/api/v1".into(),
+            api_key: "sk-or-1".into(),
+            enabled: false,
+            flavor: ProviderFlavor::Openrouter,
+        }];
+        let json = serde_json::to_string(&original).unwrap();
+        let back: Vec<ProviderConfig> = serde_json::from_str(&json).unwrap();
+        assert_eq!(back[0].id, "openrouter");
+        assert!(!back[0].enabled);
+        assert_eq!(back[0].flavor, ProviderFlavor::Openrouter);
+        assert!(
+            json.contains(r#""flavor":"openrouter""#),
+            "flavor is lowercase"
+        );
+    }
 
     /// Unique scratch dir per test, mirroring the convention in `sessions.rs`.
     fn scratch(tag: &str) -> PathBuf {

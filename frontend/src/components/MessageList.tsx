@@ -1,9 +1,10 @@
-import React, { type ComponentType, type CSSProperties, type RefObject } from 'react';
+import { type ComponentType, type CSSProperties, useMemo } from 'react';
+import { Virtuoso } from 'react-virtuoso';
 import Message from '@/components/Message';
 import Thinking from '@/components/Thinking';
 import { ToolGroup } from '@/components/ToolEntry';
 import { chatStyles as styles } from '@/utils/theme-styles';
-import type { ChatMessageView, RenderedItem } from '@/utils/chatHelpers';
+import type { RenderedItem } from '@/utils/chatHelpers';
 import type { StreamState } from '@/components/StreamStatus';
 import type { Prefs } from '@/store/prefsSlice';
 
@@ -16,13 +17,9 @@ interface StreamStatusComponentProps {
 }
 
 interface MessageListProps {
-  messages: ChatMessageView[];
   renderedMessages: RenderedItem[];
   hoveredKey: string | null;
   setHoveredKey: (key: string | null) => void;
-  bottomRef: RefObject<HTMLDivElement | null>;
-  scrollRef?: RefObject<HTMLDivElement | null>;
-  onScroll?: React.UIEventHandler<HTMLDivElement>;
   streaming: StreamState | null;
   elapsed: number;
   liveTokens: number;
@@ -31,69 +28,125 @@ interface MessageListProps {
   StreamStatus: ComponentType<StreamStatusComponentProps>;
 }
 
-export default function MessageList({ messages, renderedMessages, hoveredKey, setHoveredKey, bottomRef, scrollRef, onScroll, streaming, elapsed, liveTokens, liveContentLen, prefs, StreamStatus }: MessageListProps) {
-  // Determine which column width to use for the "no messages" state
-  const colStyle: CSSProperties = { ...styles.col, width: '100%', maxWidth: 760, flex: 1, padding: '24px 24px 0', gap: 16 };
+// Virtuoso measures item heights with a ResizeObserver, which ignores margins —
+// so ALL spacing here must be padding, never margin. Each item carries its own
+// centering wrapper (760px column, 24px gutters) instead of customizing List.
+const itemWrapStyle: CSSProperties = {
+  margin: '0 auto',
+  maxWidth: 760,
+  width: '100%',
+  padding: '0 24px 16px',
+  boxSizing: 'border-box',
+};
+
+export default function MessageList({
+  renderedMessages,
+  hoveredKey,
+  setHoveredKey,
+  streaming,
+  elapsed,
+  liveTokens,
+  liveContentLen,
+  prefs,
+  StreamStatus,
+}: MessageListProps) {
+  // Zero-height items break Virtuoso's positioning — drop hidden ones instead.
+  const items = useMemo(
+    () => (prefs.showThinking ? renderedMessages : renderedMessages.filter((i) => i.type !== 'thinking')),
+    [renderedMessages, prefs.showThinking],
+  );
 
   return (
-    <div
-      ref={scrollRef}
-      style={styles.scroll}
-      onScroll={onScroll}
+    <Virtuoso
+      style={{ flex: 1 }}
+      totalCount={items.length}
+      computeItemKey={(index) => items[index].key}
+      initialTopMostItemIndex={Math.max(0, items.length - 1)}
+      increaseViewportBy={{ top: 400, bottom: 400 }}
+      followOutput={(isAtBottom) => (isAtBottom ? 'smooth' : false)}
       onMouseMove={(e) => {
         const msgEl = (e.target as HTMLElement).closest('[data-msg-key]');
         setHoveredKey(msgEl ? (msgEl as HTMLElement).dataset.msgKey ?? null : null);
       }}
-    >
-      <div style={colStyle}>
-        {messages.length === 0 && !streaming && (
-          <div style={styles.empty}>
-            <div style={{ ...styles.emptyText, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
-              <div>How can I help you today?</div>
-              <span style={{ fontSize: 12, opacity: 0.65, fontWeight: 'normal' }}>
-                Type below or click New Session to begin.
-              </span>
+      itemContent={(index) => {
+        const item = items[index];
+        if (item.type === 'tools') {
+          return (
+            <div style={itemWrapStyle}>
+              <ToolGroup tools={item.tools} />
             </div>
-          </div>
-        )}
-
-        {renderedMessages.map((item) => {
-          if (item.type === 'tools') {
-            return <ToolGroup key={item.key} tools={item.tools} />;
-          } else if (item.type === 'thinking') {
-            if (!prefs.showThinking) return null;
-            return <Thinking key={item.key} content={item.msg.content} duration={item.msg.duration} />;
-          } else if (item.type === 'canceled') {
-            return (
-              <div key={item.key} style={{ ...styles.msgRow, justifyContent: 'center' }}>
+          );
+        } else if (item.type === 'thinking') {
+          return (
+            <div style={itemWrapStyle}>
+              <Thinking content={item.msg.content} duration={item.msg.duration} />
+            </div>
+          );
+        } else if (item.type === 'canceled') {
+          return (
+            <div style={itemWrapStyle}>
+              <div style={{ ...styles.msgRow, justifyContent: 'center' }}>
                 <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, fontStyle: 'italic' }}>
                   Canceled by user
                 </span>
               </div>
-            );
-          } else {
-            return (
-              <Message
-                key={item.key}
-                msg={item.msg}
-                msgKey={item.key}
-                hovered={hoveredKey === item.key}
-              />
-            );
-          }
-        })}
-
-        {/* Live streaming content */}
-        {streaming && (
-          <div style={styles.msgRow}>
-            <div style={{ width: '100%' }}>
-              <StreamStatus streaming={streaming} elapsed={elapsed} liveTokens={liveTokens} liveContentLen={liveContentLen} prefs={prefs} />
             </div>
+          );
+        } else {
+          // Message renders its own msgRow (with user/assistant alignment) —
+          // wrapping it in another flex row would shrink it to content width
+          // and break the flex-end alignment of user bubbles.
+          return (
+            <div style={itemWrapStyle}>
+              <Message msg={item.msg} msgKey={item.key} hovered={hoveredKey === item.key} />
+            </div>
+          );
+        }
+      }}
+      components={{
+        // Old layout: 12px scroller padding + 24px column padding on top.
+        Header: () => <div style={{ height: 36 }} />,
+        EmptyPlaceholder: () =>
+          !streaming ? (
+            <div style={{ ...itemWrapStyle, height: '100%', display: 'flex', flexDirection: 'column', paddingTop: 24 }}>
+              <div style={styles.empty}>
+                <div
+                  style={{
+                    ...styles.emptyText,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                    alignItems: 'center',
+                  }}
+                >
+                  <div>How can I help you today?</div>
+                  <span style={{ fontSize: 12, opacity: 0.65, fontWeight: 'normal' }}>
+                    Type below or click New Session to begin.
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : null,
+        // Rendered outside the item list, so it needs its own centering wrapper.
+        // Bottom breathing room matches the old scroller's 12px padding.
+        Footer: () => (
+          <div style={{ ...itemWrapStyle, paddingBottom: 12 }}>
+            {streaming && (
+              <div style={styles.msgRow}>
+                <div style={{ width: '100%' }}>
+                  <StreamStatus
+                    streaming={streaming}
+                    elapsed={elapsed}
+                    liveTokens={liveTokens}
+                    liveContentLen={liveContentLen}
+                    prefs={prefs}
+                  />
+                </div>
+              </div>
+            )}
           </div>
-        )}
-
-        <div ref={bottomRef} />
-      </div>
-    </div>
+        ),
+      }}
+    />
   );
 }

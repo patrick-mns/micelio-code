@@ -12,20 +12,24 @@ pub struct BgTaskInfo {
     /// "running" or "exited:<code>", matching what the panel parses.
     pub status: String,
     pub uptime_secs: u64,
+    /// Folder the task was started in — the panel is global, so this tells the
+    /// user which workspace each task belongs to.
+    pub workspace_path: String,
 }
 
 #[tauri::command]
 pub async fn list_bg_tasks() -> Vec<BgTaskInfo> {
     bg::snapshot()
         .into_iter()
-        .map(|(pid, command, status, uptime_secs)| BgTaskInfo {
-            pid,
-            command,
-            status: match status {
+        .map(|t| BgTaskInfo {
+            pid: t.pid,
+            command: t.command,
+            status: match t.status {
                 bg::BgStatus::Running => "running".to_string(),
                 bg::BgStatus::Exited(code) => format!("exited:{code}"),
             },
-            uptime_secs,
+            uptime_secs: t.uptime_secs,
+            workspace_path: t.workspace_path,
         })
         .collect()
 }

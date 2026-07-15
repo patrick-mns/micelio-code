@@ -84,7 +84,6 @@ export default function Chat() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
   const attachedRef = useRef(false);
 
   // Streaming state: kept inline here (not a custom hook) because logic is Chat-specific
@@ -218,28 +217,7 @@ export default function Chat() {
     return () => clearInterval(id);
   }, [!!streaming]);
 
-  // ── Auto-scroll ────────────────────────────────────────────────────────────
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const userScrolledAway = useRef(false);
-
-  // Detect user scroll: if they scroll up, stop forcing scroll.
-  // When they scroll all the way down, re-enable it.
-  const handleScroll = useCallback(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distFromBottom > 100) {
-      userScrolledAway.current = true;
-    } else {
-      userScrolledAway.current = false;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!userScrolledAway.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages, streaming]);
+  // Auto-scroll is handled by Virtuoso's followOutput.
 
   // ── Image attachment ───────────────────────────────────────────────────────
   const attachImage = useCallback((file: File | null) => {
@@ -546,13 +524,9 @@ export default function Chat() {
   return (
     <div style={styles.root}>
       <MessageList
-        messages={messages}
         renderedMessages={rendered}
         hoveredKey={hoveredKey}
         setHoveredKey={setHoveredKey}
-        bottomRef={bottomRef}
-        scrollRef={scrollContainerRef}
-        onScroll={handleScroll}
         streaming={streaming}
         elapsed={elapsed}
         liveTokens={liveTokens}

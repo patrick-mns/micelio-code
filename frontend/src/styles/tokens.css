@@ -3,6 +3,11 @@
    so theming is just swapping `data-theme` on <html>.
    :root is the dark theme (the original Ayu-style warm dark). */
 :root {
+  /* Tells the engine to render native UI (select popups, checkboxes,
+     scrollbars) dark. Without it they fall back to the OS light appearance —
+     black text on white inside an otherwise dark app. */
+  color-scheme: dark;
+
   --color-bg-deep: #141413;     /* input wells, deep surfaces */
   --color-bg: #1a1a19;          /* main window/panel */
   --color-card: #262624;        /* cards, bubbles, buttons */
@@ -46,6 +51,8 @@
 
 /* Light theme — warm cream (Ayu-light family) keeping the same green accent. */
 :root[data-theme='light'] {
+  color-scheme: light;
+
   --color-bg-deep: #ece8df;
   --color-bg: #f7f4ee;
   --color-card: #fffdf8;

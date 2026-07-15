@@ -5,6 +5,7 @@ const ptBR: Translations = {
   // ── App / Layout ─────────────────────────────────────────────────────
   app: {
     sidebarToggle: 'Alternar conversas',
+    currentSession: 'Sessão atual',
   },
   tabs: {
     chat: 'Chat',

@@ -437,11 +437,11 @@ pub async fn get_context_window(state: State<'_, AppState>) -> Result<ContextWin
 
     // Skills are appended to the system prompt at send time, but the meter
     // accounts for them separately so enabling skills shows its real cost.
-    let skills_tokens = count_tokens(
-        &crate::backend::skills::SkillRegistry::skills_prompt_section(),
-    );
+    let skills_tokens =
+        count_tokens(&crate::backend::skills::SkillRegistry::skills_prompt_section());
     let system_tokens = count_tokens(&crate::backend::prompt::base_system_prompt());
-    let chat_mode = state.session_agent_mode(&session_id) == crate::backend::review::AgentMode::Chat;
+    let chat_mode =
+        state.session_agent_mode(&session_id) == crate::backend::review::AgentMode::Chat;
     // Native and MCP tools go to the model as one array, but we account for them
     // separately so the meter shows how much MCP servers add to the context.
     let native_tools_json = if chat_mode {
@@ -638,7 +638,8 @@ pub async fn get_transcript(state: State<'_, AppState>) -> Result<Transcript, St
         tokens: system_tokens,
     });
 
-    let chat_mode = state.session_agent_mode(&session_id) == crate::backend::review::AgentMode::Chat;
+    let chat_mode =
+        state.session_agent_mode(&session_id) == crate::backend::review::AgentMode::Chat;
     let tools = tools::all_tools_json(Some(&state.mcp), chat_mode);
     let tools_tokens = count_tokens(&tools);
     if tools_tokens > 0 && tools.trim() != "[]" {

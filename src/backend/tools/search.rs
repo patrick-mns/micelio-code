@@ -18,8 +18,7 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
         cmd.arg(root);
     }
 
-    let output = cmd.output()
-        .map_err(|e| format!("failed to run rg: {e}"))?;
+    let output = cmd.output().map_err(|e| format!("failed to run rg: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let content = if stdout.trim().is_empty() {

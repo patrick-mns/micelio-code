@@ -23,7 +23,8 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
 
     if background {
         let early = read_early_log(&log_path, Duration::from_millis(2500));
-        super::bg::register(&command, log_path.clone(), child);
+        let ws = context.workspace_root.to_string_lossy().into_owned();
+        super::bg::register(&command, log_path.clone(), ws, child);
         return Ok(background_result(pid, &log_path, &early, false));
     }
 
@@ -43,7 +44,8 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
                     // register it, and report it as backgrounded — no retry, no
                     // second process.
                     let early = tail_log(&log_path);
-                    super::bg::register(&command, log_path.clone(), child);
+                    let ws = context.workspace_root.to_string_lossy().into_owned();
+                    super::bg::register(&command, log_path.clone(), ws, child);
                     return Ok(background_result(pid, &log_path, &early, true));
                 }
                 std::thread::sleep(Duration::from_millis(100));

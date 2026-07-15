@@ -184,11 +184,7 @@ impl SkillRegistry {
     /// Retorna a lista de skills ativas (enabled).
     pub fn active_skills() -> Vec<Skill> {
         let reg = skill_registry().lock().unwrap();
-        reg.skills
-            .values()
-            .filter(|s| s.enabled)
-            .cloned()
-            .collect()
+        reg.skills.values().filter(|s| s.enabled).cloned().collect()
     }
 
     /// Retorna summaries de todas as skills carregadas, em ordem alfabética
@@ -215,7 +211,11 @@ impl SkillRegistry {
                 }
             })
             .collect();
-        list.sort_by(|a, b| a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()));
+        list.sort_by(|a, b| {
+            a.display_name
+                .to_lowercase()
+                .cmp(&b.display_name.to_lowercase())
+        });
         list
     }
 
@@ -310,7 +310,10 @@ fn skill_icon_path(skill_path: &Path) -> Option<String> {
         let p = skill_path.join(format!("icon.{ext}"));
         if p.exists() {
             // resolve para caminho absoluto canonico
-            return p.canonicalize().ok().map(|a| a.to_string_lossy().to_string());
+            return p
+                .canonicalize()
+                .ok()
+                .map(|a| a.to_string_lossy().to_string());
         }
     }
     None
@@ -406,8 +409,12 @@ Hello world!"#;
         let project: Vec<_> = skills.iter().filter(|s| s.source != "builtin").collect();
         assert_eq!(project.len(), 1);
         assert_eq!(project[0].name, "my-skill");
-        assert!(skills.iter().any(|s| s.name == "skill-creator" && s.source == "builtin"));
-        assert!(skills.iter().any(|s| s.name == "commit" && s.source == "builtin"));
+        assert!(skills
+            .iter()
+            .any(|s| s.name == "skill-creator" && s.source == "builtin"));
+        assert!(skills
+            .iter()
+            .any(|s| s.name == "commit" && s.source == "builtin"));
 
         // toggle
         let enabled = SkillRegistry::toggle_skill("my-skill");

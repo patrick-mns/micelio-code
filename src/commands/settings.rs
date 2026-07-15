@@ -1,3 +1,4 @@
+use crate::backend::llm::Provider as _;
 use crate::backend::{cmd::no_window_cmd, config, llm};
 use crate::AppState;
 use serde::Serialize;
@@ -17,7 +18,11 @@ pub struct Settings {
 pub struct ModelOption {
     pub name: String,
     pub display: String,
+    /// Display label of the serving provider.
     pub provider: String,
+    /// Stable id of the serving provider — two endpoints can share a display
+    /// name, so group on this rather than on `provider`.
+    pub provider_id: String,
     /// Accepts image input — lets the Vision role filter the list.
     pub vision: bool,
 }
@@ -54,7 +59,7 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<Settings, String
         .unwrap()
         .to_string_lossy()
         .to_string();
-    let provider = llm::provider_for_model(&model).name().to_string();
+    let provider = llm::provider_for_model(&model).label();
 
     Ok(Settings {
         model,
@@ -108,7 +113,7 @@ fn role_provider(model: &str) -> String {
     if model.is_empty() {
         String::new()
     } else {
-        llm::provider_for_model(model).kind().label().to_string()
+        llm::provider_for_model(model).label()
     }
 }
 
@@ -216,8 +221,9 @@ pub async fn set_workspace(state: State<'_, AppState>, path: String) -> Result<u
     Ok(count)
 }
 
-/// List models from all configured providers. A provider without credentials
-/// (e.g. OpenRouter without a key) simply contributes nothing.
+/// List models from every enabled provider. One that can't be reached (daemon
+/// down, bad URL, rejected key) contributes nothing rather than failing the
+/// whole catalog.
 #[tauri::command]
 pub async fn list_models() -> Result<Vec<ModelOption>, String> {
     let catalog = llm::catalog();
@@ -226,102 +232,231 @@ pub async fn list_models() -> Result<Vec<ModelOption>, String> {
         .map(|m| ModelOption {
             display: m.name.trim_end_matches(":latest").to_string(),
             name: m.name,
-            provider: m.provider.label().to_string(),
+            provider: m.provider_label,
+            provider_id: m.provider_id,
             vision: m.vision,
         })
         .collect())
 }
 
-/// Returns the currently saved OpenRouter API key (empty if none).
-#[tauri::command]
-pub async fn get_openrouter_key() -> Result<String, String> {
-    Ok(config::openrouter_key().unwrap_or_default())
+// ── OpenAI-compatible endpoints ─────────────────────────────────────────────
+
+/// One configured endpoint as the settings panel sees it. The key is masked —
+/// the raw value never leaves the backend once saved.
+#[derive(Serialize)]
+pub struct ProviderInfo {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    /// Masked key for display, e.g. "sk-or-•••4f2a". Empty when unset.
+    pub key_hint: String,
+    pub has_key: bool,
+    pub enabled: bool,
+    /// "openai" or "openrouter".
+    pub flavor: String,
 }
 
-/// Persists the OpenRouter API key. Pass an empty string to clear it.
-#[tauri::command]
-pub async fn save_openrouter_key(key: String) -> Result<(), String> {
-    config::save_openrouter_key(&key);
-    Ok(())
+/// Endpoint fields coming from the settings form. `api_key` is optional on
+/// edit: `None` keeps the stored key, `Some("")` clears it.
+#[derive(serde::Deserialize)]
+pub struct ProviderInput {
+    /// Empty/absent on create — the backend assigns the id.
+    #[serde(default)]
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub flavor: Option<String>,
 }
 
 #[derive(Serialize)]
-pub struct OpenRouterStatus {
+pub struct ProviderStatus {
     pub ok: bool,
     pub count: usize,
     pub error: String,
 }
 
-/// Validate an OpenRouter API key by saving it and testing it against the
-/// models endpoint. Returns the count of available models on success, or the
-/// error message on failure. The caller can then refresh the model picker.
-#[tauri::command]
-pub async fn check_openrouter_key(key: String) -> Result<OpenRouterStatus, String> {
-    config::save_openrouter_key(&key);
+fn flavor_from_str(s: &str) -> config::ProviderFlavor {
+    match s {
+        "openrouter" => config::ProviderFlavor::Openrouter,
+        _ => config::ProviderFlavor::Openai,
+    }
+}
 
-    let provider = llm::provider(llm::ProviderKind::OpenRouter);
+fn flavor_to_str(f: config::ProviderFlavor) -> &'static str {
+    match f {
+        config::ProviderFlavor::Openrouter => "openrouter",
+        config::ProviderFlavor::Openai => "openai",
+    }
+}
+
+/// Show enough of a key to recognise it without exposing it. A key too short
+/// to mask meaningfully is hidden entirely rather than half-revealed.
+fn mask_key(key: &str) -> String {
+    let n = key.chars().count();
+    if n == 0 {
+        return String::new();
+    }
+    if n <= 12 {
+        return "•".repeat(n);
+    }
+    let head: String = key.chars().take(6).collect();
+    let tail: String = key.chars().skip(n - 4).collect();
+    format!("{head}•••{tail}")
+}
+
+fn to_info(c: &config::ProviderConfig) -> ProviderInfo {
+    ProviderInfo {
+        id: c.id.clone(),
+        name: c.name.clone(),
+        base_url: c.base_url.clone(),
+        key_hint: mask_key(&c.api_key),
+        has_key: !c.api_key.is_empty(),
+        enabled: c.enabled,
+        flavor: flavor_to_str(c.flavor).to_string(),
+    }
+}
+
+/// Every configured OpenAI-compatible endpoint, in display order.
+#[tauri::command]
+pub async fn list_providers() -> Result<Vec<ProviderInfo>, String> {
+    Ok(config::providers().iter().map(to_info).collect())
+}
+
+/// Create or update an endpoint, then reload the registry so the model
+/// catalog reflects it immediately. Returns the saved entry.
+#[tauri::command]
+pub async fn upsert_provider(input: ProviderInput) -> Result<ProviderInfo, String> {
+    let name = input.name.trim();
+    let base_url = input.base_url.trim();
+    if name.is_empty() {
+        return Err("name is required".into());
+    }
+    if base_url.is_empty() {
+        return Err("base URL is required".into());
+    }
+
+    let mut list = config::providers();
+    let existing = list
+        .iter()
+        .position(|p| p.id == input.id && !input.id.is_empty());
+
+    let saved = match existing {
+        Some(i) => {
+            let entry = &mut list[i];
+            entry.name = name.to_string();
+            entry.base_url = base_url.to_string();
+            // None = leave the stored key alone; Some("") = clear it.
+            if let Some(k) = &input.api_key {
+                entry.api_key = k.trim().to_string();
+            }
+            if let Some(f) = &input.flavor {
+                entry.flavor = flavor_from_str(f);
+            }
+            entry.clone()
+        }
+        None => {
+            let entry = config::ProviderConfig {
+                id: new_provider_id(name, &list),
+                name: name.to_string(),
+                base_url: base_url.to_string(),
+                api_key: input.api_key.unwrap_or_default().trim().to_string(),
+                enabled: true,
+                flavor: flavor_from_str(input.flavor.as_deref().unwrap_or("openai")),
+            };
+            list.push(entry.clone());
+            entry
+        }
+    };
+
+    config::save_providers(&list);
+    llm::reload_providers();
+    Ok(to_info(&saved))
+}
+
+/// Slug of `name`, suffixed if needed so ids stay unique (model resolution
+/// keys off them).
+fn new_provider_id(name: &str, existing: &[config::ProviderConfig]) -> String {
+    let base: String = name
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect();
+    let base = base.trim_matches('-').to_string();
+    let base = if base.is_empty() {
+        "endpoint".to_string()
+    } else {
+        base
+    };
+    if !existing.iter().any(|p| p.id == base) {
+        return base;
+    }
+    (2..)
+        .map(|n| format!("{base}-{n}"))
+        .find(|id| !existing.iter().any(|p| &p.id == id))
+        .unwrap()
+}
+
+/// Remove an endpoint and reload the registry.
+#[tauri::command]
+pub async fn remove_provider(id: String) -> Result<(), String> {
+    let mut list = config::providers();
+    list.retain(|p| p.id != id);
+    config::save_providers(&list);
+    llm::reload_providers();
+    Ok(())
+}
+
+/// Enable/disable an endpoint without losing its config, then reload.
+#[tauri::command]
+pub async fn set_provider_enabled(id: String, enabled: bool) -> Result<(), String> {
+    let mut list = config::providers();
+    if let Some(p) = list.iter_mut().find(|p| p.id == id) {
+        p.enabled = enabled;
+    }
+    config::save_providers(&list);
+    llm::reload_providers();
+    Ok(())
+}
+
+/// Probe an endpoint's `/models` without saving it, so the form can verify a
+/// URL/key before committing. Reports the model count or the error.
+#[tauri::command]
+pub async fn test_provider(input: ProviderInput) -> Result<ProviderStatus, String> {
+    // An edit that leaves the key untouched still needs it to authenticate.
+    let api_key = match input.api_key {
+        Some(k) => k,
+        None => config::providers()
+            .iter()
+            .find(|p| p.id == input.id)
+            .map(|p| p.api_key.clone())
+            .unwrap_or_default(),
+    };
+
+    let probe = config::ProviderConfig {
+        id: "probe".to_string(),
+        name: input.name.trim().to_string(),
+        base_url: input.base_url.trim().to_string(),
+        api_key,
+        enabled: true,
+        flavor: flavor_from_str(input.flavor.as_deref().unwrap_or("openai")),
+    };
+
+    let provider = crate::backend::openai_compat::OpenAiCompatProvider::from_config(&probe);
     match provider.list_models() {
-        Ok(models) => Ok(OpenRouterStatus {
+        Ok(models) => Ok(ProviderStatus {
             ok: true,
             count: models.len(),
             error: String::new(),
         }),
-        Err(e) => Ok(OpenRouterStatus {
+        Err(e) => Ok(ProviderStatus {
             ok: false,
             count: 0,
             error: e.to_string(),
         }),
     }
-}
-
-// ── LiteLLM ─────────────────────────────────────────────────────────────────
-
-/// Returns the currently saved LiteLLM API key (empty if none).
-#[tauri::command]
-pub async fn get_litellm_key() -> Result<String, String> {
-    Ok(config::litellm_key().unwrap_or_default())
-}
-
-/// Persists the LiteLLM API key. Pass an empty string to clear it.
-#[tauri::command]
-pub async fn save_litellm_key(key: String) -> Result<(), String> {
-    config::save_litellm_key(&key);
-    Ok(())
-}
-
-/// Validate a LiteLLM API key by saving it and testing it against the
-/// models endpoint. Returns the count of available models on success, or the
-/// error message on failure.
-#[tauri::command]
-pub async fn check_litellm_key(key: String) -> Result<OpenRouterStatus, String> {
-    config::save_litellm_key(&key);
-
-    let provider = llm::provider(llm::ProviderKind::LiteLLM);
-    match provider.list_models() {
-        Ok(models) => Ok(OpenRouterStatus {
-            ok: true,
-            count: models.len(),
-            error: String::new(),
-        }),
-        Err(e) => Ok(OpenRouterStatus {
-            ok: false,
-            count: 0,
-            error: e.to_string(),
-        }),
-    }
-}
-
-/// Returns the currently saved LiteLLM base URL (empty = default).
-#[tauri::command]
-pub async fn get_litellm_base_url() -> Result<String, String> {
-    Ok(config::litellm_base_url())
-}
-
-/// Persists the LiteLLM base URL. Pass an empty string to reset to default.
-#[tauri::command]
-pub async fn save_litellm_base_url(url: String) -> Result<(), String> {
-    config::save_litellm_base_url(&url);
-    Ok(())
 }
 
 #[derive(Serialize)]
@@ -352,9 +487,9 @@ pub async fn get_git_context(state: State<'_, AppState>) -> Result<GitContext, S
         })
         .unwrap_or_else(|| "no git".to_string());
 
-    // Get diff stats (--cached for staged, without for unstaged)
+    // Diff stats vs HEAD so both staged and unstaged changes are counted.
     let diff_output = no_window_cmd("git")
-        .args(["diff", "--numstat"])
+        .args(["diff", "HEAD", "--numstat"])
         .current_dir(&*root)
         .output()
         .ok()
@@ -367,17 +502,41 @@ pub async fn get_git_context(state: State<'_, AppState>) -> Result<GitContext, S
         })
         .unwrap_or_default();
 
-    // Parse diff output: each line is "added\tmodified\tfile"
-    let (mut added, mut modified, mut deleted) = (0, 0, 0);
+    // Parse numstat: each line is "added\tdeleted\tfile" ("-\t-" for binary).
+    let (mut added, mut modified, mut deleted) = (0usize, 0usize, 0usize);
     for line in diff_output.lines() {
-        let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() >= 2 {
-            if let (Ok(add), Ok(rem)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
-                added += add;
-                deleted += rem;
-            }
+        let mut cols = line.split('\t');
+        if let (Some(add), Some(rem)) = (cols.next(), cols.next()) {
+            added += add.parse::<usize>().unwrap_or(0);
+            deleted += rem.parse::<usize>().unwrap_or(0);
+            modified += 1;
         }
-        modified += 1;
+    }
+
+    // Untracked files never appear in a diff — count each line as an addition
+    // so the badge reflects all uncommitted work, matching the changes panel.
+    let untracked_output = no_window_cmd("git")
+        .args(["ls-files", "--others", "--exclude-standard"])
+        .current_dir(&*root)
+        .output()
+        .ok()
+        .and_then(|out| {
+            if out.status.success() {
+                Some(String::from_utf8_lossy(&out.stdout).to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+    for name in untracked_output.lines() {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        if let Ok(content) = std::fs::read_to_string(root.join(name)) {
+            added += content.lines().count();
+            modified += 1;
+        }
     }
 
     Ok(GitContext {
@@ -400,5 +559,32 @@ mod tests {
     #[test]
     fn role_provider_empty_model() {
         assert_eq!(role_provider(""), "");
+    }
+
+    #[test]
+    fn mask_key_never_reveals_the_secret() {
+        assert_eq!(mask_key(""), "");
+        // Long enough to mask: only the first 6 and last 4 survive.
+        let masked = mask_key("sk-or-v1-0123456789abcdef4f2a");
+        assert_eq!(masked, "sk-or-•••4f2a");
+        assert!(!masked.contains("0123456789"), "middle is hidden");
+        // Short keys would be mostly exposed by head+tail, so hide them fully.
+        assert_eq!(mask_key("sk-12345678"), "•".repeat(11));
+    }
+
+    #[test]
+    fn new_provider_id_slugifies_and_dedupes() {
+        let existing = vec![config::ProviderConfig {
+            id: "my-gateway".to_string(),
+            name: "My Gateway".to_string(),
+            base_url: "http://x/v1".to_string(),
+            api_key: String::new(),
+            enabled: true,
+            flavor: config::ProviderFlavor::Openai,
+        }];
+        assert_eq!(new_provider_id("Groq", &[]), "groq");
+        // Ids key model resolution, so a colliding name must not reuse the id.
+        assert_eq!(new_provider_id("My Gateway!", &existing), "my-gateway-2");
+        assert_eq!(new_provider_id("///", &[]), "endpoint");
     }
 }

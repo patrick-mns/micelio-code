@@ -74,6 +74,7 @@ function TaskCard({ t, running, expanded, onToggle, onStop }: TaskCardProps) {
     const code = status.split(':')[1];
     return code === '0' ? 'completed' : `exited · code ${code}`;
   };
+  const folder = t.workspace_path.split('/').pop() || t.workspace_path.split('\\').pop() || '';
   return (
     <div style={{ ...bgTasksChipStyles.card, opacity: running ? 1 : 0.8 }}>
       <div style={bgTasksChipStyles.cardTop}>
@@ -93,6 +94,12 @@ function TaskCard({ t, running, expanded, onToggle, onStop }: TaskCardProps) {
       </div>
       <div style={bgTasksChipStyles.meta}>
         {running ? `pid ${t.pid} · ${fmtUptime(t.uptime_secs)}` : exitLabel(t.status)}
+        {folder && (
+          <>
+            {' · '}
+            <span title={t.workspace_path}>{folder}</span>
+          </>
+        )}
       </div>
       {expanded && <TaskLog pid={t.pid} running={running} />}
     </div>

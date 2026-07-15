@@ -259,6 +259,11 @@ export const reviewPanelStyles: Record<string, CSSProperties> = {
     flexShrink: 0,
   },
   headTitle: { flex: 1, color: theme.text, fontSize: 13, fontWeight: 600 },
+  headFolder: {
+    display: 'flex', alignItems: 'center', gap: 4, minWidth: 0,
+    color: theme.dim, fontSize: 11.5,
+  },
+  headFolderName: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   closeBtn: {
     // Uses .close-btn from primitives.css — same as BgTasks
   },
@@ -844,9 +849,9 @@ export const toastsStyles: Record<string, CSSProperties> = {
 // ── Chat / Message / Composer ────────────────────────────────────────────
 export const chatStyles: Record<string, CSSProperties> = {
   root: { width: '100%', flex: 1, display: 'flex', flexDirection: 'column', background: theme.bg, position: 'relative', minHeight: 0 },
-  scroll: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '12px 0', scrollBehavior: 'smooth' },
-  col: { margin: '0 auto', display: 'flex', flexDirection: 'column' },
-  msgRow: { display: 'flex', marginBottom: 2, padding: '3px 0' },
+  // No margin: rows live inside Virtuoso items, whose heights are measured by
+  // ResizeObserver — margins are invisible to it. Spacing comes from padding.
+  msgRow: { display: 'flex', padding: '3px 0' },
   userBubble: { background: theme.card, borderRadius: "var(--radius-lg)", padding: '7px 12px', color: theme.text, fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
   msgAttach: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', background: theme.bgDeep, border: `1px solid ${theme.border}`, borderRadius: "var(--radius-md)", width: 'fit-content' },
   msgAttachThumb: { width: 26, height: 26, borderRadius: 5, objectFit: 'cover', display: 'block', flexShrink: 0 },
@@ -914,6 +919,40 @@ export const fieldStyles: Record<string, CSSProperties> = {
   desc: { fontSize: 11, color: theme.faint, marginTop: 2 },
   status: { fontSize: 11.5, marginTop: 8, lineHeight: 1.4 },
   input: { flex: 1, background: theme.bgDeep, border: `1px solid ${theme.border}`, borderRadius: "var(--radius-sm)", padding: '7px 10px', color: theme.text, fontSize: 12.5, outline: 'none', fontFamily: 'inherit' },
+};
+
+export const providerSettingsStyles: Record<string, CSSProperties> = {
+  row: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    padding: '9px 11px', marginBottom: 5,
+    background: theme.card, borderRadius: 'var(--radius-md)',
+  },
+  rowName: { fontSize: 13, color: theme.text },
+  rowUrl: {
+    fontSize: 11, color: theme.dim, marginTop: 3,
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  badge: { fontSize: 11, flexShrink: 0, whiteSpace: 'nowrap' },
+  empty: { fontSize: 12, color: theme.faint, padding: '10px 2px' },
+  form: {
+    padding: 14, marginBottom: 5,
+    background: theme.card, border: `1px solid ${theme.border}`,
+    borderRadius: 'var(--radius-md)',
+  },
+  formRow: { display: 'flex', gap: 12 },
+  formActions: {
+    display: 'flex', alignItems: 'center', gap: 8, marginTop: 16,
+    paddingTop: 12, borderTop: `1px solid ${theme.border}`,
+  },
+  // Native select chrome ignores our palette, so draw our own arrow.
+  select: {
+    appearance: 'none', WebkitAppearance: 'none',
+    padding: '7px 26px 7px 10px', cursor: 'pointer',
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238c8a82'/%3E%3C/svg%3E")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 9px center',
+  },
 };
 
 export const settingsModalStyles: Record<string, CSSProperties> = {

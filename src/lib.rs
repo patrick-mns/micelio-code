@@ -8,8 +8,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 pub use backend::knowledge::KnowledgeGraph;
-use tauri::{Emitter, Manager};
 use backend::sessions::SessionStore;
+use tauri::{Emitter, Manager};
 
 /// The model assigned to each role. Grouped behind a single lock because the
 /// three are cohesive and every access is a short read-clone or write — none
@@ -47,12 +47,16 @@ pub struct AppState {
     pub pending_edit: Mutex<Option<(String, std::sync::mpsc::Sender<bool>)>>,
     /// Parked generic tool confirmation (review mode) for side-effecting
     /// non-file tools: (session_id, reply channel).
-    pub pending_confirm:
-        Mutex<Option<(String, std::sync::mpsc::Sender<backend::review::ConfirmDecision>)>>,
+    pub pending_confirm: Mutex<
+        Option<(
+            String,
+            std::sync::mpsc::Sender<backend::review::ConfirmDecision>,
+        )>,
+    >,
     /// Per-session set of tool names the user chose to "always allow" this
     /// session (Review-mode confirmations). In-memory only; cleared on restart.
     pub session_tool_allow: Mutex<HashMap<String, std::collections::HashSet<String>>>,
-    /// Review manager: review-mode toggle + unstaged git changes.
+    /// Review manager: review-mode toggle + uncommitted git changes.
     pub review: Mutex<backend::review::ReviewManager>,
     /// MCP client manager: live connections to external MCP servers and the
     /// tools they expose. Shared into every tool-call context.
@@ -164,8 +168,11 @@ pub fn run() {
     // (matched by its first folder), falling back to the first available.
     let current_workspace: Option<backend::workspace::Workspace> = {
         let all = backend::workspace::list_workspaces();
-        let by_last = backend::config::last_workspace()
-            .and_then(|last| all.iter().find(|w| w.folders.first() == Some(&last)).cloned());
+        let by_last = backend::config::last_workspace().and_then(|last| {
+            all.iter()
+                .find(|w| w.folders.first() == Some(&last))
+                .cloned()
+        });
         by_last.or_else(|| all.into_iter().next())
     };
 
@@ -206,8 +213,7 @@ pub fn run() {
         backend::config::ensure_gitignore(first_folder);
     }
 
-    let sessions = SessionStore::open(&data_dir.join("sessions.db"))
-        .expect("open session store");
+    let sessions = SessionStore::open(&data_dir.join("sessions.db")).expect("open session store");
     let current_session = match sessions.latest_session_id() {
         Ok(Some(id)) => id,
         _ => "".to_string(), // Allow absolutely no sessions on brand new workspace
@@ -229,9 +235,7 @@ pub fn run() {
     // Building the manager is cheap (no connections yet); the actual connect
     // happens off the main thread in `setup` so a slow/hung server never blocks
     // app startup.
-    let mcp = Arc::new(
-        backend::mcp::McpManager::new().expect("failed to build MCP runtime"),
-    );
+    let mcp = Arc::new(backend::mcp::McpManager::new().expect("failed to build MCP runtime"));
     let mcp_for_setup = mcp.clone();
 
     tauri::Builder::default()
@@ -249,6 +253,10 @@ pub fn run() {
                     let _ = handle.emit("mcp_status", mcp.server_status());
                 });
             }
+
+            // Start the skills filesystem watcher (debounce thread). It will
+            // wait until `watch_workspace` is called to begin watching.
+            backend::skill_watcher::init(app.handle().clone());
 
             // Remove native window decorations on Windows/Linux so the app can
             // draw its own title-bar buttons (minimize/maximize/close) inside the
@@ -313,14 +321,11 @@ pub fn run() {
             commands::settings::set_workspace,
             commands::settings::list_models,
             commands::settings::list_tools,
-            commands::settings::get_openrouter_key,
-            commands::settings::save_openrouter_key,
-            commands::settings::check_openrouter_key,
-            commands::settings::get_litellm_key,
-            commands::settings::save_litellm_key,
-            commands::settings::check_litellm_key,
-            commands::settings::get_litellm_base_url,
-            commands::settings::save_litellm_base_url,
+            commands::settings::list_providers,
+            commands::settings::upsert_provider,
+            commands::settings::remove_provider,
+            commands::settings::set_provider_enabled,
+            commands::settings::test_provider,
             commands::settings::get_git_context,
             commands::settings::get_version,
             commands::settings::set_auto_summarize,

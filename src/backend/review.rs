@@ -3,9 +3,10 @@
 //! `commands::agent::execute_tool_call`) before it's written to disk —
 //! mirroring how `ask_user` pauses the agent turn. There is no separate
 //! staging area: an approved edit is written straight to disk, so it shows up
-//! immediately as a normal (unstaged) git change. This module only tracks the
-//! review-mode toggle and the workspace's unstaged git diff, which the
-//! frontend shows as a revertable "changes" list.
+//! immediately as a normal git change. This module only tracks the review-mode
+//! toggle and the workspace's uncommitted git diff (staged, unstaged, and
+//! untracked, all vs HEAD), which the frontend shows as a revertable "changes"
+//! list.
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -74,7 +75,7 @@ pub struct ReviewManager {
     /// How the agent handles a turn (chat / auto / review). In Review mode,
     /// file writes/edits pause for user approval before hitting disk.
     pub mode: AgentMode,
-    /// Cached git diff (unstaged). Refreshed on demand.
+    /// Cached git diff (uncommitted changes vs HEAD). Refreshed on demand.
     git_diff_cache: Option<Vec<ReviewFileInfo>>,
 }
 
@@ -96,7 +97,7 @@ impl ReviewManager {
         self.git_diff_cache.clone().unwrap_or_default()
     }
 
-    /// Number of unstaged git changes.
+    /// Number of uncommitted git changes.
     pub fn pending_count(&self) -> usize {
         self.git_diff_cache.as_ref().map(|f| f.len()).unwrap_or(0)
     }
@@ -119,34 +120,37 @@ pub struct WorkspaceChanges {
 
 // ── Git diff helpers ──────────────────────────────────────────────────────
 
-/// Run `git diff` (unstaged) for the current workspace and return one
-/// `ReviewFileInfo` per changed file. Each entry's `original_content` is
-/// what's in the index/HEAD and `proposed_content` is the working-tree
-/// version.
+/// Run `git diff HEAD` for the current workspace and return one
+/// `ReviewFileInfo` per changed file. Covers staged and unstaged changes alike:
+/// each entry's `original_content` is the committed (HEAD) version and
+/// `proposed_content` is the working-tree version.
 pub fn git_diff_files(workspace_root: &Path) -> Result<Vec<ReviewFileInfo>, String> {
     use crate::backend::cmd::no_window_cmd;
 
-    // 1. Get list of changed files (unstaged, excluding untracked)
+    // 1. Get list of changed files vs HEAD (staged + unstaged, no untracked).
+    //    On failure (not a git repo, or no commits yet) treat the tracked set
+    //    as empty and still surface untracked files in step 3.
     let name_output = no_window_cmd("git")
-        .args(["diff", "--name-only"])
+        .args(["diff", "HEAD", "--name-only"])
         .current_dir(workspace_root)
         .output()
         .map_err(|e| format!("git failed: {e}"))?;
-    if !name_output.status.success() {
-        return Ok(Vec::new()); // not a git repo — silent
-    }
-    let names: Vec<String> = String::from_utf8_lossy(&name_output.stdout)
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(|l| l.to_string())
-        .collect();
+    let names: Vec<String> = if name_output.status.success() {
+        String::from_utf8_lossy(&name_output.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_string())
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     // 2. For each file, get unified diff and also the original/current content
     let mut files = Vec::new();
     for name in &names {
-        // Original content (from index)
+        // Original content (from HEAD)
         let original = no_window_cmd("git")
-            .args(["show", &format!(":{}", name)])
+            .args(["show", &format!("HEAD:{}", name)])
             .current_dir(workspace_root)
             .output()
             .ok()
@@ -200,22 +204,46 @@ pub fn git_diff_files(workspace_root: &Path) -> Result<Vec<ReviewFileInfo>, Stri
     Ok(files)
 }
 
-/// Revert a single file to the index version (git checkout).
+/// Revert a single file to the state the panel treats as "unchanged" (HEAD).
+///
+/// For a tracked file this restores the committed version, discarding staged
+/// and unstaged edits together. A file that isn't in HEAD is a new file
+/// (untracked or staged-add), so reverting it means removing it: `git rm -f`
+/// clears it from the index and worktree, with a plain delete as the fallback
+/// for a purely untracked file that git won't touch.
 pub fn git_revert_file(workspace_root: &Path, path: &str) -> Result<(), String> {
     use crate::backend::cmd::no_window_cmd;
-    let status = no_window_cmd("git")
-        .args(["checkout", "--", path])
+
+    // Tracked change vs HEAD → restore the committed version.
+    let restored = no_window_cmd("git")
+        .args(["checkout", "HEAD", "--", path])
         .current_dir(workspace_root)
         .status()
         .map_err(|e| format!("git failed: {e}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("git checkout failed for {path}"))
+    if restored.success() {
+        return Ok(());
+    }
+
+    // Not in HEAD → new file. Remove it from the index + worktree if git knows
+    // it (staged-add); this is a no-op error for a purely untracked file.
+    let removed = no_window_cmd("git")
+        .args(["rm", "-f", "--", path])
+        .current_dir(workspace_root)
+        .status()
+        .map_err(|e| format!("git failed: {e}"))?;
+    if removed.success() {
+        return Ok(());
+    }
+
+    // Purely untracked → just delete it from disk.
+    match std::fs::remove_file(workspace_root.join(path)) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("failed to remove {path}: {e}")),
     }
 }
 
-/// Revert all unstaged changes.
+/// Revert all changed files shown in the panel to their HEAD version.
 pub fn git_revert_all(workspace_root: &Path) -> Result<Vec<String>, String> {
     let files = git_diff_files(workspace_root)?;
     let paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
