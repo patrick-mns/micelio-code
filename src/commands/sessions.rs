@@ -35,8 +35,8 @@ pub async fn get_usage_stats(
     let mut by_model: Vec<ModelStat> = rows
         .into_iter()
         .map(|(model, pt, ct, cost, turns)| {
-            let provider = crate::backend::llm::provider_kind_for_model(&model)
-                .map(|k| format!("{k:?}").to_lowercase())
+            let provider = crate::backend::llm::provider_label_for_model(&model)
+                .map(|l| l.to_lowercase())
                 .unwrap_or_else(|| "unknown".to_string());
             ModelStat {
                 model,
@@ -106,8 +106,8 @@ pub async fn get_usage_log(
     Ok(rows
         .into_iter()
         .map(|r| {
-            let provider = crate::backend::llm::provider_kind_for_model(&r.model)
-                .map(|k| format!("{k:?}").to_lowercase())
+            let provider = crate::backend::llm::provider_label_for_model(&r.model)
+                .map(|l| l.to_lowercase())
                 .unwrap_or_else(|| "unknown".to_string());
             UsageLogEntry {
                 id: r.id,

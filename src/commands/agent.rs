@@ -43,7 +43,7 @@ const KEEP_RECENT_TOOL_RESULTS: usize = 6;
 #[allow(clippy::too_many_arguments)]
 pub fn run_agent_loop(
     app: AppHandle,
-    provider: &'static dyn llm::Provider,
+    provider: Arc<dyn llm::Provider>,
     model: String,
     workspace_root: std::path::PathBuf,
     graph_json: String,
@@ -310,15 +310,20 @@ pub fn run_agent_loop(
             }
             if identical_calls >= MAX_IDENTICAL_CALLS {
                 history.push(Message::assistant(content_acc));
-                let summary =
-                    force_stop_summary(&app, provider, &model, &mut history, &session_id_ref);
+                let summary = force_stop_summary(
+                    &app,
+                    provider.as_ref(),
+                    &model,
+                    &mut history,
+                    &session_id_ref,
+                );
                 finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
                 return;
             }
 
             let (summaries, any_error) = run_tool_calls(
                 &app,
-                provider,
+                provider.as_ref(),
                 &mut history,
                 content_acc,
                 tool_calls,
@@ -340,8 +345,13 @@ pub fn run_agent_loop(
             // Too many consecutive errors: force the model to tell the user
             // what went wrong and stop the agentic loop.
             if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
-                let summary =
-                    force_stop_summary(&app, provider, &model, &mut history, &session_id_ref);
+                let summary = force_stop_summary(
+                    &app,
+                    provider.as_ref(),
+                    &model,
+                    &mut history,
+                    &session_id_ref,
+                );
                 finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
                 return;
             }
@@ -371,8 +381,13 @@ pub fn run_agent_loop(
             // and hard-stop machinery fires instead of silently finishing.
             consecutive_errors += 1;
             if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
-                let summary =
-                    force_stop_summary(&app, provider, &model, &mut history, &session_id_ref);
+                let summary = force_stop_summary(
+                    &app,
+                    provider.as_ref(),
+                    &model,
+                    &mut history,
+                    &session_id_ref,
+                );
                 finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
                 return;
             }
@@ -391,7 +406,13 @@ pub fn run_agent_loop(
         // If tools ran but the model produced no text summary, request one so
         // the user always gets a meaningful response.
         let final_content = if did_any_tool && content.is_empty() {
-            request_summary(&app, provider, &model, &mut history, &session_id_ref)
+            request_summary(
+                &app,
+                provider.as_ref(),
+                &model,
+                &mut history,
+                &session_id_ref,
+            )
         } else {
             content
         };
@@ -408,7 +429,13 @@ pub fn run_agent_loop(
 
     // Safety valve: too many rounds — ask model for a summary so the user
     // always gets a final response, then finish.
-    let summary_content = request_summary(&app, provider, &model, &mut history, &session_id_ref);
+    let summary_content = request_summary(
+        &app,
+        provider.as_ref(),
+        &model,
+        &mut history,
+        &session_id_ref,
+    );
     finish(
         &app,
         &history,

@@ -921,6 +921,40 @@ export const fieldStyles: Record<string, CSSProperties> = {
   input: { flex: 1, background: theme.bgDeep, border: `1px solid ${theme.border}`, borderRadius: "var(--radius-sm)", padding: '7px 10px', color: theme.text, fontSize: 12.5, outline: 'none', fontFamily: 'inherit' },
 };
 
+export const providerSettingsStyles: Record<string, CSSProperties> = {
+  row: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    padding: '9px 11px', marginBottom: 5,
+    background: theme.card, borderRadius: 'var(--radius-md)',
+  },
+  rowName: { fontSize: 13, color: theme.text },
+  rowUrl: {
+    fontSize: 11, color: theme.dim, marginTop: 3,
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  badge: { fontSize: 11, flexShrink: 0, whiteSpace: 'nowrap' },
+  empty: { fontSize: 12, color: theme.faint, padding: '10px 2px' },
+  form: {
+    padding: 14, marginBottom: 5,
+    background: theme.card, border: `1px solid ${theme.border}`,
+    borderRadius: 'var(--radius-md)',
+  },
+  formRow: { display: 'flex', gap: 12 },
+  formActions: {
+    display: 'flex', alignItems: 'center', gap: 8, marginTop: 16,
+    paddingTop: 12, borderTop: `1px solid ${theme.border}`,
+  },
+  // Native select chrome ignores our palette, so draw our own arrow.
+  select: {
+    appearance: 'none', WebkitAppearance: 'none',
+    padding: '7px 26px 7px 10px', cursor: 'pointer',
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238c8a82'/%3E%3C/svg%3E")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 9px center',
+  },
+};
+
 export const settingsModalStyles: Record<string, CSSProperties> = {
   backdrop: { position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { display: 'flex', width: 'min(840px, 92vw)', height: 'min(640px, 86vh)', background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 14, overflow: 'hidden' },

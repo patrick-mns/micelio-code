@@ -1,49 +1,31 @@
 //! Provider-agnostic LLM layer.
 //!
 //! Everything outside `backend` talks to the model through these types and
-//! the [`Provider`] trait — never to a vendor module directly. Vendor
-//! quirks (Ollama's `think:true`, `num_ctx`, endpoints, wire formats for
-//! reasoning/tool-calls) stay inside each implementation, so adding a new
-//! backend (Claude API, OpenAI, llama.cpp, …) means implementing this
-//! trait and wiring it into [`active`], with no UI/worker changes.
+//! the [`Provider`] trait — never to a vendor module directly. Vendor quirks
+//! (Ollama's `think:true`, `num_ctx`, endpoints, wire formats for
+//! reasoning/tool-calls) stay inside each implementation.
+//!
+//! The registry is data, not code: it holds the built-in local backend plus one
+//! instance per OpenAI-compatible endpoint the user configured, so adding a
+//! gateway (LiteLLM, vLLM, Groq, …) is a settings entry rather than a new
+//! variant. [`reload_providers`] rebuilds it when that config changes. Only a
+//! genuinely different wire protocol needs a new [`Provider`] impl.
 
+use crate::backend::config;
 use crate::backend::error::BackendResult;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock, RwLock};
 
-/// Identity of each model backend. This enum is the catalog's backbone:
-/// adding a provider = add a variant here, implement [`Provider`] for it,
-/// register it in [`providers`], and it shows up grouped in the model
-/// selector (and anywhere else that iterates [`ProviderKind::ALL`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum ProviderKind {
-    Ollama,
-    OpenRouter,
-    LiteLLM,
-}
-
-impl ProviderKind {
-    /// Every registered kind, in catalog display order.
-    pub const ALL: [ProviderKind; 3] = [
-        ProviderKind::Ollama,
-        ProviderKind::OpenRouter,
-        ProviderKind::LiteLLM,
-    ];
-
-    /// Human label for catalog section headers.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Ollama => "Ollama",
-            Self::OpenRouter => "OpenRouter",
-            Self::LiteLLM => "LiteLLM",
-        }
-    }
-}
+/// Id of the built-in local provider — the only one that isn't user-configured.
+pub const OLLAMA_ID: &str = "ollama";
 
 /// One selectable model in the catalog, tagged with the provider that
 /// serves it.
 #[derive(Debug, Clone)]
 pub struct CatalogModel {
-    pub provider: ProviderKind,
+    /// Stable id of the provider serving this model.
+    pub provider_id: String,
+    /// Display label for catalog section headers.
+    pub provider_label: String,
     pub name: String,
     /// Whether the model accepts image input (drives the Vision role filter).
     pub vision: bool,
@@ -236,11 +218,12 @@ pub trait ChatStream: Send {
 /// A chat-model backend. Implementations are stateless handles (cheap,
 /// `Send + Sync`) — per-request state lives in the returned values.
 pub trait Provider: Send + Sync {
-    /// Which catalog identity this backend serves.
-    fn kind(&self) -> ProviderKind;
+    /// Stable id of this backend instance, e.g. "ollama" or a configured
+    /// endpoint's id. Unique across the registry.
+    fn id(&self) -> String;
 
-    /// Short vendor id, e.g. "ollama".
-    fn name(&self) -> &'static str;
+    /// Human label for catalog section headers, e.g. "OpenRouter".
+    fn label(&self) -> String;
 
     /// Models this backend can serve right now.
     fn list_models(&self) -> BackendResult<Vec<ModelChoice>>;
@@ -301,94 +284,226 @@ pub trait Provider: Send + Sync {
     fn tool_calls_history_json(&self, calls: &[ToolCall]) -> String;
 }
 
-static PROVIDERS: OnceLock<Vec<Box<dyn Provider>>> = OnceLock::new();
+static PROVIDERS: OnceLock<RwLock<Vec<Arc<dyn Provider>>>> = OnceLock::new();
 
-/// All registered backends, one per [`ProviderKind`].
-fn providers() -> &'static [Box<dyn Provider>] {
-    PROVIDERS.get_or_init(|| {
-        vec![
-            Box::new(crate::backend::ollama::OllamaProvider),
-            Box::new(crate::backend::openai_compat::OPENROUTER),
-            Box::new(crate::backend::openai_compat::LITELLM),
-        ]
-    })
+fn registry() -> &'static RwLock<Vec<Arc<dyn Provider>>> {
+    PROVIDERS.get_or_init(|| RwLock::new(build_providers()))
 }
 
-/// Resolve the backend serving `kind`. Panics only on a programming error
-/// (a `ProviderKind` variant without a registered implementation).
-pub fn provider(kind: ProviderKind) -> &'static dyn Provider {
-    providers()
-        .iter()
-        .find(|p| p.kind() == kind)
-        .map(|p| p.as_ref())
-        .unwrap_or_else(|| panic!("no provider registered for {kind:?}"))
-}
-
-/// The provider driving the chat loop. Fixed to Ollama today; a future
-/// config option can swap it without touching call sites.
-pub fn active() -> &'static dyn Provider {
-    provider(ProviderKind::Ollama)
-}
-
-/// Full model catalog: every model from every registered provider, in
-/// [`ProviderKind::ALL`] order. A provider that fails to list (daemon
-/// down, no network) contributes nothing instead of failing the whole
-/// catalog.
-pub fn catalog() -> Vec<CatalogModel> {
-    let mut out = Vec::new();
-    for kind in ProviderKind::ALL {
-        if let Ok(models) = provider(kind).list_models() {
-            out.extend(models.into_iter().map(|m| CatalogModel {
-                provider: kind,
-                name: m.name,
-                vision: m.vision,
-            }));
+/// Assemble the live provider list: the built-in local backend plus one
+/// instance per enabled, configured OpenAI-compatible endpoint.
+fn build_providers() -> Vec<Arc<dyn Provider>> {
+    let mut out: Vec<Arc<dyn Provider>> = vec![Arc::new(crate::backend::ollama::OllamaProvider)];
+    for cfg in config::providers() {
+        if !cfg.enabled || cfg.base_url.trim().is_empty() {
+            continue;
         }
+        out.push(Arc::new(
+            crate::backend::openai_compat::OpenAiCompatProvider::from_config(&cfg),
+        ));
     }
     out
 }
 
-/// Resolve a model name to the [`ProviderKind`] that serves it, by checking
-/// each provider's current model list. Returns `None` when no provider lists
-/// this model (e.g. because the daemon is down or the model was removed).
-pub fn provider_kind_for_model(model: &str) -> Option<ProviderKind> {
-    for kind in ProviderKind::ALL {
-        if let Ok(models) = provider(kind).list_models() {
+/// Rebuild the registry from config. Call after the endpoint list changes so
+/// the catalog and model resolution pick it up without a restart.
+pub fn reload_providers() {
+    let rebuilt = build_providers();
+    *registry().write().unwrap() = rebuilt;
+}
+
+/// Snapshot of all registered backends, in catalog display order.
+pub fn providers() -> Vec<Arc<dyn Provider>> {
+    registry().read().unwrap().clone()
+}
+
+/// Resolve a backend by its id, or `None` when nothing is registered under it.
+pub fn provider_by_id(id: &str) -> Option<Arc<dyn Provider>> {
+    providers().into_iter().find(|p| p.id() == id)
+}
+
+/// The provider driving the chat loop. Fixed to Ollama today; a future
+/// config option can swap it without touching call sites.
+pub fn active() -> Arc<dyn Provider> {
+    provider_by_id(OLLAMA_ID).unwrap_or_else(|| Arc::new(crate::backend::ollama::OllamaProvider))
+}
+
+/// Full model catalog: every model from every registered provider. A provider
+/// that fails to list (daemon down, no network, bad URL) contributes nothing
+/// instead of failing the whole catalog.
+///
+/// Listing is one blocking HTTP round trip per endpoint, so they run in
+/// parallel: the catalog costs the slowest provider rather than the sum of all
+/// of them. Results are joined in registry order to keep display order stable.
+pub fn catalog() -> Vec<CatalogModel> {
+    catalog_from(providers())
+}
+
+fn catalog_from(list: Vec<Arc<dyn Provider>>) -> Vec<CatalogModel> {
+    let handles: Vec<_> = list
+        .into_iter()
+        .map(|p| {
+            std::thread::spawn(move || {
+                let models = p.list_models().unwrap_or_default();
+                (p.id(), p.label(), models)
+            })
+        })
+        .collect();
+
+    let mut out = Vec::new();
+    for h in handles {
+        let Ok((id, label, models)) = h.join() else {
+            continue; // a panicking provider drops out, like a failing one
+        };
+        out.extend(models.into_iter().map(|m| CatalogModel {
+            provider_id: id.clone(),
+            provider_label: label.clone(),
+            name: m.name,
+            vision: m.vision,
+        }));
+    }
+    out
+}
+
+/// Resolve a model name to the [`Provider`] that serves it, by checking each
+/// provider's current model list. Falls back to [`active`] when no provider
+/// lists it (daemon down, model removed).
+///
+/// First match wins: two endpoints serving the same model id are ambiguous and
+/// resolve to whichever is registered first.
+pub fn provider_for_model(model: &str) -> Arc<dyn Provider> {
+    for p in providers() {
+        if let Ok(models) = p.list_models() {
             if models.iter().any(|m| m.name == model) {
-                return Some(kind);
+                return p;
+            }
+        }
+    }
+    active()
+}
+
+/// Display label of the provider serving `model`, or `None` when unresolved.
+pub fn provider_label_for_model(model: &str) -> Option<String> {
+    for p in providers() {
+        if let Ok(models) = p.list_models() {
+            if models.iter().any(|m| m.name == model) {
+                return Some(p.label());
             }
         }
     }
     None
 }
 
-/// Resolve a model name to the [`Provider`] that serves it. Falls back to
-/// [`active`] when no provider is found.
-pub fn provider_for_model(model: &str) -> &'static dyn Provider {
-    provider_kind_for_model(model)
-        .map(provider)
-        .unwrap_or_else(active)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn provider_kind_all_have_distinct_labels() {
-        // Every registered kind resolves to an implementation and a unique
-        // label — guards against adding a variant without wiring it up.
-        let labels: Vec<&str> = ProviderKind::ALL.iter().map(|k| k.label()).collect();
-        assert_eq!(labels.len(), ProviderKind::ALL.len());
-        let unique: std::collections::HashSet<_> = labels.iter().collect();
-        assert_eq!(unique.len(), labels.len(), "labels must be distinct");
-        for kind in ProviderKind::ALL {
-            assert_eq!(
-                provider(kind).kind(),
-                kind,
-                "provider registered for {kind:?}"
-            );
+    /// Provider stub whose `list_models` sleeps, standing in for the network
+    /// round trip a real endpoint pays.
+    struct SlowProvider {
+        id: &'static str,
+        delay: std::time::Duration,
+        fails: bool,
+    }
+
+    impl Provider for SlowProvider {
+        fn id(&self) -> String {
+            self.id.to_string()
         }
+        fn label(&self) -> String {
+            self.id.to_uppercase()
+        }
+        fn list_models(&self) -> BackendResult<Vec<ModelChoice>> {
+            std::thread::sleep(self.delay);
+            if self.fails {
+                return Err("endpoint unreachable".into());
+            }
+            Ok(vec![ModelChoice {
+                name: format!("{}-model", self.id),
+                vision: false,
+            }])
+        }
+        fn context_length(&self, _: &str) -> usize {
+            0
+        }
+        fn chat(&self, _: &str, _: &[Message], _: bool) -> BackendResult<AssistantResponse> {
+            unimplemented!()
+        }
+        fn chat_simple(&self, _: &str, _: &str, _: &str, _: bool) -> BackendResult<String> {
+            unimplemented!()
+        }
+        fn start_stream(
+            &self,
+            _: &str,
+            _: &[Message],
+            _: &str,
+        ) -> BackendResult<Box<dyn ChatStream>> {
+            unimplemented!()
+        }
+        fn tool_calls_history_json(&self, _: &[ToolCall]) -> String {
+            unimplemented!()
+        }
+    }
+
+    fn slow(id: &'static str, ms: u64) -> Arc<dyn Provider> {
+        Arc::new(SlowProvider {
+            id,
+            delay: std::time::Duration::from_millis(ms),
+            fails: false,
+        })
+    }
+
+    #[test]
+    fn catalog_probes_endpoints_in_parallel_and_keeps_order() {
+        let list = vec![slow("a", 200), slow("b", 200), slow("c", 200)];
+        let started = std::time::Instant::now();
+        let catalog = catalog_from(list);
+        let elapsed = started.elapsed();
+
+        // Sequentially this is 600ms+; in parallel it's ~200ms. The bound is
+        // loose enough for a loaded CI box but still fails a serial regression.
+        assert!(
+            elapsed < std::time::Duration::from_millis(450),
+            "expected parallel probing, took {elapsed:?}"
+        );
+        // Display order must follow the registry, not completion order.
+        let ids: Vec<&str> = catalog.iter().map(|m| m.provider_id.as_str()).collect();
+        assert_eq!(ids, ["a", "b", "c"]);
+        assert_eq!(catalog[0].provider_label, "A");
+    }
+
+    #[test]
+    fn catalog_skips_failing_provider_without_dropping_the_rest() {
+        let list: Vec<Arc<dyn Provider>> = vec![
+            slow("ok-1", 0),
+            Arc::new(SlowProvider {
+                id: "broken",
+                delay: std::time::Duration::from_millis(0),
+                fails: true,
+            }),
+            slow("ok-2", 0),
+        ];
+        let ids: Vec<String> = catalog_from(list)
+            .into_iter()
+            .map(|m| m.provider_id)
+            .collect();
+        assert_eq!(
+            ids,
+            ["ok-1", "ok-2"],
+            "one bad endpoint can't empty the catalog"
+        );
+    }
+
+    #[test]
+    fn registry_always_has_ollama_and_unique_ids() {
+        // Model resolution keys off ids, so a duplicate would silently shadow
+        // an endpoint; the local backend must always be present as the
+        // fallback for `active()`.
+        let ids: Vec<String> = providers().iter().map(|p| p.id()).collect();
+        assert!(ids.iter().any(|id| id == OLLAMA_ID), "ollama registered");
+        let unique: std::collections::HashSet<_> = ids.iter().collect();
+        assert_eq!(unique.len(), ids.len(), "provider ids must be distinct");
+        assert_eq!(active().id(), OLLAMA_ID);
     }
 
     #[test]

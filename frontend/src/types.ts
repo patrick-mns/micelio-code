@@ -134,7 +134,10 @@ export interface Settings {
 export interface ModelOption {
   name: string;
   display: string;
+  /** Display label of the serving provider. */
   provider: string;
+  /** Stable id of the serving provider — group on this, not on `provider`. */
+  provider_id: string;
   vision: boolean;
 }
 
@@ -187,10 +190,34 @@ export interface GitContext {
   deleted: number;
 }
 
-export interface OpenRouterStatus {
+/** Result of probing an endpoint's /models. */
+export interface ProviderStatus {
   ok: boolean;
   count: number;
   error: string;
+}
+
+/** A configured OpenAI-compatible endpoint, as the settings panel sees it. */
+export interface ProviderInfo {
+  id: string;
+  name: string;
+  base_url: string;
+  /** Masked key for display, e.g. "sk-or-•••4f2a". Empty when unset. */
+  key_hint: string;
+  has_key: boolean;
+  enabled: boolean;
+  flavor: 'openai' | 'openrouter';
+}
+
+/** Endpoint fields sent from the settings form. */
+export interface ProviderInput {
+  /** Empty on create — the backend assigns the id. */
+  id?: string;
+  name: string;
+  base_url: string;
+  /** Omit to keep the stored key; empty string clears it. */
+  api_key?: string;
+  flavor?: 'openai' | 'openrouter';
 }
 
 // ── Graph (src/commands/graph.rs) ────────────────────────────────────────────
