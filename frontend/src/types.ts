@@ -230,6 +230,8 @@ export interface TreemapNode {
   active: boolean;
   summary: string;
   path: string | null;
+  /** User locked this path — the agent can't see it. */
+  locked: boolean;
   children: TreemapNode[];
 }
 

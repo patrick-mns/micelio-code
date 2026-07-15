@@ -307,6 +307,7 @@ pub fn run() {
             commands::chat::save_attachment,
             commands::chat::compact_chat,
             commands::graph::get_graph,
+            commands::graph::set_node_locked,
             commands::graph::scan_workspace,
             commands::graph::cancel_workspace_scan,
             commands::graph::summarize_node,

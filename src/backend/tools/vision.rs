@@ -14,6 +14,8 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
             "vision tool: `{path}` is not an image — use the `file` tool for text files"
         ));
     }
+    // A locked image must not reach a vision model either.
+    context.ensure_unlocked(&path)?;
 
     let vision_model = if context.vision_model.is_empty() {
         crate::backend::config::vision_model().ok_or_else(|| {

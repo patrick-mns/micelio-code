@@ -19,7 +19,7 @@ import css from 'react-syntax-highlighter/dist/esm/languages/prism/css';
 import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { X, Sparkle, Warning } from '@phosphor-icons/react';
+import { X, Sparkle, Warning, Lock, LockOpen } from '@phosphor-icons/react';
 import { ipc } from '@/ipc';
 import { useStore } from '@/store';
 import { theme, KIND_COLORS } from '@/theme';
@@ -52,13 +52,15 @@ type CodeState = 'loading' | 'ready' | 'none';
 // Centered modal for an inspected graph node: metadata + an in-app code
 // preview (the function's span, or the whole file) + an on-demand summary.
 export default function NodeModal({ node, onClose }: NodeModalProps) {
-  const { summarizeModel } = useStore();
+  const { summarizeModel, refreshGraph } = useStore();
   const [code, setCode] = useState<NodeCode | null>(null);
   const [codeState, setCodeState] = useState<CodeState>('loading');
   const [summarizing, setSummarizing] = useState(false);
   const [summary, setSummary] = useState(node.summary || '');
   const [summaryError, setSummaryError] = useState('');
   const [summaryStale, setSummaryStale] = useState(false);
+  const [locked, setLocked] = useState(!!node.locked);
+  const [locking, setLocking] = useState(false);
 
   // Fetch the node's code. Concept/note nodes have none — fall back gracefully.
   useEffect(() => {
@@ -77,6 +79,23 @@ export default function NodeModal({ node, onClose }: NodeModalProps) {
       .catch(() => { if (alive) setCodeState('none'); });
     return () => { alive = false; };
   }, [node.id]);
+
+  // Locking is file-level: a function node locks the file it lives in, so the
+  // treemap has to re-read every node's state, not just this one.
+  const toggleLock = async () => {
+    setLocking(true);
+    try {
+      const next = !locked;
+      await ipc.setNodeLocked(node.id, next);
+      setLocked(next);
+      node.locked = next;
+      await refreshGraph();
+    } catch (e) {
+      console.error('failed to toggle lock', e);
+    } finally {
+      setLocking(false);
+    }
+  };
 
   const summarize = async () => {
     setSummarizing(true);
@@ -103,14 +122,39 @@ export default function NodeModal({ node, onClose }: NodeModalProps) {
           <span style={nodeModalStyles.kindChip}>{node.kind}</span>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
             <button
-              onClick={summarize}
-              disabled={summarizing}
+              onClick={toggleLock}
+              disabled={locking}
               className="btn btn-sm btn-outline"
               style={{
-                borderColor: summaryStale ? theme.warn : theme.border,
-                color: summaryStale ? theme.warn : theme.accent,
+                borderColor: locked ? theme.warn : theme.border,
+                color: locked ? theme.warn : theme.dim,
               }}
-              title={summaryStale ? 'Content changed, summary is outdated' : ''}
+              title={
+                locked
+                  ? 'Unlock — the agent can read this file again'
+                  : "Lock this file — the agent still sees it exists, but can't read its contents"
+              }
+            >
+              {locked ? <Lock size={14} weight="fill" /> : <LockOpen size={14} />}
+              {locked ? 'Locked' : 'Lock'}
+            </button>
+            <button
+              onClick={summarize}
+              // Summarizing sends the file to a model, which a lock forbids —
+              // the backend rejects it, so don't offer it either.
+              disabled={summarizing || locked}
+              className="btn btn-sm btn-outline"
+              style={{
+                borderColor: summaryStale && !locked ? theme.warn : theme.border,
+                color: summaryStale && !locked ? theme.warn : theme.accent,
+              }}
+              title={
+                locked
+                  ? 'Locked — unlock to send this file to a model'
+                  : summaryStale
+                    ? 'Content changed, summary is outdated'
+                    : ''
+              }
             >
               {summaryStale ? <Warning size={14} weight="fill" /> : <Sparkle size={14} weight={summary ? "regular" : "fill"} />}
               {summarizing ? 'Summarizing…' : summaryStale ? 'Update summary' : summary ? 'Regenerate' : `Summarize by ${summarizeModel}`}

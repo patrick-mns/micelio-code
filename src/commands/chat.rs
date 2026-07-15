@@ -209,9 +209,12 @@ pub async fn start_chat_stream(app: AppHandle, content: String) -> Result<String
             .cloned()
             .unwrap_or_default();
 
+        // Locked files are stripped here: this JSON is both the model's graph
+        // context and what the `graph` tool reads, so one filter covers both.
         let graph_json = {
+            let locks = crate::backend::locks::locked_filter(&workspace_root);
             let graph = state.graph.lock().unwrap();
-            graph.serialize()
+            graph.serialize_for_model(&locks)
         };
 
         let mut system = crate::backend::prompt::system_prompt();

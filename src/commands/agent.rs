@@ -1007,7 +1007,15 @@ fn spawn_auto_summary(app: &AppHandle, workspace_root: std::path::PathBuf, files
         let summarize_model = app.state::<AppState>().summarize_model();
         let provider = llm::provider_for_model(&summarize_model);
 
+        let locks = crate::backend::locks::locked_filter(&workspace_root);
+
         for path in files {
+            // Defense in depth: writes to a locked file are already blocked, so
+            // it shouldn't land here — but this path ships content to a model,
+            // so it re-checks rather than trusting the caller.
+            if locks.is_locked(&path) {
+                continue;
+            }
             let full = workspace_root.join(&path);
             let Ok(file_text) = std::fs::read_to_string(&full) else {
                 continue;

@@ -44,7 +44,11 @@ export function shortName(label: string): string {
   return label.split('/').pop()!.split('::').pop()!;
 }
 
-type TextVariant = 'container' | 'label' | 'pct';
+// `lock` is the padlock glyph. It carries no backing plate, so it has to
+// contrast against the card itself — which flips with the theme. It is fully
+// opaque: the glyph lands on card seams and percentage text, and any alpha lets
+// those ghost through it.
+type TextVariant = 'container' | 'label' | 'pct' | 'lock';
 
 export function getTextColor(variant: TextVariant): string {
   const isLight = document.documentElement.dataset.theme === 'light';
@@ -52,19 +56,22 @@ export function getTextColor(variant: TextVariant): string {
     if (variant === 'container') return 'rgba(26,25,22,0.6)';
     if (variant === 'label') return 'rgba(26,25,22,0.9)';
     if (variant === 'pct') return 'rgba(26,25,22,0.55)';
+    if (variant === 'lock') return '#1a1916';
   } else {
     if (variant === 'container') return 'rgba(255,255,255,0.5)';
     if (variant === 'label') return 'rgba(255,255,255,0.92)';
     if (variant === 'pct') return 'rgba(255,255,255,0.55)';
+    if (variant === 'lock') return '#f5f5f4';
   }
   return 'rgba(255,255,255,0.5)';
 }
 
 // ── Canvas drawing ────────────────────────────────────────────────────────────
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+// Appends a rounded rect to the current path, clockwise. Split out from
+// `roundRect` so the padlock can combine it with other subpaths in one fill.
+function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   if (w < 2 * r) r = w / 2;
   if (h < 2 * r) r = h / 2;
-  ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.lineTo(x + w - r, y);
   ctx.quadraticCurveTo(x + w, y, x + w, y + r);
@@ -75,6 +82,11 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+  ctx.beginPath();
+  roundRectPath(ctx, x, y, w, h, r);
 }
 
 export function drawTreemap(
@@ -98,6 +110,11 @@ export function drawTreemap(
     return a.depth - b.depth;
   });
 
+  // Padlocks are collected here and drawn after every tile: a locked directory
+  // is painted before its children, so a badge drawn inline would be buried
+  // under them. Drawing last also keeps the lock crisp over the dimmed card.
+  const padlocks: { cx: number; cy: number; size: number }[] = [];
+
   for (const node of sorted) {
     const rw = (node.x1 - node.x0) * zoom;
     const rh = (node.y1 - node.y0) * zoom;
@@ -117,6 +134,7 @@ export function drawTreemap(
     const corner = (iw > 20 && ih > 20) ? 5 : 2;
 
     ctx.save();
+    if (node.data.locked) ctx.globalAlpha = 0.5;
     roundRect(ctx, ix, iy, iw, ih, corner);
 
     if (isContainer) {
@@ -194,8 +212,87 @@ export function drawTreemap(
         }
       }
     }
+
+    // One padlock per lock, not per tile: a locked directory cascades to
+    // everything inside it, and a lock on every child would read as many
+    // separate locks instead of one. The outermost locked node owns the badge
+    // and its descendants just stay dimmed.
+    if (node.data.locked && !hasLockedAncestor(node) && iw > 14 && ih > 14) {
+      const size = Math.max(12, Math.min(52, Math.min(iw, ih) * 0.3));
+      // A container has no text of its own, so the lock sits dead center and
+      // reads as covering the whole group. A leaf's label, tokens and
+      // percentage are all left-aligned, so its lock hugs the right edge
+      // instead — centered there it would land on top of the percentage.
+      const cx = isContainer
+        ? ix + iw / 2
+        : Math.max(ix + iw / 2, ix + iw - size * 0.36 - 8);
+      padlocks.push({ cx, cy: iy + ih / 2, size });
+    }
+
     ctx.restore();
   }
+
+  for (const p of padlocks) drawPadlock(ctx, p.cx, p.cy, p.size);
+}
+
+// Whether some ancestor is already locked, which means this node is locked only
+// by inheritance and shouldn't draw its own badge.
+function hasLockedAncestor(node: LaidOutNode): boolean {
+  for (let p = node.parent; p; p = p.parent) {
+    if (p.data.locked) return true;
+  }
+  return false;
+}
+
+// How much of the card bleeds through the padlock. Slight, so the lock sits in
+// the card rather than on top of it, but the glyph still has to survive landing
+// on percentage text and on the seams between child cards.
+const LOCK_ALPHA = 0.88;
+
+// Padlock marking a locked card (the agent knows the file is there but can't
+// read it). Drawn as paths because the canvas renderer can't use the icon font.
+// `size` is the glyph's height budget; it's centered on (cx, cy).
+//
+// Shackle, body and keyhole go into a single path filled once, which is what
+// makes LOCK_ALPHA work: stroking the shackle and then filling the body over it
+// would composite the overlap twice and leave the leg bases brighter than the
+// rest of the glyph. One fill also means the shackle and body abut seamlessly,
+// and the keyhole — wound backwards so the nonzero rule cancels it out — is a
+// real hole showing the card, not a dot painted in some colour that could never
+// match every card.
+function drawPadlock(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number): void {
+  const bodyW = size * 0.72;
+  const bodyH = size * 0.52;
+  const shackleR = size * 0.22;
+  const lw = Math.max(1, size * 0.1);
+  const outerR = shackleR + lw / 2;
+  const innerR = shackleR - lw / 2;
+
+  // Center the whole glyph — shackle top to body bottom — on cy.
+  const glyphH = shackleR + lw / 2 + bodyH;
+  const bodyTop = cy - glyphH / 2 + shackleR + lw / 2;
+
+  ctx.save();
+  ctx.globalAlpha = LOCK_ALPHA;
+  ctx.fillStyle = getTextColor('lock');
+  ctx.beginPath();
+
+  // Shackle: a filled arch that stops exactly at the body's top edge, so it
+  // meets the body without overlapping it.
+  ctx.arc(cx, bodyTop, outerR, Math.PI, 0, false);
+  ctx.lineTo(cx + innerR, bodyTop);
+  ctx.arc(cx, bodyTop, innerR, 0, Math.PI, true);
+  ctx.closePath();
+
+  roundRectPath(ctx, cx - bodyW / 2, bodyTop, bodyW, bodyH, size * 0.11);
+
+  const holeR = size * 0.1;
+  const holeY = bodyTop + bodyH / 2;
+  ctx.moveTo(cx + holeR, holeY);
+  ctx.arc(cx, holeY, holeR, 0, Math.PI * 2, true); // reverse-wound: punches out
+
+  ctx.fill();
+  ctx.restore();
 }
 
 // ── Hit testing ───────────────────────────────────────────────────────────────

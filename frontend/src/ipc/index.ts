@@ -40,6 +40,9 @@ export const ipc = {
   compactChat: () => invoke<CompactResult>('compact_chat'),
 
   getGraph: () => invoke<TreemapNode[]>('get_graph'),
+  /** Lock/unlock the file a node maps to. Returns the path actually locked. */
+  setNodeLocked: (nodeId: number, locked: boolean) =>
+    invoke<string>('set_node_locked', { nodeId, locked }),
   scanWorkspace: () => invoke<void>('scan_workspace'),
   cancelWorkspaceScan: () => invoke<void>('cancel_workspace_scan'),
   summarizeNode: (nodeId: number) => invoke<string>('summarize_node', { nodeId }),

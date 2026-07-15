@@ -63,6 +63,10 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
         }
     };
 
+    // Guard every action, not just read: `edit` reads before writing, and a
+    // locked file is off-limits rather than merely unreadable.
+    context.ensure_unlocked(&path)?;
+
     let result = match action.as_str() {
         "read" => read(&path, arguments, context)?,
         "write" => write(&path, arguments, context)?,
@@ -87,7 +91,7 @@ fn read(path: &str, arguments: &str, context: &ToolContext) -> Result<FileResult
 
     // If the path is a directory, list its contents instead of failing.
     if full_path.is_dir() {
-        return list_directory(&full_path, path);
+        return list_directory(&full_path, path, context);
     }
 
     let content = fs::read_to_string(&full_path)
@@ -137,8 +141,14 @@ fn read(path: &str, arguments: &str, context: &ToolContext) -> Result<FileResult
     })
 }
 
-/// List directory contents in a compact tree-like format.
-fn list_directory(dir: &std::path::Path, display_path: &str) -> Result<FileResult, String> {
+/// List directory contents in a compact tree-like format. Locked entries are
+/// listed but marked: a lock hides a file's contents, not its existence, and
+/// showing the name keeps the agent from recreating a file it can't see.
+fn list_directory(
+    dir: &std::path::Path,
+    display_path: &str,
+    context: &ToolContext,
+) -> Result<FileResult, String> {
     let mut entries: Vec<_> = std::fs::read_dir(dir)
         .map_err(|e| format!("failed to list {}: {e}", dir.display()))?
         .filter_map(|e| e.ok())
@@ -148,11 +158,18 @@ fn list_directory(dir: &std::path::Path, display_path: &str) -> Result<FileResul
     let mut lines = Vec::new();
     for entry in entries {
         let name = entry.file_name().to_string_lossy().to_string();
-        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            lines.push(format!("{}/", name));
+        let mut line = if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            format!("{}/", name)
         } else {
-            lines.push(name);
+            name
+        };
+        if context
+            .ensure_unlocked(&entry.path().to_string_lossy())
+            .is_err()
+        {
+            line.push_str("  [locked — contents not readable]");
         }
+        lines.push(line);
     }
 
     let content = format!(
@@ -430,6 +447,134 @@ mod tests {
         assert_eq!(image_mime("x.jpeg"), "image/jpeg");
         assert_eq!(image_mime("x.svg"), "image/svg+xml");
         assert_eq!(image_mime("x.unknown"), "image/png");
+    }
+
+    // ── Locked files ────────────────────────────────────────────────────────
+    // A lock is a promise that the agent can't reach the file, so these assert
+    // the tool actually refuses rather than that the UI hides something.
+
+    #[test]
+    fn locked_file_cannot_be_read() {
+        let (dir, ctx) = ws("locked-read");
+        fs::write(dir.join("secret.txt"), "SENSITIVE").unwrap();
+
+        // Readable before locking.
+        let out = run(
+            &json(serde_json::json!({"action": "read", "path": "secret.txt"})),
+            &ctx,
+        )
+        .unwrap();
+        assert!(out.content.contains("SENSITIVE"));
+
+        crate::backend::locks::set_locked(&dir, "secret.txt", true).unwrap();
+
+        let err = run(
+            &json(serde_json::json!({"action": "read", "path": "secret.txt"})),
+            &ctx,
+        )
+        .expect_err("locked file must not be readable");
+        assert!(err.contains("locked"), "error should say why: {err}");
+        assert!(
+            !err.contains("SENSITIVE"),
+            "the error must not leak content"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn locked_file_cannot_be_written_or_edited() {
+        let (dir, ctx) = ws("locked-write");
+        fs::write(dir.join("secret.txt"), "original").unwrap();
+        crate::backend::locks::set_locked(&dir, "secret.txt", true).unwrap();
+
+        // Write is blocked: a blind write would still let the model clobber or
+        // probe a file it isn't allowed to touch.
+        assert!(run(
+            &json(serde_json::json!({"action": "write", "path": "secret.txt", "content": "x"})),
+            &ctx
+        )
+        .is_err());
+        // Edit is blocked: it reads the file before writing.
+        assert!(run(
+            &json(serde_json::json!({"action": "edit", "path": "secret.txt", "old": "original", "new": "x"})),
+            &ctx
+        )
+        .is_err());
+
+        // The file on disk is untouched.
+        assert_eq!(
+            fs::read_to_string(dir.join("secret.txt")).unwrap(),
+            "original"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn directory_listing_marks_locked_entries_without_leaking_content() {
+        let (dir, ctx) = ws("locked-list");
+        fs::write(dir.join("public.txt"), "ok").unwrap();
+        fs::write(dir.join("secret.txt"), "SENSITIVE").unwrap();
+        crate::backend::locks::set_locked(&dir, "secret.txt", true).unwrap();
+
+        let out = run(
+            &json(serde_json::json!({"action": "read", "path": "."})),
+            &ctx,
+        )
+        .unwrap();
+        assert!(out.content.contains("public.txt"));
+        // The name shows — a lock hides contents, not existence — and says so.
+        assert!(
+            out.content.contains("secret.txt"),
+            "a locked file should still be listed: {}",
+            out.content
+        );
+        assert!(
+            out.content.contains("[locked"),
+            "the listing should mark it: {}",
+            out.content
+        );
+        assert!(
+            !out.content.contains("SENSITIVE"),
+            "listing leaked locked content"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn locking_a_directory_blocks_files_under_it() {
+        let (dir, ctx) = ws("locked-dir");
+        fs::create_dir_all(dir.join("private")).unwrap();
+        fs::write(dir.join("private/key.pem"), "PRIVATE KEY").unwrap();
+        crate::backend::locks::set_locked(&dir, "private", true).unwrap();
+
+        let err = run(
+            &json(serde_json::json!({"action": "read", "path": "private/key.pem"})),
+            &ctx,
+        )
+        .expect_err("a file under a locked dir must be unreachable");
+        assert!(err.contains("locked"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unlocking_restores_access() {
+        let (dir, ctx) = ws("locked-unlock");
+        fs::write(dir.join("f.txt"), "hello").unwrap();
+        crate::backend::locks::set_locked(&dir, "f.txt", true).unwrap();
+        assert!(run(
+            &json(serde_json::json!({"action": "read", "path": "f.txt"})),
+            &ctx
+        )
+        .is_err());
+
+        crate::backend::locks::set_locked(&dir, "f.txt", false).unwrap();
+        let out = run(
+            &json(serde_json::json!({"action": "read", "path": "f.txt"})),
+            &ctx,
+        )
+        .unwrap();
+        assert!(out.content.contains("hello"));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
