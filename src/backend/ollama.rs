@@ -220,48 +220,7 @@ impl ChatStream {
                 }
                 let s = std::str::from_utf8(line)
                     .map_err(|e| BackendError::Provider(format!("utf8: {e}")))?;
-                self.raw_resp.push_str(s);
-                self.raw_resp.push('\n');
-                // Ollama signals failures as a JSON object with an `error`
-                // field (e.g. a model that doesn't support thinking/tools).
-                // Surface it instead of ending the stream with nothing.
-                if let Some(err) = extract_json_string_field(s, "error") {
-                    return Err(format!("ollama: {err}").into());
-                }
-                if s.contains("\"done\":true") {
-                    // Ollama reports token counts in the final done chunk.
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(s) {
-                        let prompt = json["prompt_eval_count"].as_u64().unwrap_or(0);
-                        let completion = json["eval_count"].as_u64().unwrap_or(0);
-                        if prompt > 0 || completion > 0 {
-                            events.push(StreamEvent::Usage(crate::backend::llm::Usage {
-                                prompt_tokens: prompt,
-                                completion_tokens: completion,
-                                cost: 0.0,
-                                prompt_cost: None,
-                                completion_cost: None,
-                                raw: serde_json::to_string_pretty(&json).ok(),
-                                model: None,
-                            }));
-                        }
-                    }
-                    events.push(StreamEvent::ResponseRaw(std::mem::take(&mut self.raw_resp)));
-                    events.push(StreamEvent::Done);
-                } else {
-                    if let Some(content) = extract_json_string_field(s, "content") {
-                        if !content.is_empty() {
-                            events.push(StreamEvent::Content(content));
-                        }
-                    }
-                    if let Some(thinking) = extract_json_string_field(s, "thinking") {
-                        if !thinking.is_empty() {
-                            events.push(StreamEvent::Thinking(thinking));
-                        }
-                    }
-                    if let Some(tc) = extract_tool_call(s) {
-                        events.push(StreamEvent::ToolCall(tc));
-                    }
-                }
+                events.extend(events_from_line(s, &mut self.raw_resp)?);
             } else {
                 break;
             }
@@ -272,6 +231,61 @@ impl ChatStream {
 
         Ok(events)
     }
+}
+
+/// Turn one NDJSON line from `/api/chat` into stream events, appending it to
+/// `raw_resp` for the raw-response view.
+///
+/// A free function rather than a method: everything here is wire format, and
+/// `ChatStream` owns a live `TcpStream`, so folding this into `poll` would mean
+/// no test could reach it without opening a socket to a real Ollama.
+fn events_from_line(s: &str, raw_resp: &mut String) -> BackendResult<Vec<StreamEvent>> {
+    let mut events = Vec::new();
+    raw_resp.push_str(s);
+    raw_resp.push('\n');
+
+    // Ollama signals failures as a JSON object with an `error` field (e.g. a
+    // model that doesn't support thinking/tools). Surface it instead of ending
+    // the stream with nothing.
+    if let Some(err) = extract_json_string_field(s, "error") {
+        return Err(format!("ollama: {err}").into());
+    }
+
+    if s.contains("\"done\":true") {
+        // Ollama reports token counts in the final done chunk.
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(s) {
+            let prompt = json["prompt_eval_count"].as_u64().unwrap_or(0);
+            let completion = json["eval_count"].as_u64().unwrap_or(0);
+            if prompt > 0 || completion > 0 {
+                events.push(StreamEvent::Usage(crate::backend::llm::Usage {
+                    prompt_tokens: prompt,
+                    completion_tokens: completion,
+                    cost: 0.0,
+                    prompt_cost: None,
+                    completion_cost: None,
+                    raw: serde_json::to_string_pretty(&json).ok(),
+                    model: None,
+                }));
+            }
+        }
+        events.push(StreamEvent::ResponseRaw(std::mem::take(raw_resp)));
+        events.push(StreamEvent::Done);
+    } else {
+        if let Some(content) = extract_json_string_field(s, "content") {
+            if !content.is_empty() {
+                events.push(StreamEvent::Content(content));
+            }
+        }
+        if let Some(thinking) = extract_json_string_field(s, "thinking") {
+            if !thinking.is_empty() {
+                events.push(StreamEvent::Thinking(thinking));
+            }
+        }
+        if let Some(tc) = extract_tool_call(s) {
+            events.push(StreamEvent::ToolCall(tc));
+        }
+    }
+    Ok(events)
 }
 
 pub fn list_models() -> BackendResult<Vec<ModelChoice>> {
@@ -831,6 +845,105 @@ mod tests {
         let mut rest = "0041rest".chars();
         assert_eq!(take_hex4(&mut rest), Some(0x41));
         assert_eq!(rest.as_str(), "rest");
+    }
+
+    fn events(line: &str) -> Vec<StreamEvent> {
+        let mut raw = String::new();
+        events_from_line(line, &mut raw).expect("line should parse")
+    }
+
+    #[test]
+    fn a_content_chunk_becomes_one_content_event() {
+        let got = events(r#"{"message":{"role":"assistant","content":"hi"},"done":false}"#);
+        assert!(matches!(&got[..], [StreamEvent::Content(c)] if c == "hi"));
+    }
+
+    #[test]
+    fn an_empty_content_chunk_emits_nothing() {
+        // Ollama sends these while warming up; forwarding them would flicker
+        // the UI with empty deltas.
+        let got = events(r#"{"message":{"role":"assistant","content":""},"done":false}"#);
+        assert!(got.is_empty(), "got {got:?}");
+    }
+
+    #[test]
+    fn a_thinking_chunk_is_kept_apart_from_content() {
+        let got = events(r#"{"message":{"role":"assistant","thinking":"hmm"},"done":false}"#);
+        assert!(matches!(&got[..], [StreamEvent::Thinking(t)] if t == "hmm"));
+    }
+
+    /// Ollama reports a refusal (no tool support, bad options) as a normal
+    /// 200 line with an `error` field. Missing it ends the turn silently, and
+    /// the user sees an empty reply with no reason.
+    #[test]
+    fn an_error_line_fails_the_stream_with_its_message() {
+        let mut raw = String::new();
+        let err = events_from_line(r#"{"error":"model does not support tools"}"#, &mut raw)
+            .expect_err("must not be swallowed");
+        assert!(
+            err.to_string().contains("does not support tools"),
+            "the reason must survive: {err}"
+        );
+    }
+
+    #[test]
+    fn the_done_chunk_carries_usage_and_closes_the_stream() {
+        let line = r#"{"message":{"role":"assistant","content":""},"done":true,"prompt_eval_count":12,"eval_count":34}"#;
+        let got = events(line);
+        let usage = got.iter().find_map(|e| match e {
+            StreamEvent::Usage(u) => Some(u),
+            _ => None,
+        });
+        let usage = usage.expect("token counts come from the done chunk");
+        assert_eq!((usage.prompt_tokens, usage.completion_tokens), (12, 34));
+        assert!(
+            matches!(got.last(), Some(StreamEvent::Done)),
+            "Done comes last"
+        );
+    }
+
+    #[test]
+    fn a_done_chunk_without_counts_still_closes_the_stream() {
+        let got = events(r#"{"done":true}"#);
+        assert!(
+            !got.iter().any(|e| matches!(e, StreamEvent::Usage(_))),
+            "no counts, so no usage row to invent"
+        );
+        assert!(matches!(got.last(), Some(StreamEvent::Done)));
+    }
+
+    #[test]
+    fn the_raw_response_accumulates_and_ships_with_done() {
+        let mut raw = String::new();
+        events_from_line(r#"{"message":{"content":"a"},"done":false}"#, &mut raw).unwrap();
+        events_from_line(r#"{"message":{"content":"b"},"done":false}"#, &mut raw).unwrap();
+        let got = events_from_line(r#"{"done":true}"#, &mut raw).unwrap();
+
+        let shipped = got.iter().find_map(|e| match e {
+            StreamEvent::ResponseRaw(r) => Some(r),
+            _ => None,
+        });
+        let shipped = shipped.expect("raw response ships on done");
+        assert_eq!(shipped.lines().count(), 3, "every line, in order");
+        assert!(shipped.contains(r#""content":"a""#));
+        assert!(
+            raw.is_empty(),
+            "taken, not cloned, so the next turn starts clean"
+        );
+    }
+
+    #[test]
+    fn a_tool_call_chunk_becomes_a_tool_call_event() {
+        let line = r#"{"message":{"tool_calls":[{"function":{"name":"search","arguments":{"pattern":"fn main"}}}]},"done":false}"#;
+        let got = events(line);
+        let call = got.iter().find_map(|e| match e {
+            StreamEvent::ToolCall(c) => Some(c),
+            _ => None,
+        });
+        let call = call.expect("tool call parsed out of the chunk");
+        assert_eq!(call.name, "search");
+        let args: serde_json::Value = serde_json::from_str(&call.arguments).unwrap();
+        assert_eq!(args["pattern"], "fn main");
     }
 
     #[test]
