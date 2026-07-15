@@ -532,6 +532,23 @@ impl SessionStore {
 mod tests {
     use super::*;
 
+    /// A store of its own per test. Cargo runs tests as threads in one process,
+    /// so a path keyed only on the pid is shared by every test in the file —
+    /// they'd race on the same database and delete each other's directory.
+    fn store(name: &str) -> (std::path::PathBuf, SessionStore) {
+        let dir = std::env::temp_dir().join(format!("mc-sessions-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = SessionStore::open(&dir.join("sessions.db")).unwrap();
+        (dir, s)
+    }
+
+    /// Fills in the uninteresting half of `log_usage`'s argument list.
+    fn log(s: &SessionStore, session_id: &str, model: &str, prompt: u64, completion: u64) {
+        s.log_usage(
+            session_id, model, prompt, completion, 0.5, 100, "req", "resp", None, None, "", "",
+        );
+    }
+
     #[test]
     fn session_roundtrip() {
         let dir = std::env::temp_dir().join(format!("mc-test-{}", std::process::id()));
@@ -560,6 +577,168 @@ mod tests {
         store.delete_session(&id).unwrap();
         assert!(store.list_sessions().unwrap().is_empty()); // soft-deleted, hidden from list
         assert!(!store.load_events(&id).unwrap().is_empty()); // events preserved
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The ledger is a separate table precisely so wiping a transcript doesn't
+    /// erase what it cost — billing history shouldn't hinge on whether someone
+    /// tidied up a chat.
+    #[test]
+    fn clearing_a_chat_keeps_its_usage() {
+        let (dir, s) = store("clear-events");
+        let id = s.create_session("chat", "gemma").unwrap();
+        s.append_event(&id, "user", None, "hello").unwrap();
+        log(&s, &id, "gemma", 100, 20);
+
+        s.clear_events(&id).unwrap();
+
+        assert_eq!(s.event_count(&id), 0, "transcript wiped");
+        assert_eq!(s.load_history(&id).unwrap(), "[]", "model history reset");
+        let usage = s.usage_by_model(None, None).unwrap();
+        assert_eq!(usage, vec![("gemma".into(), 100, 20, 0.5, 1)], "usage kept");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn deleting_a_session_keeps_its_usage() {
+        let (dir, s) = store("delete-session");
+        let id = s.create_session("chat", "gemma").unwrap();
+        log(&s, &id, "gemma", 100, 20);
+
+        s.delete_session(&id).unwrap();
+
+        assert!(
+            s.list_sessions().unwrap().is_empty(),
+            "hidden from the list"
+        );
+        let usage = s.usage_by_model(None, None).unwrap();
+        assert_eq!(usage, vec![("gemma".into(), 100, 20, 0.5, 1)], "usage kept");
+        // Soft delete, so the ledger can still name the session it came from.
+        let rows = s.usage_log(None, None, 10).unwrap();
+        assert_eq!(rows[0].session_title, "chat");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// `role` picks a column name that gets formatted straight into SQL, so the
+    /// whitelist in `model_column` is the only thing between a caller and
+    /// injection. Both directions must refuse anything off the list.
+    #[test]
+    fn an_unknown_model_role_reaches_neither_sql_nor_state() {
+        let (dir, s) = store("bad-role");
+        let id = s.create_session("chat", "gemma").unwrap();
+
+        for role in [
+            "",
+            "bogus",
+            "model",
+            "model = 'x' --",
+            "model; DROP TABLE sessions",
+        ] {
+            assert!(
+                s.set_session_model(&id, role, "evil").is_ok(),
+                "role {role:?} should be an inert no-op, not an error"
+            );
+            assert_eq!(s.session_model(&id, role), "", "role {role:?} read back");
+        }
+
+        // The table is intact and the real column untouched.
+        assert_eq!(s.session_model(&id, "chat"), "gemma");
+        assert_eq!(s.list_sessions().unwrap().len(), 1);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn each_model_role_is_pinned_separately() {
+        let (dir, s) = store("roles");
+        let id = s.create_session("chat", "gemma").unwrap();
+
+        s.set_session_model(&id, "summarize", "phi").unwrap();
+        s.set_session_model(&id, "vision", "llava").unwrap();
+
+        assert_eq!(s.session_model(&id, "chat"), "gemma", "chat untouched");
+        assert_eq!(s.session_model(&id, "summarize"), "phi");
+        assert_eq!(s.session_model(&id, "vision"), "llava");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn session_mode_is_empty_until_pinned() {
+        let (dir, s) = store("mode");
+        let id = s.create_session("chat", "gemma").unwrap();
+
+        // Empty means "unset" — the caller falls back to the global default,
+        // so this must not report some invented mode.
+        assert_eq!(s.session_mode(&id), "");
+        s.set_session_mode(&id, "review").unwrap();
+        assert_eq!(s.session_mode(&id), "review");
+        s.set_session_mode(&id, "").unwrap();
+        assert_eq!(s.session_mode(&id), "", "back to the default");
+
+        assert_eq!(s.session_mode("no-such-session"), "", "unknown id is empty");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn usage_without_a_model_is_dropped() {
+        let (dir, s) = store("no-model");
+        let id = s.create_session("chat", "gemma").unwrap();
+
+        // A turn that never reached a provider has nothing to attribute cost
+        // to; logging it would invent a nameless row in the ledger.
+        log(&s, &id, "", 100, 20);
+        assert!(s.usage_by_model(None, None).unwrap().is_empty());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn clearing_usage_hides_what_came_before() {
+        let (dir, s) = store("clear-usage");
+        let id = s.create_session("chat", "gemma").unwrap();
+        log(&s, &id, "gemma", 100, 20);
+        assert_eq!(s.usage_by_model(None, None).unwrap().len(), 1, "premise");
+
+        s.clear_usage().unwrap();
+
+        assert!(s.usage_by_model(None, None).unwrap().is_empty());
+        assert!(s.usage_log(None, None, 10).unwrap().is_empty());
+        assert!(s.usage_cleared_at() > 0, "watermark recorded");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Previews are capped by character, not by byte: `s[..CAP]` would panic on
+    /// a request that happens to put a multi-byte character on the boundary.
+    #[test]
+    fn usage_previews_are_capped_without_splitting_characters() {
+        let (dir, s) = store("clip");
+        let id = s.create_session("chat", "gemma").unwrap();
+
+        let huge = "é".repeat(20_000);
+        s.log_usage(
+            &id, "gemma", 1, 1, 0.0, 1, &huge, &huge, None, None, &huge, &huge,
+        );
+
+        let row_id = s.usage_log(None, None, 1).unwrap()[0].id;
+        let (req, resp, req_raw, resp_raw) = s.usage_raw(row_id).unwrap();
+        for (what, got) in [
+            ("request", &req),
+            ("response", &resp),
+            ("request_raw", &req_raw),
+            ("response_raw", &resp_raw),
+        ] {
+            assert_eq!(got.chars().count(), 16_000, "{what} capped by chars");
+            assert!(
+                got.chars().all(|c| c == 'é'),
+                "{what} kept whole characters"
+            );
+        }
 
         let _ = std::fs::remove_dir_all(dir);
     }
