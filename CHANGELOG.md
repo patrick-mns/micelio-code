@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.14.0...micelio-v0.15.0) (2026-07-16)
+
+
+### Features
+
+* merge dev into main for release v0.15.0 ([e267d80](https://github.com/patrick-mns/micelio-code/commit/e267d80038ae120f26061bcd0982843f584faed7))
+* **ui:** move Usage panel into Settings modal ([681061a](https://github.com/patrick-mns/micelio-code/commit/681061a2d66df07bbf7f65182ad41c7bb30f4543))
+
 ## [0.14.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.13.1...micelio-v0.14.0) (2026-07-16)
 
 
