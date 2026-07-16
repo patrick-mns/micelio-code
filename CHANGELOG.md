@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.15.1](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.15.0...micelio-v0.15.1) (2026-07-16)
+
+
+### Bug Fixes
+
+* **chat:** follow streaming output past the virtualized viewport ([c1f38b5](https://github.com/patrick-mns/micelio-code/commit/c1f38b5959be542325d80f043af2aeb7e0444538))
+* **graph:** stop nesting one folder's tree inside another's ([0e1eff0](https://github.com/patrick-mns/micelio-code/commit/0e1eff07ec8610bb1b5acae2a6da90e8086ef309))
+* treemap folder scoping, graph nesting, and chat auto-scroll ([0596983](https://github.com/patrick-mns/micelio-code/commit/0596983d38032aeb4f80672f67d386b1fb437451))
+* **treemap:** keep folder scoping in sync with the active workspace ([287fcb7](https://github.com/patrick-mns/micelio-code/commit/287fcb7fbc44e215206984e961b955499fc20a3c))
+* **treemap:** stop blanking the map when switching folders ([114a315](https://github.com/patrick-mns/micelio-code/commit/114a3154e69caed1d0fc32d0538fff0dd4845046))
+
 ## [0.15.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.14.0...micelio-v0.15.0) (2026-07-16)
 
 
