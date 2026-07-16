@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.13.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.12.0...micelio-v0.13.0) (2026-07-16)
+
+
+### Features
+
+* **chat:** add toggle to show which model produced each reply ([3f36664](https://github.com/patrick-mns/micelio-code/commit/3f36664f87c8860c55962f1e5ba81ab741df38a3))
+* disable mode and model selectors while turn is running ([6082941](https://github.com/patrick-mns/micelio-code/commit/6082941de8f182dfcf4d60971f565c27268e181a))
+* **locks:** lock files so the agent sees them but can't read them ([4687039](https://github.com/patrick-mns/micelio-code/commit/4687039e46845200787e919437d7510bc45569c6))
+
+
+### Bug Fixes
+
+* **chat:** stop tool groups from collapsing mid-stream ([d82ea34](https://github.com/patrick-mns/micelio-code/commit/d82ea3483712bfd9e8ca4a77466b9ed10fa1d65a))
+* **ci:** pin the Rust toolchain and fix a lint from the newer one ([a784279](https://github.com/patrick-mns/micelio-code/commit/a7842793c830df0d0754e78b05852d43d456daaa))
+* **ollama:** escape control characters and reject stray surrogates ([c44ef53](https://github.com/patrick-mns/micelio-code/commit/c44ef53644c7174d8617aaac5c0f4fd3702122db))
+* **sessions:** clear usage by marking rows, not by timestamp cutoff ([4700ab4](https://github.com/patrick-mns/micelio-code/commit/4700ab4492bebd2ceddf4fac4ad0afc11babaf9c))
+
+
+### Performance Improvements
+
+* **ui:** virtualize the node modal's code viewer ([85b1aa0](https://github.com/patrick-mns/micelio-code/commit/85b1aa0b90684f4733cde4643f0a9aa371896606))
+
 ## [0.12.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.11.0...micelio-v0.12.0) (2026-07-15)
 
 
