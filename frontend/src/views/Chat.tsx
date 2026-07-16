@@ -163,6 +163,9 @@ export default function Chat() {
   function pushTo(sessionId: string, key: 'content' | 'thinking' | 'tools', chunk: string) {
     const cur = streamsRef.current[sessionId];
     if (!cur) return;
+    // Once the user hits stop, drop any chunks still arriving while the backend
+    // unwinds, so content visibly stops immediately.
+    if (cur.canceled) return;
     let next: StreamSession;
     if (key === 'thinking') {
       next = { ...cur, thinking: cur.thinking + chunk };
@@ -382,7 +385,16 @@ export default function Chat() {
   }, [input, attachment, streaming, viewingSession]);
 
   const cancel = useCallback(async () => {
-    if (streamsRef.current[viewingSession]) streamsRef.current[viewingSession].canceled = true;
+    const buf = streamsRef.current[viewingSession];
+    if (!buf || buf.canceled) return;
+    // Give immediate feedback: mark the stream as canceling (re-render so the
+    // button switches to a spinner) and stop new content from appearing right
+    // away. The buffer is kept until the backend confirms with stream_done —
+    // finalizing early would let a stale done event from this turn clobber a
+    // message the user might send during the unwind.
+    const next = { ...buf, canceled: true };
+    streamsRef.current[viewingSession] = next;
+    setStreamsBySession((prev) => ({ ...prev, [viewingSession]: next }));
     useStore.getState().setAgentStatus(viewingSession, 'idle');
     await ipc.stopChatStream().catch(console.error);
   }, [viewingSession]);
@@ -585,6 +597,7 @@ export default function Chat() {
             fileInputRef={fileInputRef}
             taRef={taRef}
             isLoading={streaming != null}
+            canceling={streaming?.canceled ?? false}
             onDrop={onDrop}
             autosize={autosize}
             showPalette={showPalette}
