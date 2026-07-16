@@ -18,6 +18,8 @@ pub struct TreemapNode {
     pub active: bool,
     pub summary: String,
     pub path: Option<String>,
+    /// User locked this path: the agent can't see it. Drives the padlock badge.
+    pub locked: bool,
     pub children: Vec<TreemapNode>,
 }
 
@@ -35,16 +37,25 @@ fn kind_str(kind: NodeKind) -> String {
 
 #[tauri::command]
 pub async fn get_graph(state: State<'_, AppState>) -> Result<Vec<TreemapNode>, String> {
+    let locks = {
+        let root = state.workspace_root.lock().unwrap();
+        crate::backend::locks::locked_filter(&root)
+    };
     let graph = state.graph.lock().unwrap();
 
     fn convert(
         nodes: &[crate::backend::hierarchy::TreemapNode],
         graph: &crate::backend::knowledge::KnowledgeGraph,
+        locks: &crate::backend::locks::LockedFilter,
     ) -> Vec<TreemapNode> {
         nodes
             .iter()
             .map(|n| {
                 let gnode = graph.nodes().iter().find(|g| g.id == n.id);
+                let path = gnode.and_then(|g| g.attachment.as_ref().map(|a| a.path.clone()));
+                // Fall back to the label: Directory nodes carry their path
+                // there and have no attachment.
+                let lock_key = path.clone().unwrap_or_else(|| n.label.clone());
                 TreemapNode {
                     id: n.id,
                     name: n.label.rsplit('/').next().unwrap_or(&n.label).to_string(),
@@ -53,8 +64,9 @@ pub async fn get_graph(state: State<'_, AppState>) -> Result<Vec<TreemapNode>, S
                     tokens: gnode.map(|g| g.tokens).unwrap_or(0),
                     active: n.active,
                     summary: gnode.map(|g| g.summary.clone()).unwrap_or_default(),
-                    path: gnode.and_then(|g| g.attachment.as_ref().map(|a| a.path.clone())),
-                    children: convert(&n.children, graph),
+                    path,
+                    locked: locks.is_locked(&lock_key),
+                    children: convert(&n.children, graph, locks),
                 }
             })
             .collect()
@@ -67,7 +79,37 @@ pub async fn get_graph(state: State<'_, AppState>) -> Result<Vec<TreemapNode>, S
         height: 1.0,
     };
     let roots = build_treemap(&graph, area);
-    Ok(convert(&roots, &graph))
+    Ok(convert(&roots, &graph, &locks))
+}
+
+/// Lock or unlock the file a node maps to, and report the resulting state.
+///
+/// Locking is file-level: a symbol node (function/class) attaches to the file
+/// it lives in, so locking one locks the whole file — there is no way to hide
+/// half a file from the agent. Returns the path that was locked so the UI can
+/// say which file it actually affected.
+#[tauri::command]
+pub async fn set_node_locked(
+    state: State<'_, AppState>,
+    node_id: usize,
+    locked: bool,
+) -> Result<String, String> {
+    let key = {
+        let graph = state.graph.lock().unwrap();
+        let node = graph
+            .nodes()
+            .iter()
+            .find(|n| n.id == node_id)
+            .ok_or("node not found")?;
+        // Directory nodes have no attachment; their label is the path.
+        node.attachment
+            .as_ref()
+            .map(|a| a.path.clone())
+            .unwrap_or_else(|| node.label.clone())
+    };
+    let root = state.workspace_root.lock().unwrap().clone();
+    crate::backend::locks::set_locked(&root, &key, locked)?;
+    Ok(key)
 }
 
 #[tauri::command]
@@ -298,6 +340,15 @@ pub async fn summarize_node(
     let attachment = node_info;
     let att_path = attachment.as_ref().map(|a| a.path.clone());
 
+    // Summarizing ships the file's content to a model, so a locked file must
+    // not be summarizable — that would defeat the lock through the back door.
+    if let Some(p) = &att_path {
+        let root = state.workspace_root.lock().unwrap().clone();
+        if crate::backend::locks::is_locked(&root, p) {
+            return Err(format!("`{p}` is locked — unlock it to summarize"));
+        }
+    }
+
     // Image nodes go through the Vision model (describe), not the text
     // summarizer — reading their bytes as UTF-8 would just yield garbage.
     let summary = if att_path
@@ -411,6 +462,8 @@ pub async fn summarize_all(app: AppHandle, concurrency: Option<usize>) -> Result
 
     // Build the worklist: nodes with an attachment that are unsummarized or
     // stale. Unsummarized needs no read; stale requires reading to compare.
+    // Locked files are skipped — summarizing would send them to a model.
+    let locks = crate::backend::locks::locked_filter(&workspace_root);
     let worklist: Vec<SummarizeItem> = {
         let state = app.state::<AppState>();
         let graph = state.graph.lock().unwrap();
@@ -419,6 +472,9 @@ pub async fn summarize_all(app: AppHandle, concurrency: Option<usize>) -> Result
             .iter()
             .filter_map(|n| {
                 let att = n.attachment.as_ref()?;
+                if locks.is_locked(&att.path) {
+                    return None;
+                }
                 if n.summary.is_empty() {
                     return Some((n.id, att.path.clone(), att.span));
                 }

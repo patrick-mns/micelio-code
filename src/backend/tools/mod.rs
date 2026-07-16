@@ -60,6 +60,29 @@ impl ToolContext {
         // Brand-new file (or non-existent path): land in the primary root
         self.workspace_root.join(path)
     }
+
+    /// Reject a path the user locked. Locked files are off-limits to the agent
+    /// entirely — not just unreadable — so this guards write/edit too: an edit
+    /// reads the file first, and even a blind write would let the model probe
+    /// the file's existence.
+    ///
+    /// Checked against every workspace root, since `arg` may be relative to any
+    /// of them.
+    pub fn ensure_unlocked(&self, arg: &str) -> Result<(), String> {
+        let resolved = self.resolve_path(arg);
+        let resolved = resolved.to_string_lossy();
+        for root in &self.workspace_roots {
+            if crate::backend::locks::is_locked(root, &resolved)
+                || crate::backend::locks::is_locked(root, arg)
+            {
+                return Err(format!(
+                    "`{arg}` is locked by the user and cannot be accessed. \
+Do not try to read it another way; tell the user it is locked."
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]

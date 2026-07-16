@@ -220,48 +220,7 @@ impl ChatStream {
                 }
                 let s = std::str::from_utf8(line)
                     .map_err(|e| BackendError::Provider(format!("utf8: {e}")))?;
-                self.raw_resp.push_str(s);
-                self.raw_resp.push('\n');
-                // Ollama signals failures as a JSON object with an `error`
-                // field (e.g. a model that doesn't support thinking/tools).
-                // Surface it instead of ending the stream with nothing.
-                if let Some(err) = extract_json_string_field(s, "error") {
-                    return Err(format!("ollama: {err}").into());
-                }
-                if s.contains("\"done\":true") {
-                    // Ollama reports token counts in the final done chunk.
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(s) {
-                        let prompt = json["prompt_eval_count"].as_u64().unwrap_or(0);
-                        let completion = json["eval_count"].as_u64().unwrap_or(0);
-                        if prompt > 0 || completion > 0 {
-                            events.push(StreamEvent::Usage(crate::backend::llm::Usage {
-                                prompt_tokens: prompt,
-                                completion_tokens: completion,
-                                cost: 0.0,
-                                prompt_cost: None,
-                                completion_cost: None,
-                                raw: serde_json::to_string_pretty(&json).ok(),
-                                model: None,
-                            }));
-                        }
-                    }
-                    events.push(StreamEvent::ResponseRaw(std::mem::take(&mut self.raw_resp)));
-                    events.push(StreamEvent::Done);
-                } else {
-                    if let Some(content) = extract_json_string_field(s, "content") {
-                        if !content.is_empty() {
-                            events.push(StreamEvent::Content(content));
-                        }
-                    }
-                    if let Some(thinking) = extract_json_string_field(s, "thinking") {
-                        if !thinking.is_empty() {
-                            events.push(StreamEvent::Thinking(thinking));
-                        }
-                    }
-                    if let Some(tc) = extract_tool_call(s) {
-                        events.push(StreamEvent::ToolCall(tc));
-                    }
-                }
+                events.extend(events_from_line(s, &mut self.raw_resp)?);
             } else {
                 break;
             }
@@ -272,6 +231,61 @@ impl ChatStream {
 
         Ok(events)
     }
+}
+
+/// Turn one NDJSON line from `/api/chat` into stream events, appending it to
+/// `raw_resp` for the raw-response view.
+///
+/// A free function rather than a method: everything here is wire format, and
+/// `ChatStream` owns a live `TcpStream`, so folding this into `poll` would mean
+/// no test could reach it without opening a socket to a real Ollama.
+fn events_from_line(s: &str, raw_resp: &mut String) -> BackendResult<Vec<StreamEvent>> {
+    let mut events = Vec::new();
+    raw_resp.push_str(s);
+    raw_resp.push('\n');
+
+    // Ollama signals failures as a JSON object with an `error` field (e.g. a
+    // model that doesn't support thinking/tools). Surface it instead of ending
+    // the stream with nothing.
+    if let Some(err) = extract_json_string_field(s, "error") {
+        return Err(format!("ollama: {err}").into());
+    }
+
+    if s.contains("\"done\":true") {
+        // Ollama reports token counts in the final done chunk.
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(s) {
+            let prompt = json["prompt_eval_count"].as_u64().unwrap_or(0);
+            let completion = json["eval_count"].as_u64().unwrap_or(0);
+            if prompt > 0 || completion > 0 {
+                events.push(StreamEvent::Usage(crate::backend::llm::Usage {
+                    prompt_tokens: prompt,
+                    completion_tokens: completion,
+                    cost: 0.0,
+                    prompt_cost: None,
+                    completion_cost: None,
+                    raw: serde_json::to_string_pretty(&json).ok(),
+                    model: None,
+                }));
+            }
+        }
+        events.push(StreamEvent::ResponseRaw(std::mem::take(raw_resp)));
+        events.push(StreamEvent::Done);
+    } else {
+        if let Some(content) = extract_json_string_field(s, "content") {
+            if !content.is_empty() {
+                events.push(StreamEvent::Content(content));
+            }
+        }
+        if let Some(thinking) = extract_json_string_field(s, "thinking") {
+            if !thinking.is_empty() {
+                events.push(StreamEvent::Thinking(thinking));
+            }
+        }
+        if let Some(tc) = extract_tool_call(s) {
+            events.push(StreamEvent::ToolCall(tc));
+        }
+    }
+    Ok(events)
 }
 
 pub fn list_models() -> BackendResult<Vec<ModelChoice>> {
@@ -598,15 +612,21 @@ fn extract_nested_string(haystack: &str, key: &str) -> Option<String> {
 /// surrogates into a single `char` so emoji and `&`-style escapes
 /// (`&`, `<`, `>`, often emitted by HTML-safe JSON encoders) render right.
 fn decode_unicode_escape(chars: &mut std::str::Chars) -> Option<char> {
-    let hi = u16::from_str_radix(&chars.by_ref().take(4).collect::<String>(), 16).ok()?;
+    let hi = take_hex4(chars)?;
     // High surrogate: needs a following `\uXXXX` low surrogate.
     if (0xD800..=0xDBFF).contains(&hi) {
         if chars.clone().next() == Some('\\') {
             chars.next();
             if chars.clone().next() == Some('u') {
                 chars.next();
-                let lo =
-                    u16::from_str_radix(&chars.by_ref().take(4).collect::<String>(), 16).ok()?;
+                let lo = take_hex4(chars)?;
+                // The pairing arithmetic below subtracts 0xDC00 from `lo`, so a
+                // second escape that isn't a low surrogate underflows — a model
+                // emitting a stray `\uD83DA` would panic the parse. Reject
+                // it as the malformed escape it is instead.
+                if !(0xDC00..=0xDFFF).contains(&lo) {
+                    return None;
+                }
                 let c = 0x10000 + ((hi as u32 - 0xD800) << 10) + (lo as u32 - 0xDC00);
                 return char::from_u32(c);
             }
@@ -614,6 +634,17 @@ fn decode_unicode_escape(chars: &mut std::str::Chars) -> Option<char> {
         return None;
     }
     char::from_u32(hi as u32)
+}
+
+/// Reads exactly four hex digits. `take(4)` alone will happily accept fewer at
+/// the end of the input, so a truncated `\uAB` would decode as U+00AB rather
+/// than being rejected.
+fn take_hex4(chars: &mut std::str::Chars) -> Option<u16> {
+    let hex: String = chars.by_ref().take(4).collect();
+    if hex.len() != 4 {
+        return None;
+    }
+    u16::from_str_radix(&hex, 16).ok()
 }
 
 fn extract_nested_value(haystack: &str, key: &str) -> Option<String> {
@@ -659,6 +690,11 @@ fn json_string(value: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
+            // JSON forbids every control character below 0x20 in a string, not
+            // just the ones with short escapes. Tool output carries them
+            // routinely — ANSI colour codes from `terminal` are ESC-prefixed —
+            // and emitting one raw makes the whole request body unparseable.
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
             c => out.push(c),
         }
     }
@@ -682,4 +718,246 @@ pub fn tool_calls_to_json(calls: &[ToolCall]) -> String {
         })
         .collect();
     format!("[{}]", items.join(","))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `\uXXXX` escape as it appears on the wire — a real backslash, not the
+    /// character it denotes. Built here so the tests don't depend on how a
+    /// literal survives the source file.
+    fn esc(hex: &str) -> String {
+        format!("\\u{hex}")
+    }
+
+    fn field(body: &str) -> String {
+        format!("\"t\":\"{body}\"")
+    }
+
+    #[test]
+    fn json_escapes_control_characters() {
+        // `terminal` hands back whatever the command printed, and anything
+        // colourised is full of ESC. Raw, it makes the body unparseable.
+        let ansi = "\u{1b}[31merror\u{1b}[0m";
+        let encoded = json_string(ansi);
+        assert!(!encoded.contains('\u{1b}'), "raw ESC left in: {encoded:?}");
+
+        let body = format!("{{\"content\":{encoded}}}");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&body).expect("body must be valid JSON");
+        assert_eq!(parsed["content"], ansi, "round-trips back to the same text");
+    }
+
+    #[test]
+    fn json_escapes_the_usual_suspects() {
+        let s = "a\"b\\c\nd\te";
+        let parsed: serde_json::Value =
+            serde_json::from_str(&format!("{{\"v\":{}}}", json_string(s))).unwrap();
+        assert_eq!(parsed["v"], s);
+    }
+
+    #[test]
+    fn surrogate_pairs_decode_to_one_char() {
+        let json = field(&format!("{}{}", esc("D83D"), esc("DE00")));
+        assert_eq!(extract_nested_string(&json, "t").as_deref(), Some("😀"));
+    }
+
+    /// A local model emitting a stray high surrogate used to panic the parse:
+    /// the pairing maths subtracted 0xDC00 from whatever followed.
+    #[test]
+    fn a_high_surrogate_followed_by_a_plain_escape_is_rejected_not_fatal() {
+        let json = field(&format!("{}{}", esc("D83D"), esc("0041")));
+        // Reaching an assert at all is the point — this used to be a panic.
+        assert_eq!(extract_nested_string(&json, "t").as_deref(), Some(""));
+    }
+
+    #[test]
+    fn malformed_escapes_are_dropped_rather_than_guessed() {
+        for (body, why) in [
+            (esc("D83D"), "high surrogate with nothing after it"),
+            (esc("DC00"), "low surrogate on its own"),
+            ("\\uZZZZ".to_string(), "not hex at all"),
+        ] {
+            let json = field(&body);
+            assert_eq!(
+                extract_nested_string(&json, "t").as_deref(),
+                Some(""),
+                "{why}"
+            );
+        }
+    }
+
+    /// A `\u` escape must carry four hex digits. Given fewer, the closing quote
+    /// is what fills the gap, so the string never terminates and the field
+    /// can't be read — which beats the old behaviour of quietly reading `\uAB`
+    /// as U+00AB and handing back a plausible-looking wrong answer.
+    #[test]
+    fn a_truncated_escape_fails_the_field_rather_than_inventing_a_char() {
+        let json = field("\\uAB");
+        assert_eq!(extract_nested_string(&json, "t"), None);
+    }
+
+    #[test]
+    fn plain_escapes_decode() {
+        let json = field(&format!("line{}tab{}end", "\\n", "\\t"));
+        assert_eq!(
+            extract_nested_string(&json, "t").as_deref(),
+            Some("line\ntab\tend")
+        );
+    }
+
+    #[test]
+    fn a_tool_call_survives_the_round_trip() {
+        // The arguments carry a nested object and a brace inside a string on
+        // purpose: `extract_nested_value` counts depth to find the end, so flat
+        // arguments would pass even if it stopped at the first `}` it saw.
+        let calls = [ToolCall {
+            name: "file".into(),
+            arguments: r#"{"path":"a.rs","opts":{"deep":{"n":1}},"note":"a } brace"}"#.into(),
+            id: None,
+        }];
+        let wire = format!("{{\"tool_calls\":{}}}", tool_calls_to_json(&calls));
+        let got = extract_tool_call(&wire).expect("tool call parsed back");
+        assert_eq!(got.name, "file");
+
+        let args: serde_json::Value = serde_json::from_str(&got.arguments).unwrap();
+        assert_eq!(args["path"], "a.rs");
+        assert_eq!(args["opts"]["deep"]["n"], 1, "nested object kept whole");
+        assert_eq!(
+            args["note"], "a } brace",
+            "a brace inside a string isn't an end"
+        );
+    }
+
+    /// A `\u` escape is exactly four hex digits by spec. Tested directly: the
+    /// callers happen to reject short escapes for their own reasons, so this
+    /// guard would otherwise be untested and free to rot.
+    #[test]
+    fn hex_escapes_are_exactly_four_digits() {
+        assert_eq!(take_hex4(&mut "0041".chars()), Some(0x41));
+        assert_eq!(take_hex4(&mut "d83d".chars()), Some(0xD83D));
+        assert_eq!(take_hex4(&mut "AB".chars()), None, "short is not U+00AB");
+        assert_eq!(take_hex4(&mut "".chars()), None);
+        assert_eq!(take_hex4(&mut "ZZZZ".chars()), None, "not hex");
+        // Only the four digits are consumed; the rest of the string is the
+        // caller's to keep reading.
+        let mut rest = "0041rest".chars();
+        assert_eq!(take_hex4(&mut rest), Some(0x41));
+        assert_eq!(rest.as_str(), "rest");
+    }
+
+    fn events(line: &str) -> Vec<StreamEvent> {
+        let mut raw = String::new();
+        events_from_line(line, &mut raw).expect("line should parse")
+    }
+
+    #[test]
+    fn a_content_chunk_becomes_one_content_event() {
+        let got = events(r#"{"message":{"role":"assistant","content":"hi"},"done":false}"#);
+        assert!(matches!(&got[..], [StreamEvent::Content(c)] if c == "hi"));
+    }
+
+    #[test]
+    fn an_empty_content_chunk_emits_nothing() {
+        // Ollama sends these while warming up; forwarding them would flicker
+        // the UI with empty deltas.
+        let got = events(r#"{"message":{"role":"assistant","content":""},"done":false}"#);
+        assert!(got.is_empty(), "got {got:?}");
+    }
+
+    #[test]
+    fn a_thinking_chunk_is_kept_apart_from_content() {
+        let got = events(r#"{"message":{"role":"assistant","thinking":"hmm"},"done":false}"#);
+        assert!(matches!(&got[..], [StreamEvent::Thinking(t)] if t == "hmm"));
+    }
+
+    /// Ollama reports a refusal (no tool support, bad options) as a normal
+    /// 200 line with an `error` field. Missing it ends the turn silently, and
+    /// the user sees an empty reply with no reason.
+    #[test]
+    fn an_error_line_fails_the_stream_with_its_message() {
+        let mut raw = String::new();
+        let err = events_from_line(r#"{"error":"model does not support tools"}"#, &mut raw)
+            .expect_err("must not be swallowed");
+        assert!(
+            err.to_string().contains("does not support tools"),
+            "the reason must survive: {err}"
+        );
+    }
+
+    #[test]
+    fn the_done_chunk_carries_usage_and_closes_the_stream() {
+        let line = r#"{"message":{"role":"assistant","content":""},"done":true,"prompt_eval_count":12,"eval_count":34}"#;
+        let got = events(line);
+        let usage = got.iter().find_map(|e| match e {
+            StreamEvent::Usage(u) => Some(u),
+            _ => None,
+        });
+        let usage = usage.expect("token counts come from the done chunk");
+        assert_eq!((usage.prompt_tokens, usage.completion_tokens), (12, 34));
+        assert!(
+            matches!(got.last(), Some(StreamEvent::Done)),
+            "Done comes last"
+        );
+    }
+
+    #[test]
+    fn a_done_chunk_without_counts_still_closes_the_stream() {
+        let got = events(r#"{"done":true}"#);
+        assert!(
+            !got.iter().any(|e| matches!(e, StreamEvent::Usage(_))),
+            "no counts, so no usage row to invent"
+        );
+        assert!(matches!(got.last(), Some(StreamEvent::Done)));
+    }
+
+    #[test]
+    fn the_raw_response_accumulates_and_ships_with_done() {
+        let mut raw = String::new();
+        events_from_line(r#"{"message":{"content":"a"},"done":false}"#, &mut raw).unwrap();
+        events_from_line(r#"{"message":{"content":"b"},"done":false}"#, &mut raw).unwrap();
+        let got = events_from_line(r#"{"done":true}"#, &mut raw).unwrap();
+
+        let shipped = got.iter().find_map(|e| match e {
+            StreamEvent::ResponseRaw(r) => Some(r),
+            _ => None,
+        });
+        let shipped = shipped.expect("raw response ships on done");
+        assert_eq!(shipped.lines().count(), 3, "every line, in order");
+        assert!(shipped.contains(r#""content":"a""#));
+        assert!(
+            raw.is_empty(),
+            "taken, not cloned, so the next turn starts clean"
+        );
+    }
+
+    #[test]
+    fn a_tool_call_chunk_becomes_a_tool_call_event() {
+        let line = r#"{"message":{"tool_calls":[{"function":{"name":"search","arguments":{"pattern":"fn main"}}}]},"done":false}"#;
+        let got = events(line);
+        let call = got.iter().find_map(|e| match e {
+            StreamEvent::ToolCall(c) => Some(c),
+            _ => None,
+        });
+        let call = call.expect("tool call parsed out of the chunk");
+        assert_eq!(call.name, "search");
+        let args: serde_json::Value = serde_json::from_str(&call.arguments).unwrap();
+        assert_eq!(args["pattern"], "fn main");
+    }
+
+    #[test]
+    fn a_message_history_serialises_to_valid_json() {
+        let history = [
+            Message::system("be brief"),
+            Message::user("hi"),
+            // Tool output with a control character in it, the case that broke
+            // the body before.
+            Message::tool("terminal", "\u{1b}[32mok\u{1b}[0m"),
+        ];
+        let json = format!("[{}]", messages_to_json(&history));
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        assert_eq!(parsed.as_array().unwrap().len(), 3);
+        assert_eq!(parsed[2]["content"], "\u{1b}[32mok\u{1b}[0m");
+    }
 }

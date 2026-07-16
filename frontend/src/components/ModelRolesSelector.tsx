@@ -55,6 +55,7 @@ export default function ModelRolesSelector() {
   const {
     models, setModels, setChatModel, setSummarizeModel,
     currentSession, sessionModels, setSessionModels,
+    isLoading,
   } = useStore();
   const [roles, setRoles] = useState<ModelRole[]>([]);
   const [open, setOpen] = useState(false);
@@ -138,7 +139,7 @@ export default function ModelRolesSelector() {
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button className="btn btn-ghost" style={modelRolesSelectorStyles.trigger} onClick={() => setOpen((o) => !o)} title="Model assignments">
+      <button className="btn btn-ghost" style={modelRolesSelectorStyles.trigger} onClick={() => setOpen((o) => !o)} disabled={isLoading} title={isLoading ? 'Wait for the current turn to finish' : 'Model assignments'}>
         <span style={modelRolesSelectorStyles.dots}>
           {roles.map((r) => (
             <span

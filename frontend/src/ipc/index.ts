@@ -40,6 +40,9 @@ export const ipc = {
   compactChat: () => invoke<CompactResult>('compact_chat'),
 
   getGraph: () => invoke<TreemapNode[]>('get_graph'),
+  /** Lock/unlock the file a node maps to. Returns the path actually locked. */
+  setNodeLocked: (nodeId: number, locked: boolean) =>
+    invoke<string>('set_node_locked', { nodeId, locked }),
   scanWorkspace: () => invoke<void>('scan_workspace'),
   cancelWorkspaceScan: () => invoke<void>('cancel_workspace_scan'),
   summarizeNode: (nodeId: number) => invoke<string>('summarize_node', { nodeId }),
@@ -55,6 +58,7 @@ export const ipc = {
   setModelRole: (role: string, model: string) => invoke<void>('set_model_role', { role, model }),
   setAutoSummarize: (on: boolean) => invoke<void>('set_auto_summarize', { on }),
   setShowCost: (on: boolean) => invoke<void>('set_show_cost', { on }),
+  setShowModel: (on: boolean) => invoke<void>('set_show_model', { on }),
   setWorkspace: (path: string) => invoke<void>('set_workspace', { path }),
   listModels: () => invoke<ModelOption[]>('list_models'),
   listProviders: () => invoke<ProviderInfo[]>('list_providers'),

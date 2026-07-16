@@ -11,9 +11,18 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
     cmd.arg("--line-number")
         .arg("--hidden")
         .arg("--glob")
-        .arg("!.git")
-        .arg(&query);
+        .arg("!.git");
 
+    // Exclude locked files: a match would print their contents. Done as globs
+    // so rg never opens them, rather than filtering output after the fact.
+    for root in &context.workspace_roots {
+        for locked in crate::backend::locks::locked_paths(root).iter() {
+            cmd.arg("--glob").arg(format!("!{locked}"));
+            cmd.arg("--glob").arg(format!("!{locked}/**"));
+        }
+    }
+
+    cmd.arg(&query);
     for root in &context.workspace_roots {
         cmd.arg(root);
     }

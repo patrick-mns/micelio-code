@@ -105,7 +105,9 @@ impl SessionStore {
             );
             -- Append-only usage ledger: one row per assistant turn. Decoupled
             -- from `events` so clearing/deleting a chat never loses usage, and
-            -- each row pins the exact model used for that turn.
+            -- each row pins the exact model used for that turn. `cleared_at` is
+            -- a soft delete, matching `sessions.deleted_at`: rows are hidden by
+            -- being marked, never by being removed.
             CREATE TABLE IF NOT EXISTS usage_log (
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
                 ts                TEXT NOT NULL,
@@ -120,7 +122,8 @@ impl SessionStore {
                 prompt_cost       REAL,
                 completion_cost   REAL,
                 request_raw       TEXT NOT NULL DEFAULT '',
-                response_raw      TEXT NOT NULL DEFAULT ''
+                response_raw      TEXT NOT NULL DEFAULT '',
+                cleared_at        TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);",
         )?;
@@ -135,6 +138,7 @@ impl SessionStore {
             "ALTER TABLE usage_log ADD COLUMN completion_cost REAL",
             "ALTER TABLE usage_log ADD COLUMN request_raw TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE usage_log ADD COLUMN response_raw TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE usage_log ADD COLUMN cleared_at TEXT",
             "ALTER TABLE sessions ADD COLUMN summarize_model TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE sessions ADD COLUMN vision_model TEXT NOT NULL DEFAULT ''",
             // Per-session agent mode (chat/auto/review). Empty = unset, so the
@@ -142,6 +146,23 @@ impl SessionStore {
             "ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT ''",
         ] {
             let _ = conn.execute(stmt, []);
+        }
+
+        // Retire the old global clear. It lived in `meta` as a timestamp that
+        // every usage query compared `ts` against; rows it used to hide must
+        // stay hidden, so stamp them once and drop the key. Doing this at open
+        // means a database only carries one shape of the answer.
+        if let Ok(watermark) = conn.query_row(
+            "SELECT value FROM meta WHERE key = 'usage_cleared_at'",
+            [],
+            |r| r.get::<_, String>(0),
+        ) {
+            conn.execute(
+                "UPDATE usage_log SET cleared_at = ?1
+                 WHERE cleared_at IS NULL AND CAST(ts AS INTEGER) <= CAST(?1 AS INTEGER)",
+                [&watermark],
+            )?;
+            conn.execute("DELETE FROM meta WHERE key = 'usage_cleared_at'", [])?;
         }
 
         Ok(Self { conn })
@@ -390,41 +411,32 @@ impl SessionStore {
         Ok(())
     }
 
-    /// Unix-seconds watermark: usage from events at or before this time is
-    /// excluded from the Usage screen (set by "Clear"). 0 = never cleared.
-    pub fn usage_cleared_at(&self) -> i64 {
-        self.conn
-            .query_row(
-                "SELECT value FROM meta WHERE key = 'usage_cleared_at'",
-                [],
-                |r| r.get::<_, String>(0),
-            )
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0)
-    }
-
-    /// Mark all usage up to now as cleared (the transcript + per-message costs
-    /// are untouched; only the Usage aggregates hide it).
+    /// Hide every ledger row that exists right now from the Usage screen. The
+    /// transcript and per-message costs are untouched; the rows stay in the
+    /// database, just marked.
+    ///
+    /// This is a soft delete on the rows themselves, like `sessions.deleted_at`
+    /// — not a cutoff timestamp the queries compare against. The distinction is
+    /// the point: a cutoff also swallows rows written *after* the click but
+    /// inside the same clock tick, which nobody asked to clear. Marking can only
+    /// ever touch rows that already exist, so a turn landing mid-click survives.
     pub fn clear_usage(&self) -> BackendResult<()> {
         self.conn.execute(
-            "INSERT INTO meta (key, value) VALUES ('usage_cleared_at', ?1)
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            "UPDATE usage_log SET cleared_at = ?1 WHERE cleared_at IS NULL",
             [now_iso()],
         )?;
         Ok(())
     }
 
-    /// Aggregate token/cost usage per model from assistant events, honoring the
-    /// clear watermark and an optional [from, to] Unix-seconds window.
+    /// Aggregate token/cost usage per model from the ledger, skipping cleared
+    /// rows and honoring an optional [from, to] Unix-seconds window.
     /// Returns rows of (model, prompt_tokens, completion_tokens, cost, turns).
     pub fn usage_by_model(
         &self,
         from: Option<i64>,
         to: Option<i64>,
     ) -> BackendResult<Vec<ModelUsage>> {
-        let cleared = self.usage_cleared_at();
-        let from = from.unwrap_or(0).max(cleared);
+        let from = from.unwrap_or(0);
         let to = to.unwrap_or(i64::MAX);
         let mut stmt = self.conn.prepare(
             "SELECT model,
@@ -433,7 +445,8 @@ impl SessionStore {
                     COALESCE(SUM(cost), 0.0),
                     COUNT(*)
              FROM usage_log
-             WHERE CAST(ts AS INTEGER) > ?1
+             WHERE cleared_at IS NULL
+               AND CAST(ts AS INTEGER) > ?1
                AND CAST(ts AS INTEGER) <= ?2
              GROUP BY model",
         )?;
@@ -450,8 +463,8 @@ impl SessionStore {
             .map_err(BackendError::from)
     }
 
-    /// Individual usage-ledger rows (most recent first), honoring the clear
-    /// watermark and an optional [from, to] window. `limit` caps the result.
+    /// Individual usage-ledger rows (most recent first), skipping cleared rows
+    /// and honoring an optional [from, to] window. `limit` caps the result.
     /// The session title is empty if the session was since hard-removed;
     /// soft-deleted sessions still resolve.
     pub fn usage_log(
@@ -460,8 +473,7 @@ impl SessionStore {
         to: Option<i64>,
         limit: i64,
     ) -> BackendResult<Vec<UsageRow>> {
-        let cleared = self.usage_cleared_at();
-        let from = from.unwrap_or(0).max(cleared);
+        let from = from.unwrap_or(0);
         let to = to.unwrap_or(i64::MAX);
         // Lightweight: the heavy request/response/*_raw blobs (up to 16k chars
         // each, ×4) are deliberately excluded — loading them for every row made
@@ -472,7 +484,8 @@ impl SessionStore {
                     u.duration_ms, u.prompt_cost, u.completion_cost
              FROM usage_log u
              LEFT JOIN sessions s ON s.id = u.session_id
-             WHERE CAST(u.ts AS INTEGER) > ?1 AND CAST(u.ts AS INTEGER) <= ?2
+             WHERE u.cleared_at IS NULL
+               AND CAST(u.ts AS INTEGER) > ?1 AND CAST(u.ts AS INTEGER) <= ?2
              ORDER BY u.id DESC
              LIMIT ?3",
         )?;
@@ -532,6 +545,23 @@ impl SessionStore {
 mod tests {
     use super::*;
 
+    /// A store of its own per test. Cargo runs tests as threads in one process,
+    /// so a path keyed only on the pid is shared by every test in the file —
+    /// they'd race on the same database and delete each other's directory.
+    fn store(name: &str) -> (std::path::PathBuf, SessionStore) {
+        let dir = std::env::temp_dir().join(format!("mc-sessions-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = SessionStore::open(&dir.join("sessions.db")).unwrap();
+        (dir, s)
+    }
+
+    /// Fills in the uninteresting half of `log_usage`'s argument list.
+    fn log(s: &SessionStore, session_id: &str, model: &str, prompt: u64, completion: u64) {
+        s.log_usage(
+            session_id, model, prompt, completion, 0.5, 100, "req", "resp", None, None, "", "",
+        );
+    }
+
     #[test]
     fn session_roundtrip() {
         let dir = std::env::temp_dir().join(format!("mc-test-{}", std::process::id()));
@@ -560,6 +590,241 @@ mod tests {
         store.delete_session(&id).unwrap();
         assert!(store.list_sessions().unwrap().is_empty()); // soft-deleted, hidden from list
         assert!(!store.load_events(&id).unwrap().is_empty()); // events preserved
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The ledger is a separate table precisely so wiping a transcript doesn't
+    /// erase what it cost — billing history shouldn't hinge on whether someone
+    /// tidied up a chat.
+    #[test]
+    fn clearing_a_chat_keeps_its_usage() {
+        let (dir, s) = store("clear-events");
+        let id = s.create_session("chat", "gemma").unwrap();
+        s.append_event(&id, "user", None, "hello").unwrap();
+        log(&s, &id, "gemma", 100, 20);
+
+        s.clear_events(&id).unwrap();
+
+        assert_eq!(s.event_count(&id), 0, "transcript wiped");
+        assert_eq!(s.load_history(&id).unwrap(), "[]", "model history reset");
+        let usage = s.usage_by_model(None, None).unwrap();
+        assert_eq!(usage, vec![("gemma".into(), 100, 20, 0.5, 1)], "usage kept");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn deleting_a_session_keeps_its_usage() {
+        let (dir, s) = store("delete-session");
+        let id = s.create_session("chat", "gemma").unwrap();
+        log(&s, &id, "gemma", 100, 20);
+
+        s.delete_session(&id).unwrap();
+
+        assert!(
+            s.list_sessions().unwrap().is_empty(),
+            "hidden from the list"
+        );
+        let usage = s.usage_by_model(None, None).unwrap();
+        assert_eq!(usage, vec![("gemma".into(), 100, 20, 0.5, 1)], "usage kept");
+        // Soft delete, so the ledger can still name the session it came from.
+        let rows = s.usage_log(None, None, 10).unwrap();
+        assert_eq!(rows[0].session_title, "chat");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// `role` picks a column name that gets formatted straight into SQL, so the
+    /// whitelist in `model_column` is the only thing between a caller and
+    /// injection. Both directions must refuse anything off the list.
+    #[test]
+    fn an_unknown_model_role_reaches_neither_sql_nor_state() {
+        let (dir, s) = store("bad-role");
+        let id = s.create_session("chat", "gemma").unwrap();
+
+        for role in [
+            "",
+            "bogus",
+            "model",
+            "model = 'x' --",
+            "model; DROP TABLE sessions",
+        ] {
+            assert!(
+                s.set_session_model(&id, role, "evil").is_ok(),
+                "role {role:?} should be an inert no-op, not an error"
+            );
+            assert_eq!(s.session_model(&id, role), "", "role {role:?} read back");
+        }
+
+        // The table is intact and the real column untouched.
+        assert_eq!(s.session_model(&id, "chat"), "gemma");
+        assert_eq!(s.list_sessions().unwrap().len(), 1);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn each_model_role_is_pinned_separately() {
+        let (dir, s) = store("roles");
+        let id = s.create_session("chat", "gemma").unwrap();
+
+        s.set_session_model(&id, "summarize", "phi").unwrap();
+        s.set_session_model(&id, "vision", "llava").unwrap();
+
+        assert_eq!(s.session_model(&id, "chat"), "gemma", "chat untouched");
+        assert_eq!(s.session_model(&id, "summarize"), "phi");
+        assert_eq!(s.session_model(&id, "vision"), "llava");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn session_mode_is_empty_until_pinned() {
+        let (dir, s) = store("mode");
+        let id = s.create_session("chat", "gemma").unwrap();
+
+        // Empty means "unset" — the caller falls back to the global default,
+        // so this must not report some invented mode.
+        assert_eq!(s.session_mode(&id), "");
+        s.set_session_mode(&id, "review").unwrap();
+        assert_eq!(s.session_mode(&id), "review");
+        s.set_session_mode(&id, "").unwrap();
+        assert_eq!(s.session_mode(&id), "", "back to the default");
+
+        assert_eq!(s.session_mode("no-such-session"), "", "unknown id is empty");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn usage_without_a_model_is_dropped() {
+        let (dir, s) = store("no-model");
+        let id = s.create_session("chat", "gemma").unwrap();
+
+        // A turn that never reached a provider has nothing to attribute cost
+        // to; logging it would invent a nameless row in the ledger.
+        log(&s, &id, "", 100, 20);
+        assert!(s.usage_by_model(None, None).unwrap().is_empty());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn clearing_usage_hides_what_came_before() {
+        let (dir, s) = store("clear-usage");
+        let id = s.create_session("chat", "gemma").unwrap();
+        log(&s, &id, "gemma", 100, 20);
+        assert_eq!(s.usage_by_model(None, None).unwrap().len(), 1, "premise");
+
+        s.clear_usage().unwrap();
+
+        assert!(s.usage_by_model(None, None).unwrap().is_empty());
+        assert!(s.usage_log(None, None, 10).unwrap().is_empty());
+        // Hidden, not destroyed — the row is still there to be recovered.
+        let still_there: i64 = s
+            .conn
+            .query_row("SELECT COUNT(*) FROM usage_log", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(still_there, 1, "cleared rows are marked, not deleted");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The bug that killed the old timestamp cutoff. A turn finishing in the
+    /// same wall-clock second as the click landed on `ts == cutoff`, and the
+    /// filter was `ts > cutoff`, so it vanished — nobody ever asked to clear a
+    /// row that didn't exist yet. Marking rows makes it unrepresentable.
+    #[test]
+    fn usage_logged_after_clearing_survives_even_in_the_same_second() {
+        let (dir, s) = store("clear-same-second");
+        let id = s.create_session("chat", "gemma").unwrap();
+        log(&s, &id, "gemma", 100, 20);
+
+        s.clear_usage().unwrap();
+        log(&s, &id, "gemma", 7, 3); // no sleep: same second as the clear
+
+        let usage = s.usage_by_model(None, None).unwrap();
+        assert_eq!(
+            usage,
+            vec![("gemma".into(), 7, 3, 0.5, 1)],
+            "only the turn from after the clear, and it is not lost"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Upgrading a database that had already been cleared must not resurrect
+    /// the usage it was hiding.
+    #[test]
+    fn the_old_timestamp_cutoff_is_migrated_into_marks() {
+        let (dir, _s) = store("migrate-cutoff");
+        let db = dir.join("sessions.db");
+
+        // Rebuild the pre-migration shape by hand: a ledger row, and the clear
+        // recorded in `meta` the way the old code wrote it.
+        {
+            let c = rusqlite::Connection::open(&db).unwrap();
+            c.execute(
+                "INSERT INTO usage_log (ts, session_id, model, prompt_tokens, completion_tokens)
+                 VALUES ('1000', 'sid', 'gemma', 100, 20)",
+                [],
+            )
+            .unwrap();
+            c.execute("UPDATE usage_log SET cleared_at = NULL", [])
+                .unwrap();
+            c.execute(
+                "INSERT INTO meta (key, value) VALUES ('usage_cleared_at', '2000')",
+                [],
+            )
+            .unwrap();
+        }
+
+        let s = SessionStore::open(&db).unwrap();
+
+        assert!(
+            s.usage_by_model(None, None).unwrap().is_empty(),
+            "usage hidden before the upgrade must stay hidden"
+        );
+        let key: i64 = s
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM meta WHERE key = 'usage_cleared_at'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(key, 0, "the old cutoff key is retired, not left to rot");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Previews are capped by character, not by byte: `s[..CAP]` would panic on
+    /// a request that happens to put a multi-byte character on the boundary.
+    #[test]
+    fn usage_previews_are_capped_without_splitting_characters() {
+        let (dir, s) = store("clip");
+        let id = s.create_session("chat", "gemma").unwrap();
+
+        let huge = "é".repeat(20_000);
+        s.log_usage(
+            &id, "gemma", 1, 1, 0.0, 1, &huge, &huge, None, None, &huge, &huge,
+        );
+
+        let row_id = s.usage_log(None, None, 1).unwrap()[0].id;
+        let (req, resp, req_raw, resp_raw) = s.usage_raw(row_id).unwrap();
+        for (what, got) in [
+            ("request", &req),
+            ("response", &resp),
+            ("request_raw", &req_raw),
+            ("response_raw", &resp_raw),
+        ] {
+            assert_eq!(got.chars().count(), 16_000, "{what} capped by chars");
+            assert!(
+                got.chars().all(|c| c == 'é'),
+                "{what} kept whole characters"
+            );
+        }
 
         let _ = std::fs::remove_dir_all(dir);
     }

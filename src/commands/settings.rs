@@ -12,6 +12,7 @@ pub struct Settings {
     pub provider: String,
     pub auto_summarize: bool,
     pub show_cost: bool,
+    pub show_model: bool,
 }
 
 #[derive(Serialize)]
@@ -68,6 +69,7 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<Settings, String
         provider,
         auto_summarize: config::auto_summarize(),
         show_cost: config::show_cost(),
+        show_model: config::show_model(),
     })
 }
 
@@ -80,6 +82,12 @@ pub async fn set_auto_summarize(on: bool) -> Result<(), String> {
 #[tauri::command]
 pub async fn set_show_cost(on: bool) -> Result<(), String> {
     config::save_show_cost(on);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_show_model(on: bool) -> Result<(), String> {
+    config::save_show_model(on);
     Ok(())
 }
 

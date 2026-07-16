@@ -33,6 +33,7 @@ export default function ModeSelector() {
   const {
     agentMode, setAgentMode,
     currentSession, sessionModes, setSessionModeLocal,
+    isLoading,
   } = useStore();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -75,7 +76,8 @@ export default function ModeSelector() {
         className="btn btn-ghost"
         style={styles.trigger}
         onClick={() => setOpen((o) => !o)}
-        title="Agent mode"
+        disabled={isLoading}
+        title={isLoading ? 'Wait for the current turn to finish' : 'Agent mode'}
       >
         <CurrentIcon size={15} color={current.color} weight="fill" />
         <span style={styles.triggerLabel}>{current.label}</span>

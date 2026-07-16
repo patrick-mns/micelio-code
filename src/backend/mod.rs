@@ -6,6 +6,7 @@ pub mod graph_test;
 pub mod hierarchy;
 pub mod knowledge;
 pub mod llm;
+pub mod locks;
 pub mod mcp;
 pub mod ollama;
 pub mod openai_compat;

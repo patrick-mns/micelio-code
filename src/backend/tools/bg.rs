@@ -169,7 +169,7 @@ fn status_label(s: BgStatus) -> String {
 pub fn snapshot() -> Vec<BgSnapshot> {
     let reg = registry().lock().unwrap();
     let mut tasks: Vec<(&u32, &BgTask)> = reg.iter().collect();
-    tasks.sort_by(|(_, a), (_, b)| b.started_at.cmp(&a.started_at));
+    tasks.sort_by_key(|(_, t)| std::cmp::Reverse(t.started_at));
     tasks
         .into_iter()
         .map(|(pid, t)| BgSnapshot {

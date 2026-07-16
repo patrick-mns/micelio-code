@@ -37,6 +37,11 @@ const TOOL_RESULT_MAX_CHARS: usize = 8_000;
 const CONTEXT_TOKEN_BUDGET: usize = 24_000;
 /// Most recent tool results to keep verbatim during compaction.
 const KEEP_RECENT_TOOL_RESULTS: usize = 6;
+/// Retuning the window above is fine; zeroing it is not — that would elide
+/// every tool result, including the one the model just asked for, leaving it to
+/// answer from nothing. Checked here at compile time rather than in a test,
+/// since the value is known then.
+const _: () = assert!(KEEP_RECENT_TOOL_RESULTS > 0);
 
 /// Drive the whole agent turn on a worker thread. `history` already has the
 /// system prompt prepended and the user turn appended.
@@ -1007,7 +1012,15 @@ fn spawn_auto_summary(app: &AppHandle, workspace_root: std::path::PathBuf, files
         let summarize_model = app.state::<AppState>().summarize_model();
         let provider = llm::provider_for_model(&summarize_model);
 
+        let locks = crate::backend::locks::locked_filter(&workspace_root);
+
         for path in files {
+            // Defense in depth: writes to a locked file are already blocked, so
+            // it shouldn't land here — but this path ships content to a model,
+            // so it re-checks rather than trusting the caller.
+            if locks.is_locked(&path) {
+                continue;
+            }
             let full = workspace_root.join(&path);
             let Ok(file_text) = std::fs::read_to_string(&full) else {
                 continue;
@@ -1163,4 +1176,229 @@ fn ceil_char_boundary(s: &str, mut i: usize) -> usize {
         i += 1;
     }
     i
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// "aé" is 3 bytes — `a` at 0, `é` spanning 1..3 — so byte 2 sits inside a
+    /// character. Slicing there would panic, which is the whole reason these
+    /// two helpers exist.
+    const MIXED: &str = "aé";
+
+    #[test]
+    fn char_boundary_helpers_step_off_the_middle_of_a_character() {
+        assert!(!MIXED.is_char_boundary(2), "test premise");
+        assert_eq!(floor_char_boundary(MIXED, 2), 1, "floor walks back");
+        assert_eq!(ceil_char_boundary(MIXED, 2), 3, "ceil walks forward");
+
+        // Already on a boundary: both are identities.
+        for i in [0, 1, 3] {
+            assert_eq!(floor_char_boundary(MIXED, i), i);
+            assert_eq!(ceil_char_boundary(MIXED, i), i);
+        }
+    }
+
+    #[test]
+    fn char_boundary_helpers_clamp_past_the_end() {
+        // Past-the-end must clamp rather than run off: floor would underflow
+        // looking for a boundary that isn't there, ceil would overrun.
+        assert_eq!(floor_char_boundary(MIXED, 99), MIXED.len());
+        assert_eq!(ceil_char_boundary(MIXED, 99), MIXED.len());
+        assert_eq!(floor_char_boundary("", 0), 0);
+        assert_eq!(ceil_char_boundary("", 5), 0);
+    }
+
+    #[test]
+    fn short_tool_results_are_kept_whole() {
+        let s = "a".repeat(TOOL_RESULT_MAX_CHARS);
+        match truncate_for_context(&s) {
+            ToolResultContent::Full(f) => assert_eq!(f, s, "at the limit, nothing is cut"),
+            other => panic!("expected Full, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn long_tool_results_keep_the_head_and_the_tail() {
+        let s: String = (0..20_000)
+            .map(|i| ((i % 26) as u8 + b'a') as char)
+            .collect();
+        match truncate_for_context(&s) {
+            ToolResultContent::Truncated { head, tail } => {
+                assert!(s.starts_with(&head), "head comes from the start");
+                assert!(s.ends_with(&tail), "tail comes from the end");
+
+                // Pin both sizes. `starts_with`/`ends_with` alone are far too
+                // weak — every string ends with "", so an empty tail would sail
+                // past them. A boundary nudge can shave at most one character.
+                let want_head = TOOL_RESULT_MAX_CHARS * 3 / 4;
+                let want_tail = TOOL_RESULT_MAX_CHARS - want_head;
+                assert!(
+                    head.len() <= want_head && head.len() + 4 >= want_head,
+                    "head should be ~{want_head} bytes, got {}",
+                    head.len()
+                );
+                assert!(
+                    tail.len() <= want_tail && tail.len() + 4 >= want_tail,
+                    "tail should be ~{want_tail} bytes, got {}",
+                    tail.len()
+                );
+
+                // The two halves must not overlap and re-feed the same bytes.
+                assert!(s.len() - tail.len() >= head.len(), "head and tail overlap");
+            }
+            other => panic!("expected Truncated, got {other:?}"),
+        }
+    }
+
+    /// A tool result is arbitrary bytes from disk or a command — it can easily
+    /// put a multi-byte character exactly where the cut lands.
+    #[test]
+    fn truncating_never_splits_a_character() {
+        // One leading ASCII byte offsets every following 2-byte `é`, so the
+        // cut points land mid-character instead of aligning by luck.
+        let s = format!("a{}", "é".repeat(TOOL_RESULT_MAX_CHARS));
+        match truncate_for_context(&s) {
+            ToolResultContent::Truncated { head, tail } => {
+                // Reaching here at all means no panic. Both halves must still
+                // be the characters that were there, not severed bytes.
+                assert!(head.chars().all(|c| c == 'a' || c == 'é'));
+                assert!(tail.chars().all(|c| c == 'é'));
+            }
+            other => panic!("expected Truncated, got {other:?}"),
+        }
+    }
+
+    /// Prose, not a repeated character: `"x".repeat(20_000)` is only ~2.5k
+    /// tokens because the tokenizer collapses runs, so a history built from it
+    /// silently stays under budget and `compact_history` returns before doing
+    /// anything. This is ~4k tokens per message, close to real tool output.
+    fn big_tool_msg(name: &str) -> Message {
+        Message::tool(
+            name,
+            &"the quick brown fox jumps over the lazy dog ".repeat(450),
+        )
+    }
+
+    /// Guards the premise of every compaction test below: if these histories
+    /// ever slip back under the budget, `compact_history` no-ops and the tests
+    /// would keep passing while testing nothing.
+    fn assert_over_budget(h: &[Message]) {
+        let total: usize = h
+            .iter()
+            .map(|m| crate::backend::tokens::count_tokens(&m.content))
+            .sum();
+        assert!(
+            total > CONTEXT_TOKEN_BUDGET,
+            "fixture is under budget ({total} <= {CONTEXT_TOKEN_BUDGET}); compaction wouldn't run"
+        );
+    }
+
+    #[test]
+    fn compaction_leaves_a_small_history_alone() {
+        let mut h = vec![Message::user("hi"), Message::tool("file", "small")];
+        let before = h.clone();
+        compact_history(&mut h);
+        assert_eq!(h.len(), before.len());
+        assert_eq!(
+            h[1].content, before[1].content,
+            "under budget, nothing elided"
+        );
+    }
+
+    /// A long conversation of small tool calls: more results than the
+    /// keep-recent window, but nowhere near the token budget. The budget check
+    /// is the only thing standing between these and elision — without it, a
+    /// chatty-but-cheap session would lose its history for no reason.
+    #[test]
+    fn compaction_leaves_many_small_results_alone_while_under_budget() {
+        let mut h: Vec<Message> = (0..KEEP_RECENT_TOOL_RESULTS + 5)
+            .map(|i| Message::tool(&format!("t{i}"), "a short result, past the marker length"))
+            .collect();
+        let before = h.clone();
+        compact_history(&mut h);
+        for (i, m) in h.iter().enumerate() {
+            assert_eq!(
+                m.content, before[i].content,
+                "message {i} elided under budget"
+            );
+            assert!(
+                m.tool_content.is_none(),
+                "message {i} marked elided under budget"
+            );
+        }
+    }
+
+    #[test]
+    fn compaction_elides_old_tool_results_and_keeps_the_recent_ones() {
+        // Written against the constant rather than a literal, so retuning the
+        // window doesn't break this — it's a knob, not a contract. The one
+        // value that isn't tuning, zero, is ruled out where it's declared.
+        let total = KEEP_RECENT_TOOL_RESULTS + 4;
+        let mut h: Vec<Message> = (0..total).map(|i| big_tool_msg(&format!("t{i}"))).collect();
+        let kept_len = h[total - 1].content.len();
+        assert_over_budget(&h);
+        compact_history(&mut h);
+
+        // Messages themselves must survive: dropping one would break the
+        // tool_call/tool_result pairing providers require.
+        assert_eq!(h.len(), total, "no message was removed");
+
+        for (i, m) in h.iter().enumerate() {
+            if i < total - KEEP_RECENT_TOOL_RESULTS {
+                assert!(
+                    matches!(m.tool_content, Some(ToolResultContent::Elided)),
+                    "message {i} should be elided"
+                );
+                assert_eq!(m.content, "[elided]");
+            } else {
+                assert_eq!(
+                    m.content.len(),
+                    kept_len,
+                    "recent message {i} kept verbatim"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn compaction_spares_non_tool_messages() {
+        let mut h = vec![Message::user(
+            &"a user turn that is quite wordy ".repeat(400),
+        )];
+        h.extend((0..KEEP_RECENT_TOOL_RESULTS + 2).map(|i| big_tool_msg(&format!("t{i}"))));
+        let user_before = h[0].content.clone();
+        assert_over_budget(&h);
+        compact_history(&mut h);
+        assert_eq!(h[0].content, user_before, "a user turn is never elided");
+    }
+
+    #[test]
+    fn compaction_skips_results_smaller_than_the_marker() {
+        // Replacing a 2-byte result with "[elided]" would *grow* the history.
+        let mut h = vec![Message::tool("tiny", "ok")];
+        h.extend((0..KEEP_RECENT_TOOL_RESULTS + 2).map(|i| big_tool_msg(&format!("t{i}"))));
+        assert_over_budget(&h);
+        compact_history(&mut h);
+        assert_eq!(h[0].content, "ok", "short result left as-is");
+        assert!(h[0].tool_content.is_none());
+    }
+
+    #[test]
+    fn pop_trailing_system_removes_only_a_trailing_nudge() {
+        let mut h = vec![Message::user("q"), Message::system("nudge")];
+        pop_trailing_system(&mut h);
+        assert_eq!(h.len(), 1, "the nudge is gone");
+        assert_eq!(h[0].role, "user");
+
+        // A system message that isn't last (the prompt) must stay.
+        let mut h = vec![Message::system("prompt"), Message::user("q")];
+        pop_trailing_system(&mut h);
+        assert_eq!(h.len(), 2, "the system prompt is not a trailing nudge");
+
+        let mut empty: Vec<Message> = vec![];
+        pop_trailing_system(&mut empty);
+        assert!(empty.is_empty());
+    }
 }

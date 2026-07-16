@@ -193,6 +193,84 @@ impl KnowledgeGraph {
         json
     }
 
+    /// Stands in for a locked node's summary. The model is told the file exists
+    /// and why it can't read it, so it stops guessing at the contents or
+    /// recreating a file it thinks is missing.
+    const LOCKED_SUMMARY: &'static str =
+        "[locked by the user — this file exists but its contents are not readable]";
+
+    /// Whether a node's content belongs to a locked path. Symbol nodes
+    /// (functions, classes) attach to the file they live in, so locking the file
+    /// covers them too; File/Directory nodes carry the path in their label.
+    fn node_is_locked(node: &GraphNode, locks: &crate::backend::locks::LockedFilter) -> bool {
+        if let Some(a) = &node.attachment {
+            if locks.is_locked(&a.path) {
+                return true;
+            }
+        }
+        locks.is_locked(&node.label)
+    }
+
+    /// Serialize for the model's context. A locked file stays on the map — the
+    /// model should know it exists, so it doesn't recreate it or guess around
+    /// it — but nothing derived from its contents survives: the summary is
+    /// replaced by a marker, and the symbols parsed out of the file are dropped
+    /// (a function name like `decrypt_master_key` is content).
+    pub fn serialize_for_model(&self, locks: &crate::backend::locks::LockedFilter) -> String {
+        if locks.is_empty() {
+            return self.serialize(); // nothing locked — reuse the cache
+        }
+        let locked: HashSet<usize> = self
+            .nodes
+            .iter()
+            .filter(|n| Self::node_is_locked(n, locks))
+            .map(|n| n.id)
+            .collect();
+        if locked.is_empty() {
+            return self.serialize();
+        }
+
+        // A symbol carries a span; the file or directory node it was parsed out
+        // of does not. Only the symbols are dropped — their names are content.
+        let hidden: HashSet<usize> = self
+            .nodes
+            .iter()
+            .filter(|n| locked.contains(&n.id))
+            .filter(|n| n.attachment.as_ref().is_some_and(|a| a.span.is_some()))
+            .map(|n| n.id)
+            .collect();
+
+        let visible = KnowledgeGraph {
+            nodes: self
+                .nodes
+                .iter()
+                .filter(|n| !hidden.contains(&n.id))
+                .map(|n| {
+                    if !locked.contains(&n.id) {
+                        return n.clone();
+                    }
+                    let mut redacted = n.clone();
+                    redacted.summary = Self::LOCKED_SUMMARY.to_string();
+                    // The hash is over content the model can't see; leaving it
+                    // would only invite a staleness comparison it can't make.
+                    redacted.content_hash = None;
+                    redacted
+                })
+                .collect(),
+            // Edges into dropped symbols would dangle; edges to the locked file
+            // itself stay, since that node is still there.
+            edges: self
+                .edges
+                .iter()
+                .filter(|e| !hidden.contains(&e.from) && !hidden.contains(&e.to))
+                .cloned()
+                .collect(),
+            next_id: self.next_id,
+            json_cache: RefCell::new(None),
+        };
+        serde_json::to_string(&visible).unwrap_or_else(|_| "{}".into())
+    }
+
     fn invalidate_cache(&mut self) {
         *self.json_cache.borrow_mut() = None;
     }
@@ -756,6 +834,75 @@ fn find_word(source: &str, word: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The graph JSON is the model's map of the workspace. A locked file stays
+    /// on the map by name — the model needs to know it's there — but everything
+    /// derived from its contents must be gone.
+    #[test]
+    fn serialize_for_model_keeps_locked_file_but_redacts_its_content() {
+        let root = std::env::temp_dir().join(format!("mc-graph-locks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let mut g = KnowledgeGraph::new();
+        let public = g.add_with_desc("src/public.rs", "public summary", NodeKind::File);
+        g.set_attachment(public, "src/public.rs", None, 10);
+        let secret = g.add_with_desc("src/secret.rs", "SECRET SUMMARY", NodeKind::File);
+        g.set_attachment(secret, "src/secret.rs", None, 10);
+        // A symbol inside the locked file: its very name is content, so it goes.
+        let sym = g.add_with_desc(
+            "src/secret.rs::api_key",
+            "returns the key",
+            NodeKind::Function,
+        );
+        g.set_attachment(sym, "src/secret.rs", Some((1, 3)), 5);
+        g.connect_kind(secret, sym, EdgeKind::Contains);
+
+        crate::backend::locks::set_locked(&root, "src/secret.rs", true).unwrap();
+        let locks = crate::backend::locks::locked_filter(&root);
+        let json = g.serialize_for_model(&locks);
+
+        assert!(
+            json.contains("src/public.rs"),
+            "unlocked node still present"
+        );
+        // The file is still on the map, and says why it can't be read.
+        assert!(
+            json.contains("src/secret.rs"),
+            "a locked file must stay visible: {json}"
+        );
+        assert!(
+            json.contains("locked by the user"),
+            "no reason given: {json}"
+        );
+        // ...but nothing that came out of reading it.
+        assert!(!json.contains("SECRET SUMMARY"), "locked summary leaked");
+        assert!(!json.contains("api_key"), "symbol of a locked file leaked");
+
+        // The symbol is gone and its edge with it, rather than left dangling.
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let nodes = parsed["nodes"].as_array().unwrap();
+        assert_eq!(nodes.len(), 2, "only the two file nodes remain");
+        let edges = parsed["edges"].as_array().unwrap();
+        assert!(edges.is_empty(), "edges to dropped symbols must go");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn serialize_for_model_matches_serialize_when_nothing_is_locked() {
+        let root = std::env::temp_dir().join(format!("mc-graph-nolocks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let mut g = KnowledgeGraph::new();
+        let id = g.add_with_desc("src/a.rs", "sum", NodeKind::File);
+        g.set_attachment(id, "src/a.rs", None, 4);
+
+        let locks = crate::backend::locks::locked_filter(&root);
+        assert_eq!(g.serialize_for_model(&locks), g.serialize());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn is_minified_flags_long_lines_only() {

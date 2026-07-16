@@ -39,6 +39,80 @@ const itemWrapStyle: CSSProperties = {
   boxSizing: 'border-box',
 };
 
+// Data Header/Footer/EmptyPlaceholder need, threaded through Virtuoso's
+// `context` prop instead of closures. Virtuoso remounts a `components` entry
+// whenever its function reference changes — closing over fast-changing props
+// (streaming updates on every token) would recreate Footer every render and
+// reset any local state inside it, e.g. collapsed tool groups mid-stream.
+interface ListContext {
+  streaming: StreamState | null;
+  elapsed: number;
+  liveTokens: number;
+  liveContentLen: number;
+  prefs: Prefs;
+  StreamStatus: ComponentType<StreamStatusComponentProps>;
+}
+
+function ListHeader() {
+  // Old layout: 12px scroller padding + 24px column padding on top.
+  return <div style={{ height: 36 }} />;
+}
+
+function ListEmptyPlaceholder({ context }: { context: ListContext }) {
+  if (context.streaming) return null;
+  return (
+    <div style={{ ...itemWrapStyle, height: '100%', display: 'flex', flexDirection: 'column', paddingTop: 24 }}>
+      <div style={styles.empty}>
+        <div
+          style={{
+            ...styles.emptyText,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            alignItems: 'center',
+          }}
+        >
+          <div>How can I help you today?</div>
+          <span style={{ fontSize: 12, opacity: 0.65, fontWeight: 'normal' }}>
+            Type below or click New Session to begin.
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Rendered outside the item list, so it needs its own centering wrapper.
+// Bottom breathing room matches the old scroller's 12px padding.
+function ListFooter({ context }: { context: ListContext }) {
+  const { streaming, elapsed, liveTokens, liveContentLen, prefs, StreamStatus } = context;
+  return (
+    <div style={{ ...itemWrapStyle, paddingBottom: 12 }}>
+      {streaming && (
+        <div style={styles.msgRow}>
+          <div style={{ width: '100%' }}>
+            <StreamStatus
+              streaming={streaming}
+              elapsed={elapsed}
+              liveTokens={liveTokens}
+              liveContentLen={liveContentLen}
+              prefs={prefs}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Module-scope, stable reference — Virtuoso never sees a "new" Header/Footer/
+// EmptyPlaceholder across renders, so it never remounts them mid-stream.
+const listComponents = {
+  Header: ListHeader,
+  EmptyPlaceholder: ListEmptyPlaceholder,
+  Footer: ListFooter,
+};
+
 export default function MessageList({
   renderedMessages,
   hoveredKey,
@@ -64,6 +138,7 @@ export default function MessageList({
       initialTopMostItemIndex={Math.max(0, items.length - 1)}
       increaseViewportBy={{ top: 400, bottom: 400 }}
       followOutput={(isAtBottom) => (isAtBottom ? 'smooth' : false)}
+      context={{ streaming, elapsed, liveTokens, liveContentLen, prefs, StreamStatus }}
       onMouseMove={(e) => {
         const msgEl = (e.target as HTMLElement).closest('[data-msg-key]');
         setHoveredKey(msgEl ? (msgEl as HTMLElement).dataset.msgKey ?? null : null);
@@ -103,50 +178,7 @@ export default function MessageList({
           );
         }
       }}
-      components={{
-        // Old layout: 12px scroller padding + 24px column padding on top.
-        Header: () => <div style={{ height: 36 }} />,
-        EmptyPlaceholder: () =>
-          !streaming ? (
-            <div style={{ ...itemWrapStyle, height: '100%', display: 'flex', flexDirection: 'column', paddingTop: 24 }}>
-              <div style={styles.empty}>
-                <div
-                  style={{
-                    ...styles.emptyText,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 6,
-                    alignItems: 'center',
-                  }}
-                >
-                  <div>How can I help you today?</div>
-                  <span style={{ fontSize: 12, opacity: 0.65, fontWeight: 'normal' }}>
-                    Type below or click New Session to begin.
-                  </span>
-                </div>
-              </div>
-            </div>
-          ) : null,
-        // Rendered outside the item list, so it needs its own centering wrapper.
-        // Bottom breathing room matches the old scroller's 12px padding.
-        Footer: () => (
-          <div style={{ ...itemWrapStyle, paddingBottom: 12 }}>
-            {streaming && (
-              <div style={styles.msgRow}>
-                <div style={{ width: '100%' }}>
-                  <StreamStatus
-                    streaming={streaming}
-                    elapsed={elapsed}
-                    liveTokens={liveTokens}
-                    liveContentLen={liveContentLen}
-                    prefs={prefs}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        ),
-      }}
+      components={listComponents}
     />
   );
 }

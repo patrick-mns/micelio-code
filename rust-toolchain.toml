@@ -1,0 +1,14 @@
+# Pins the toolchain for everyone, CI included.
+#
+# CI runs `clippy -D warnings`, so without a pin every Rust release can turn the
+# build red on code nobody touched: a new lint ships, the runner picks it up on
+# its own, and a green branch fails on the next push. That happened the first
+# time this CI ran — local clippy was 1.94, the runner had 1.96, and 1.96 added
+# `unnecessary_sort_by`.
+#
+# With a pin, upgrading is a commit: bump this, fix what the new lints find, and
+# land it together. rustup reads this file automatically, so a plain
+# `cargo clippy` locally is the same one CI runs.
+[toolchain]
+channel = "1.96.0"
+components = ["clippy", "rustfmt"]

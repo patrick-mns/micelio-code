@@ -11,6 +11,8 @@ export interface Usage {
   prompt_cost?: number;
   completion_cost?: number;
   raw?: string;
+  /** Model that produced this usage. Absent on live stream events. */
+  model?: string;
 }
 
 export interface ChatMessage {
@@ -129,6 +131,7 @@ export interface Settings {
   provider: string;
   auto_summarize: boolean;
   show_cost: boolean;
+  show_model: boolean;
 }
 
 export interface ModelOption {
@@ -230,6 +233,8 @@ export interface TreemapNode {
   active: boolean;
   summary: string;
   path: string | null;
+  /** User locked this path — the agent can't see it. */
+  locked: boolean;
   children: TreemapNode[];
 }
 

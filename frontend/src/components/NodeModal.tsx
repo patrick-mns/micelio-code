@@ -1,46 +1,26 @@
 import React, { useEffect, useState, type CSSProperties } from 'react';
 import { nodeModalStyles } from '@/utils/theme-styles';
 import { fmtCount } from '@/utils/formatters';
-import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import rust from 'react-syntax-highlighter/dist/esm/languages/prism/rust';
-import javascript from 'react-syntax-highlighter/dist/esm/languages/prism/javascript';
-import jsx from 'react-syntax-highlighter/dist/esm/languages/prism/jsx';
-import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript';
-import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
-import python from 'react-syntax-highlighter/dist/esm/languages/prism/python';
-import go from 'react-syntax-highlighter/dist/esm/languages/prism/go';
-import json from 'react-syntax-highlighter/dist/esm/languages/prism/json';
-import toml from 'react-syntax-highlighter/dist/esm/languages/prism/toml';
-import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
-import markdown from 'react-syntax-highlighter/dist/esm/languages/prism/markdown';
-import markup from 'react-syntax-highlighter/dist/esm/languages/prism/markup';
-import css from 'react-syntax-highlighter/dist/esm/languages/prism/css';
-import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { X, Sparkle, Warning } from '@phosphor-icons/react';
+import { X, Sparkle, Warning, Lock, LockOpen } from '@phosphor-icons/react';
 import { ipc } from '@/ipc';
 import { useStore } from '@/store';
 import { theme, KIND_COLORS } from '@/theme';
 import type { NodeCode, TreemapNode } from '@/types';
 import Modal from '@/components/Modal';
-
-// Register only the languages the backend's lang_from_path can emit, so the
-// modal doesn't pull Prism's entire language set into the bundle.
-for (const [name, def] of Object.entries({
-  rust, javascript, jsx, typescript, tsx, python, go, json, toml, yaml, markdown, markup, css, bash,
-})) {
-  SyntaxHighlighter.registerLanguage(name, def);
-}
+import CodeViewer from '@/components/CodeViewer';
 
 function kindColor(kind: string): string {
   return KIND_COLORS[kind] ?? '#2563eb';
 }
 
-// Above this, inline syntax highlighting (Prism) blocks the main thread long
-// enough to freeze the window, so we show a notice instead of rendering.
-const MAX_PREVIEW_CHARS = 80_000;
+// The viewer virtualizes the DOM, so line count no longer drives the cost —
+// what's left is Prism tokenizing the whole file, which is linear and cheap
+// (~120ms for 600k chars). This cap is really a guard against the pathological
+// case virtualizing can't help: a minified bundle, where the whole file is one
+// enormous line and so a single unsplittable row.
+const MAX_PREVIEW_CHARS = 400_000;
 
 interface NodeModalProps {
   node: TreemapNode;
@@ -52,13 +32,15 @@ type CodeState = 'loading' | 'ready' | 'none';
 // Centered modal for an inspected graph node: metadata + an in-app code
 // preview (the function's span, or the whole file) + an on-demand summary.
 export default function NodeModal({ node, onClose }: NodeModalProps) {
-  const { summarizeModel } = useStore();
+  const { summarizeModel, refreshGraph } = useStore();
   const [code, setCode] = useState<NodeCode | null>(null);
   const [codeState, setCodeState] = useState<CodeState>('loading');
   const [summarizing, setSummarizing] = useState(false);
   const [summary, setSummary] = useState(node.summary || '');
   const [summaryError, setSummaryError] = useState('');
   const [summaryStale, setSummaryStale] = useState(false);
+  const [locked, setLocked] = useState(!!node.locked);
+  const [locking, setLocking] = useState(false);
 
   // Fetch the node's code. Concept/note nodes have none — fall back gracefully.
   useEffect(() => {
@@ -77,6 +59,23 @@ export default function NodeModal({ node, onClose }: NodeModalProps) {
       .catch(() => { if (alive) setCodeState('none'); });
     return () => { alive = false; };
   }, [node.id]);
+
+  // Locking is file-level: a function node locks the file it lives in, so the
+  // treemap has to re-read every node's state, not just this one.
+  const toggleLock = async () => {
+    setLocking(true);
+    try {
+      const next = !locked;
+      await ipc.setNodeLocked(node.id, next);
+      setLocked(next);
+      node.locked = next;
+      await refreshGraph();
+    } catch (e) {
+      console.error('failed to toggle lock', e);
+    } finally {
+      setLocking(false);
+    }
+  };
 
   const summarize = async () => {
     setSummarizing(true);
@@ -103,14 +102,39 @@ export default function NodeModal({ node, onClose }: NodeModalProps) {
           <span style={nodeModalStyles.kindChip}>{node.kind}</span>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
             <button
-              onClick={summarize}
-              disabled={summarizing}
+              onClick={toggleLock}
+              disabled={locking}
               className="btn btn-sm btn-outline"
               style={{
-                borderColor: summaryStale ? theme.warn : theme.border,
-                color: summaryStale ? theme.warn : theme.accent,
+                borderColor: locked ? theme.warn : theme.border,
+                color: locked ? theme.warn : theme.dim,
               }}
-              title={summaryStale ? 'Content changed, summary is outdated' : ''}
+              title={
+                locked
+                  ? 'Unlock — the agent can read this file again'
+                  : "Lock this file — the agent still sees it exists, but can't read its contents"
+              }
+            >
+              {locked ? <Lock size={14} weight="fill" /> : <LockOpen size={14} />}
+              {locked ? 'Locked' : 'Lock'}
+            </button>
+            <button
+              onClick={summarize}
+              // Summarizing sends the file to a model, which a lock forbids —
+              // the backend rejects it, so don't offer it either.
+              disabled={summarizing || locked}
+              className="btn btn-sm btn-outline"
+              style={{
+                borderColor: summaryStale && !locked ? theme.warn : theme.border,
+                color: summaryStale && !locked ? theme.warn : theme.accent,
+              }}
+              title={
+                locked
+                  ? 'Locked — unlock to send this file to a model'
+                  : summaryStale
+                    ? 'Content changed, summary is outdated'
+                    : ''
+              }
             >
               {summaryStale ? <Warning size={14} weight="fill" /> : <Sparkle size={14} weight={summary ? "regular" : "fill"} />}
               {summarizing ? 'Summarizing…' : summaryStale ? 'Update summary' : summary ? 'Regenerate' : `Summarize by ${summarizeModel}`}
@@ -142,8 +166,9 @@ export default function NodeModal({ node, onClose }: NodeModalProps) {
               <Warning size={22} weight="fill" color={theme.warn} />
               <div style={nodeModalStyles.tooLargeTitle}>File too large to preview</div>
               <div style={nodeModalStyles.tooLargeText}>
-                This file is ~{fmtCount(code.code.length)} characters. Rendering it inline
-                would freeze the app. Optimized previews for large files are on the way.
+                This file is ~{fmtCount(code.code.length)} characters — past the point where
+                highlighting it stays responsive. Files this size are usually generated or
+                minified; open it in an editor instead.
               </div>
             </div>
           )}
@@ -156,25 +181,7 @@ export default function NodeModal({ node, onClose }: NodeModalProps) {
 
           {codeState === 'ready' && code && code.code.length <= MAX_PREVIEW_CHARS && code.language !== 'markdown' && (
             <div style={nodeModalStyles.codeWrap}>
-              <SyntaxHighlighter
-                language={code.language}
-                style={oneDark}
-                showLineNumbers
-                startingLineNumber={code.start_line}
-                wrapLongLines={false}
-                customStyle={{
-                  margin: 0,
-                  background: theme.codeBg,
-                  fontSize: 12.5,
-                  borderRadius: 10,
-                  border: `1px solid ${theme.border}`,
-                  flex: 1,
-                  overflow: 'auto',
-                }}
-                codeTagProps={{ style: { background: 'transparent', fontFamily: 'ui-monospace, SFMono-Regular, monospace' } }}
-              >
-                {code.code}
-              </SyntaxHighlighter>
+              <CodeViewer code={code.code} language={code.language} startLine={code.start_line} />
             </div>
           )}
 

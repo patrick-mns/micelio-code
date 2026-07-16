@@ -194,6 +194,7 @@ impl Usage {
     }
 }
 
+#[derive(Debug)]
 pub enum StreamEvent {
     Content(String),
     Thinking(String),
