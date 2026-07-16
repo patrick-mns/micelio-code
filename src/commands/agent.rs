@@ -712,19 +712,40 @@ fn execute_tool_call(
     // Read-only MCP tools run freely.
     let mcp_needs_confirm = normalized.starts_with(crate::backend::mcp::MCP_PREFIX)
         && !mcp_state.is_read_only(normalized);
-    if mode == crate::backend::review::AgentMode::Review
-        && (tools::needs_review_confirmation(normalized, &call.arguments) || mcp_needs_confirm)
+    // ── Any mode: opting out of the sandbox needs explicit approval ────────
+    // A terminal call with `sandbox:false` escapes the write fence, so it
+    // pauses for confirmation even in Auto mode — this is the only interruption
+    // the sandbox introduces, and only when the model asks to leave it. Tracked
+    // under its own allow-key so "always allow" for sandboxed terminal runs
+    // doesn't silently cover unsandboxed ones.
+    let unsandboxed_request = normalized == "terminal"
+        && tools::get_bool_field(&call.arguments, "sandbox") == Some(false)
+        && crate::backend::config::sandbox_enabled()
+        && tools::sandbox::status().is_available();
+    let allow_key = if unsandboxed_request {
+        "terminal_no_sandbox"
+    } else {
+        normalized
+    };
+    if unsandboxed_request
+        || (mode == crate::backend::review::AgentMode::Review
+            && (tools::needs_review_confirmation(normalized, &call.arguments) || mcp_needs_confirm))
     {
         let already_allowed = {
             let st = app.state::<AppState>();
             let map = st.session_tool_allow.lock().unwrap();
             map.get(session_id)
-                .map(|set| set.contains(normalized))
+                .map(|set| set.contains(allow_key))
                 .unwrap_or(false)
         };
 
         if !already_allowed {
             let (title, detail) = tools::confirm_summary(normalized, &call.arguments);
+            let title = if unsandboxed_request {
+                "Run terminal command outside sandbox".to_string()
+            } else {
+                title
+            };
 
             let (tx, rx) = std::sync::mpsc::channel::<crate::backend::review::ConfirmDecision>();
             {
@@ -788,7 +809,7 @@ fn execute_tool_call(
                         .unwrap()
                         .entry(session_id.to_string())
                         .or_default()
-                        .insert(normalized.to_string());
+                        .insert(allow_key.to_string());
                 }
                 crate::backend::review::ConfirmDecision::Once => {}
             }

@@ -99,7 +99,7 @@ pub async fn install_and_restart(
 
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
+        crate::backend::cmd::no_window_cmd("cmd")
             .args(["/C", "start", "", &file_path])
             .spawn()
             .map_err(|e| format!("Failed to run setup: {e}"))?;

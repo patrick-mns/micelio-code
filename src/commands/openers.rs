@@ -1,3 +1,4 @@
+use crate::backend::cmd::no_window_cmd;
 use crate::AppState;
 use serde::Serialize;
 use tauri::State;
@@ -118,7 +119,7 @@ pub async fn list_openers() -> Result<Vec<Opener>, String> {
 #[tauri::command]
 pub async fn open_url(url: String) -> Result<(), String> {
     #[cfg(windows)]
-    let status = std::process::Command::new("cmd.exe")
+    let status = no_window_cmd("cmd.exe")
         .args(["/C", "start", "", &url])
         .spawn();
     #[cfg(target_os = "macos")]
@@ -152,10 +153,10 @@ pub async fn open_in(state: State<'_, AppState>, app: String) -> Result<(), Stri
         "alacritty" if cfg!(target_os = "macos") => std::process::Command::new("open")
             .args(["-a", "Alacritty", &path])
             .spawn(),
-        "wt" if cfg!(windows) => std::process::Command::new("wt").arg(&path).spawn(),
+        "wt" if cfg!(windows) => no_window_cmd("wt").arg(&path).spawn(),
         "vscode" => {
             let bin = if cfg!(windows) { "code.cmd" } else { "code" };
-            std::process::Command::new(bin).arg(&path).spawn()
+            no_window_cmd(bin).arg(&path).spawn()
         }
         "cursor" => {
             let bin = if cfg!(windows) {
@@ -163,7 +164,7 @@ pub async fn open_in(state: State<'_, AppState>, app: String) -> Result<(), Stri
             } else {
                 "cursor"
             };
-            std::process::Command::new(bin).arg(&path).spawn()
+            no_window_cmd(bin).arg(&path).spawn()
         }
         "windsurf" => {
             let bin = if cfg!(windows) {
@@ -171,10 +172,10 @@ pub async fn open_in(state: State<'_, AppState>, app: String) -> Result<(), Stri
             } else {
                 "windsurf"
             };
-            std::process::Command::new(bin).arg(&path).spawn()
+            no_window_cmd(bin).arg(&path).spawn()
         }
-        "zed" => std::process::Command::new("zed").arg(&path).spawn(),
-        "idea" => std::process::Command::new("idea").arg(&path).spawn(),
+        "zed" => no_window_cmd("zed").arg(&path).spawn(),
+        "idea" => no_window_cmd("idea").arg(&path).spawn(),
         other => return Err(format!("unknown opener: {other}")),
     };
 
@@ -187,7 +188,7 @@ fn open_finder(path: &str) -> std::io::Result<std::process::Child> {
 }
 #[cfg(windows)]
 fn open_finder(path: &str) -> std::io::Result<std::process::Child> {
-    std::process::Command::new("explorer").arg(path).spawn()
+    no_window_cmd("explorer").arg(path).spawn()
 }
 #[cfg(target_os = "linux")]
 fn open_finder(path: &str) -> std::io::Result<std::process::Child> {
@@ -222,7 +223,7 @@ fn open_terminal(path: &str) -> std::io::Result<std::process::Child> {
 fn which_exists(bin: &str) -> bool {
     #[cfg(windows)]
     {
-        std::process::Command::new("where.exe")
+        no_window_cmd("where.exe")
             .arg(bin)
             .output()
             .map(|o| o.status.success())

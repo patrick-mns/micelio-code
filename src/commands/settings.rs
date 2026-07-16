@@ -13,6 +13,13 @@ pub struct Settings {
     pub auto_summarize: bool,
     pub show_cost: bool,
     pub show_model: bool,
+    pub sandbox_enabled: bool,
+    pub sandbox_network: bool,
+    /// Whether this machine has a sandbox backend at all. When `false` the
+    /// toggle is inert and `sandbox_backend` explains why.
+    pub sandbox_available: bool,
+    /// Backend label ("Seatbelt", "bubblewrap") or the unavailability reason.
+    pub sandbox_backend: String,
 }
 
 #[derive(Serialize)]
@@ -61,6 +68,7 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<Settings, String
         .to_string_lossy()
         .to_string();
     let provider = llm::provider_for_model(&model).label();
+    let sandbox_status = crate::backend::tools::sandbox::status();
 
     Ok(Settings {
         model,
@@ -70,7 +78,26 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<Settings, String
         auto_summarize: config::auto_summarize(),
         show_cost: config::show_cost(),
         show_model: config::show_model(),
+        sandbox_enabled: config::sandbox_enabled(),
+        sandbox_network: config::sandbox_network(),
+        sandbox_available: sandbox_status.is_available(),
+        sandbox_backend: match sandbox_status {
+            crate::backend::tools::sandbox::Status::Available(label) => label.to_string(),
+            crate::backend::tools::sandbox::Status::Unavailable(reason) => reason.clone(),
+        },
     })
+}
+
+#[tauri::command]
+pub async fn set_sandbox_enabled(on: bool) -> Result<(), String> {
+    config::save_sandbox_enabled(on);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_sandbox_network(on: bool) -> Result<(), String> {
+    config::save_sandbox_network(on);
+    Ok(())
 }
 
 #[tauri::command]

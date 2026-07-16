@@ -7,6 +7,7 @@ import ModelRolesSelector from '@/components/ModelRolesSelector';
 import SuggestPalette from '@/components/SuggestPalette';
 import type { SkillSummary } from '@/types';
 import ModeSelector from '@/components/ModeSelector';
+import SandboxIndicator from '@/components/SandboxIndicator';
 import { chatStyles as styles } from '@/utils/theme-styles';
 import type { Attachment, SlashCommand } from '@/utils/chatHelpers';
 
@@ -137,6 +138,7 @@ export default function Composer({
           />
           <div style={styles.actionRow}>
             <ModeSelector />
+            <SandboxIndicator />
             <button className="icon-btn" onClick={clear} title="Clear conversation">
               <Broom size={16} />
             </button>

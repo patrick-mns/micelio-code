@@ -280,6 +280,30 @@ pub fn save_show_cost(on: bool) {
     write_value("show_cost", if on { "true" } else { "false" });
 }
 
+/// Whether agent terminal commands run inside the OS sandbox (Seatbelt /
+/// bubblewrap), when a backend is available. Defaults to `true` (on): the
+/// escalation flow covers commands that genuinely need broader access.
+pub fn sandbox_enabled() -> bool {
+    read_trimmed("sandbox_terminal").is_none_or(|s| s != "false")
+}
+
+/// Persists the sandbox toggle. Best-effort.
+pub fn save_sandbox_enabled(on: bool) {
+    write_value("sandbox_terminal", if on { "true" } else { "false" });
+}
+
+/// Whether sandboxed commands may reach the network. Defaults to `true`:
+/// blocking it breaks the everyday flows (npm/cargo installs, git fetch) that
+/// the terminal tool exists for — the filesystem write fence is the main win.
+pub fn sandbox_network() -> bool {
+    read_trimmed("sandbox_network").is_none_or(|s| s != "false")
+}
+
+/// Persists the sandbox-network toggle. Best-effort.
+pub fn save_sandbox_network(on: bool) {
+    write_value("sandbox_network", if on { "true" } else { "false" });
+}
+
 /// Whether to show which model produced each assistant reply. Defaults to
 /// `false` (off) until enabled.
 pub fn show_model() -> bool {

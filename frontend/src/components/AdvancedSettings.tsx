@@ -5,6 +5,7 @@ import Toggle from './Toggle';
 import { theme } from '@/theme';
 import { DownloadSimple, ArrowClockwise, Check } from '@phosphor-icons/react';
 import UpdateModal from './UpdateModal';
+import SandboxSettings from './SandboxSettings';
 
 export default function AdvancedSettings() {
   const { prefs, setPref, update, checkForUpdates, applyUpdate } = useStore();
@@ -33,6 +34,8 @@ export default function AdvancedSettings() {
     <Section title="ADVANCED">
       <Toggle label="Debug logging" desc="Print raw model requests/responses to stdout" value={prefs.debug} onChange={(v) => setPref('debug', v)} />
     </Section>
+
+    <SandboxSettings />
 
     <Section title="SOFTWARE UPDATE">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

@@ -295,11 +295,12 @@ async fn connect_server(
 ) -> Result<(Client, Vec<rmcp::model::Tool>), String> {
     let client: Client = if server.is_stdio() {
         let command = server.command.clone().unwrap_or_default();
-        let mut cmd = tokio::process::Command::new(command);
-        cmd.args(&server.args);
+        let mut std_cmd = crate::backend::cmd::no_window_cmd(&command);
+        std_cmd.args(&server.args);
         for (k, v) in &server.env {
-            cmd.env(k, v);
+            std_cmd.env(k, v);
         }
+        let cmd = tokio::process::Command::from(std_cmd);
         let transport = TokioChildProcess::new(cmd).map_err(|e| e.to_string())?;
         ().serve(transport).await.map_err(|e| e.to_string())?
     } else if server.is_http() {
