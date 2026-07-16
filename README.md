@@ -4,6 +4,8 @@ A desktop coding assistant that maps your workspace into a knowledge graph.
 
 Chat with local (Ollama) or cloud (OpenRouter) models. The app parses your code with tree-sitter, builds a graph, and feeds the model a compact, relevant context — not the whole repo.
 
+<img width="1512" height="1012" alt="image" src="https://github.com/user-attachments/assets/9eaf9434-f2cd-4e43-a813-5d650c33b498" />
+
 ## Features
 
 - **Chat** with local (Ollama) and cloud (OpenRouter) models.
