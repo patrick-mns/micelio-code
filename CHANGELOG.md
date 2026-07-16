@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.14.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.13.1...micelio-v0.14.0) (2026-07-16)
+
+
+### Features
+
+* **terminal:** run agent commands in an OS sandbox (Seatbelt/bubblewrap) ([8f37856](https://github.com/patrick-mns/micelio-code/commit/8f37856fdb42d460e9ee272de504658e7c409c79))
+* **terminal:** run agent commands in an OS sandbox (Seatbelt/bubblewrap) ([1b1b46f](https://github.com/patrick-mns/micelio-code/commit/1b1b46f6a5f676e4f1b5bda6a48b505eed65e7bf))
+
+
+### Bug Fixes
+
+* **terminal:** gate the sandbox test module and cmd import per-target ([e5e7dff](https://github.com/patrick-mns/micelio-code/commit/e5e7dffe6a5e4e71bf051217e1b761ff4d953416))
+* **windows:** stop console windows from flashing on editor/opener spawns ([1a0a9d1](https://github.com/patrick-mns/micelio-code/commit/1a0a9d1b3f7855fe36b439dc8891b6b953c1603a))
+* **windows:** stop console windows from flashing on editor/opener spawns ([1297232](https://github.com/patrick-mns/micelio-code/commit/129723276ffb52e1f38913fc6085267529e97943))
+
 ## [0.13.1](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.13.0...micelio-v0.13.1) (2026-07-16)
 
 
