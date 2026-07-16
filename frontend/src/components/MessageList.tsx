@@ -1,5 +1,5 @@
-import { type ComponentType, type CSSProperties, useMemo } from 'react';
-import { Virtuoso } from 'react-virtuoso';
+import { type ComponentType, type CSSProperties, useEffect, useMemo, useRef } from 'react';
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import Message from '@/components/Message';
 import Thinking from '@/components/Thinking';
 import { ToolGroup } from '@/components/ToolEntry';
@@ -130,14 +130,33 @@ export default function MessageList({
     [renderedMessages, prefs.showThinking],
   );
 
+  // The in-flight assistant turn renders in the Footer (StreamStatus), which
+  // grows token by token WITHOUT changing totalCount — so Virtuoso's
+  // followOutput (which only reacts to item-count changes) never fires during a
+  // stream and the view falls behind. Follow the growth ourselves: while the
+  // user is pinned to the bottom, keep scrolling to it as content arrives. If
+  // they scroll up to read history mid-stream, atBottom flips false and we stop.
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const atBottomRef = useRef(true);
+  useEffect(() => {
+    if (!streaming || !atBottomRef.current) return;
+    const raf = requestAnimationFrame(() => {
+      virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [streaming, liveContentLen]);
+
   return (
     <Virtuoso
+      ref={virtuosoRef}
       style={{ flex: 1 }}
       totalCount={items.length}
       computeItemKey={(index) => items[index].key}
       initialTopMostItemIndex={Math.max(0, items.length - 1)}
       increaseViewportBy={{ top: 400, bottom: 400 }}
       followOutput={(isAtBottom) => (isAtBottom ? 'smooth' : false)}
+      atBottomThreshold={80}
+      atBottomStateChange={(atBottom) => { atBottomRef.current = atBottom; }}
       context={{ streaming, elapsed, liveTokens, liveContentLen, prefs, StreamStatus }}
       onMouseMove={(e) => {
         const msgEl = (e.target as HTMLElement).closest('[data-msg-key]');
