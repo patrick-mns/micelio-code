@@ -4,8 +4,8 @@ import type { AppState } from './index';
 import { loadPrefs, savePrefs } from './_persist';
 import { ipc } from '@/ipc';
 
-export type TabId = 'chat' | 'treemap' | 'usage';
-export type SettingsCategoryId = 'appearance' | 'chat' | 'providers' | 'mcp' | 'workspace' | 'advanced';
+export type TabId = 'chat' | 'treemap';
+export type SettingsCategoryId = 'appearance' | 'chat' | 'providers' | 'mcp' | 'workspace' | 'usage' | 'advanced';
 // How the agent handles a turn (mirrors backend `AgentMode`):
 //   chat   — conversation only, no tools
 //   auto   — runs tools immediately, no approval
