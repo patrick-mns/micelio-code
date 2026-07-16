@@ -132,6 +132,12 @@ export interface Settings {
   auto_summarize: boolean;
   show_cost: boolean;
   show_model: boolean;
+  sandbox_enabled: boolean;
+  sandbox_network: boolean;
+  /** Whether this machine has a sandbox backend at all. */
+  sandbox_available: boolean;
+  /** Backend label ("Seatbelt", "bubblewrap") or the unavailability reason. */
+  sandbox_backend: string;
 }
 
 export interface ModelOption {
