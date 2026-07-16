@@ -12,18 +12,27 @@ import { MIN_SCAN_MS } from '@/utils/treemapHelpers';
 // shows one complete animation pass instead of a flicker.
 
 export default function TreemapView() {
-  const { graphNodes, setGraphNodes, selectedNode, setSelectedNode, scanning, setScanning, activeRoot } = useStore();
+  const { graphNodes, setGraphNodes, selectedNode, setSelectedNode, scanning, setScanning, activeRoot, currentWorkspace } = useStore();
 
-  // Filter graph nodes by active root prefix
+  // Filter graph nodes by active root prefix.
+  //
+  // The backend only prefixes node labels with the folder name in multi-folder
+  // workspaces (see scan_workspace). In a single-folder workspace the top-level
+  // nodes are the folder's own entries (`src`, `Cargo.toml`, …), so there is
+  // nothing to match against a folder-name prefix — filtering would just blank
+  // the map. Only filter when there are actually multiple folders, and fall
+  // back to the full graph if a prefix matches nothing.
   const filteredNodes = React.useMemo(() => {
-    if (!activeRoot) return graphNodes;
+    const folders = currentWorkspace?.folders || [];
+    if (!activeRoot || folders.length < 2) return graphNodes;
     const prefix = (activeRoot.split('/').pop() || activeRoot.split('\\').pop() || '').toLowerCase();
     if (!prefix) return graphNodes;
-    return graphNodes.filter((n) => {
+    const filtered = graphNodes.filter((n) => {
       const label = (n.name || '').toLowerCase();
       return label === prefix || label.startsWith(prefix + '/');
     });
-  }, [graphNodes, activeRoot]);
+    return filtered.length ? filtered : graphNodes;
+  }, [graphNodes, activeRoot, currentWorkspace?.folders]);
 
   const [hovered, setHovered] = useState<TreemapNode | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
