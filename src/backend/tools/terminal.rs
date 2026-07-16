@@ -269,7 +269,9 @@ workspace). If it legitimately needs broader access, retry with \
     }
 }
 
-#[cfg(test)]
+// The only test here drives the real sandbox-exec, so the whole module is
+// macOS-only — a bare #[cfg(test)] would leave `ctx` dead on other targets.
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
 

@@ -14,6 +14,9 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::OnceLock;
 
+// Only the macOS/Linux wrappers spawn anything; on other targets the import
+// would be dead and fail a `-D warnings` clippy run.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::backend::cmd::no_window_cmd;
 
 /// Whether a sandbox backend exists on this machine, resolved once.
