@@ -86,9 +86,16 @@ export default function GitContext({ onPickWorkspace, refreshTick = 0 }: GitCont
 
   return (
     <div style={gitContextStyles.root}>
-      {/* Folder selector — only with multiple folders. With a single folder the
-          treemap already shows the whole graph, so switching scopes to nothing
-          and the control would just read as broken. */}
+      {/* Single folder: show the folder name as a static label — there's
+          nothing to switch to, so no caret and no dropdown. */}
+      {folders.length === 1 && (
+        <div style={{ ...gitContextStyles.folderBtn, cursor: 'default' }} title={currentFolder}>
+          <FolderOpen size={14} />
+          <span style={gitContextStyles.folderName}>{folderName}</span>
+        </div>
+      )}
+
+      {/* Multiple folders: interactive selector to scope the treemap. */}
       {folders.length > 1 && (
         <div ref={menuRef} style={{ position: 'relative' }}>
           <button
