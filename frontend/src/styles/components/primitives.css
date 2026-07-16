@@ -99,12 +99,10 @@
 }
 
 /* ── Ledger ──────────────────────────────────────────────────────────────── */
-.ledger-drawer { position: fixed; top: 0; bottom: 0; right: 0; z-index: 100; overflow-y: auto; }
 /* A clickable table row — keep the native table-row display so the cells stay
    aligned with the <th> columns (do NOT set display:flex here). */
 .ledger-row { cursor: pointer; transition: background-color 0.1s; }
-.ledger-row:hover:not(.is-active) { background: rgba(var(--overlay), 0.035); }
-.ledger-row.is-active { background: var(--color-card); }
+.ledger-row:hover { background: rgba(var(--overlay), 0.035); }
 
 /* ── Copy button (message + ledger) ────────────────────────────────────── */
 .copy-btn {

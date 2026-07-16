@@ -10,7 +10,6 @@ const ptBR: Translations = {
   tabs: {
     chat: 'Chat',
     treemap: 'Mapa',
-    usage: 'Uso',
   },
 
   // ── Header buttons ───────────────────────────────────────────────────
@@ -69,11 +68,13 @@ const ptBR: Translations = {
   settings: {
     title: 'Configurações',
     close: 'Fechar',
+    back: 'Voltar',
     appearance: 'Aparência',
     chat: 'Chat',
     providers: 'Provedores',
     mcp: 'MCP',
     workspace: 'Workspace',
+    usage: 'Uso',
     advanced: 'Avançado',
     theme: 'TEMA',
     themeLabel: 'Tema',

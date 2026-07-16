@@ -968,6 +968,8 @@ export const settingsModalStyles: Record<string, CSSProperties> = {
     borderBottom: `1px solid ${theme.card}`,
   },
   headerTitle: { fontSize: 14, fontWeight: 600, color: theme.text },
+  // Back button + title, replacing the plain title while a panel is in a sub-view.
+  headerBack: { display: 'flex', alignItems: 'center', gap: 6, marginLeft: -8 },
   body: { flex: 1, overflowY: 'auto', padding: '18px 20px' },
 };
 
@@ -975,15 +977,7 @@ export const settingsModalStyles: Record<string, CSSProperties> = {
 
 // ── Usage / Ledger ───────────────────────────────────────────────────────
 export const usageStyles: Record<string, CSSProperties> = {
-  root: { flex: 1, overflowY: 'auto', padding: '0 24px 40px', position: 'relative' },
-  inner: { maxWidth: 820, margin: '0 auto' },
-  backdrop: { position: 'fixed', inset: 0, top: 52, zIndex: 49, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(1.5px)' },
-  drawer: { position: 'fixed', top: 52, right: 0, bottom: 0, width: 360, zIndex: 50, background: theme.bg, borderLeft: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column' },
-  drawerHead: { display: 'flex', alignItems: 'center', height: 44, padding: '0 10px 0 16px', flexShrink: 0, borderBottom: `1px solid ${theme.card}` },
-  drawerTitle: { flex: 1, color: theme.text, fontSize: 13, fontWeight: 600 },
-  drawerClose: {},
-  drawerBody: { flex: 1, overflowY: 'auto', padding: '8px 16px 20px' },
-  drawerDivider: { height: 1, background: theme.border, margin: '12px 0' },
+  divider: { height: 1, background: theme.border, margin: '12px 0' },
   detailRow: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '7px 0' },
   detailLabel: { fontSize: 12, color: theme.dim, flexShrink: 0 },
   detailValue: { fontSize: 12.5, color: theme.text, textAlign: 'right', wordBreak: 'break-word' },
@@ -996,7 +990,6 @@ export const usageStyles: Record<string, CSSProperties> = {
   rawCopy: { display: 'flex', alignItems: 'center', padding: 4, borderRadius: "var(--radius-sm)", border: 'none', background: 'transparent', color: theme.dim, cursor: 'pointer', transition: 'background 0.15s, color 0.15s' },
   rawPreHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 12px', background: theme.bg, borderLeft: `1px solid ${theme.border}`, borderRight: `1px solid ${theme.border}`, fontSize: 10.5, color: theme.faint, fontFamily: 'ui-monospace, monospace', textTransform: 'uppercase', letterSpacing: '0.04em' },
   rawPre: { margin: 0, border: `1px solid ${theme.border}`, borderTop: 'none', borderRadius: '0 0 8px 8px', background: theme.codeBg, padding: 0, overflow: 'auto', maxHeight: 320 },
-  heading: { fontSize: 18, fontWeight: 600, color: theme.text, margin: 0 },
   headRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, margin: '28px 0 20px', flexWrap: 'wrap' },
   controls: { display: 'flex', alignItems: 'center', gap: 10 },
   // Range filter uses .seg-track/.seg-btn; Clear uses .btn; model filters use .chip.
