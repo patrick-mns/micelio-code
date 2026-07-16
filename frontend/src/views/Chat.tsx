@@ -81,6 +81,9 @@ export default function Chat() {
   const [mentionDismissed, setMentionDismissed] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [gitRefreshTick, setGitRefreshTick] = useState(0);
+  // Bumped when the user sends a message, so the list jumps to the bottom even
+  // if they'd scrolled up into history.
+  const [sendTick, setSendTick] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -348,6 +351,7 @@ export default function Chat() {
       : '');
 
     addMessage(activeSession, { role: 'user', content, attachment: att ? { name: att.name, preview: att.preview } : undefined });
+    setSendTick((t) => t + 1);
     setLoading(true);
 
     const buf: StreamSession = { thinking: '', parts: [], startedAt: Date.now() };
@@ -543,6 +547,7 @@ export default function Chat() {
         liveContentLen={liveContentLen}
         prefs={prefs}
         StreamStatus={StreamStatus}
+        scrollToBottomSignal={sendTick}
       />
 
       {/* Footer — QuestionCard, SummarizeBanner, GitContext, Composer */}
