@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.1](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.13.0...micelio-v0.13.1) (2026-07-16)
+
+
+### Bug Fixes
+
+* **ci:** add build targets to the pinned toolchain, not the default one ([15e3d51](https://github.com/patrick-mns/micelio-code/commit/15e3d51ef4a79a9402dc65c159c52d8347c20d55))
+* **ci:** add build targets to the pinned toolchain, not the default one ([0ee8396](https://github.com/patrick-mns/micelio-code/commit/0ee83960dfef29ae621f212d65a4e27719320c54))
+
 ## [0.13.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.12.0...micelio-v0.13.0) (2026-07-16)
 
 
