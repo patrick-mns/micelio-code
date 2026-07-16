@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.2](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.15.1...micelio-v0.15.2) (2026-07-16)
+
+
+### Bug Fixes
+
+* **agent:** never end a turn without a reply ([f86bab8](https://github.com/patrick-mns/micelio-code/commit/f86bab8a0bafb80c12f571a8586419cce87b6d9e))
+* chat persistence, cancel feedback, empty-turn replies, and folder label ([eebceec](https://github.com/patrick-mns/micelio-code/commit/eebceecc0015358d124286d526e16b8eed54d964))
+* **chat:** give immediate feedback when canceling a stream ([e58b04b](https://github.com/patrick-mns/micelio-code/commit/e58b04bf4a71683d8fec742ee0451689d4c666fb))
+* **chat:** jump to the bottom when the user sends a message ([5909860](https://github.com/patrick-mns/micelio-code/commit/59098601be9a8fa3d12fb5b8692676064a919aa7))
+* **chat:** persist partial assistant output when a turn fails ([b2a3b63](https://github.com/patrick-mns/micelio-code/commit/b2a3b63dff8e6e39d304f13c40ad389fa98dc8cf))
+* **gitcontext:** show folder name as a static label for single-folder workspaces ([d6f7360](https://github.com/patrick-mns/micelio-code/commit/d6f7360ac05bf46cfe53d3d8a885771376f72216))
+
 ## [0.15.1](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.15.0...micelio-v0.15.1) (2026-07-16)
 
 
