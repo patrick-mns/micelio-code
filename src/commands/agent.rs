@@ -239,14 +239,28 @@ pub fn run_agent_loop(
         while !turn_done {
             if cancel.load(Ordering::SeqCst) {
                 history.push(Message::assistant(content_acc.clone()));
-                finish(&app, &history, &thinking_acc, &tool_summaries, &content_acc, true);
+                finish(
+                    &app,
+                    &history,
+                    &thinking_acc,
+                    &tool_summaries,
+                    &content_acc,
+                    true,
+                );
                 return;
             }
 
             if stream_start.elapsed() > std::time::Duration::from_secs(300) {
                 // Persist the partial response before reporting the timeout.
                 history.push(Message::assistant(content_acc.clone()));
-                finish(&app, &history, &thinking_acc, &tool_summaries, &content_acc, false);
+                finish(
+                    &app,
+                    &history,
+                    &thinking_acc,
+                    &tool_summaries,
+                    &content_acc,
+                    false,
+                );
                 let _ = app.emit("stream_error", serde_json::json!({ "session_id": session_id_ref, "error": "Model timed out — no response after 5 minutes" }));
                 return;
             }
@@ -257,7 +271,14 @@ pub fn run_agent_loop(
                         if last_event.elapsed() > std::time::Duration::from_secs(120) {
                             // Persist the partial response before reporting the stall.
                             history.push(Message::assistant(content_acc.clone()));
-                            finish(&app, &history, &thinking_acc, &tool_summaries, &content_acc, false);
+                            finish(
+                                &app,
+                                &history,
+                                &thinking_acc,
+                                &tool_summaries,
+                                &content_acc,
+                                false,
+                            );
                             let _ = app.emit("stream_error", serde_json::json!({ "session_id": session_id_ref, "error": "Stream timed out — no data from model for 2 minutes" }));
                             return;
                         }
@@ -313,7 +334,14 @@ pub fn run_agent_loop(
                     // A mid-stream failure (e.g. the network dropped) must not
                     // throw away what already streamed — persist it, then report.
                     history.push(Message::assistant(content_acc.clone()));
-                    finish(&app, &history, &thinking_acc, &tool_summaries, &content_acc, false);
+                    finish(
+                        &app,
+                        &history,
+                        &thinking_acc,
+                        &tool_summaries,
+                        &content_acc,
+                        false,
+                    );
                     let _ = app.emit(
                         "stream_error",
                         serde_json::json!({ "session_id": session_id_ref, "error": e }),
@@ -347,7 +375,14 @@ pub fn run_agent_loop(
                     &mut history,
                     &session_id_ref,
                 );
-                finish(&app, &history, &thinking_acc, &tool_summaries, &ensure_reply(&app, &session_id_ref, summary), true);
+                finish(
+                    &app,
+                    &history,
+                    &thinking_acc,
+                    &tool_summaries,
+                    &ensure_reply(&app, &session_id_ref, summary),
+                    true,
+                );
                 return;
             }
 
@@ -382,7 +417,14 @@ pub fn run_agent_loop(
                     &mut history,
                     &session_id_ref,
                 );
-                finish(&app, &history, &thinking_acc, &tool_summaries, &ensure_reply(&app, &session_id_ref, summary), true);
+                finish(
+                    &app,
+                    &history,
+                    &thinking_acc,
+                    &tool_summaries,
+                    &ensure_reply(&app, &session_id_ref, summary),
+                    true,
+                );
                 return;
             }
 
@@ -418,7 +460,14 @@ pub fn run_agent_loop(
                     &mut history,
                     &session_id_ref,
                 );
-                finish(&app, &history, &thinking_acc, &tool_summaries, &ensure_reply(&app, &session_id_ref, summary), true);
+                finish(
+                    &app,
+                    &history,
+                    &thinking_acc,
+                    &tool_summaries,
+                    &ensure_reply(&app, &session_id_ref, summary),
+                    true,
+                );
                 return;
             }
             if consecutive_errors >= REFLEXION_AFTER_ERRORS {
