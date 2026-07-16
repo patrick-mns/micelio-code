@@ -59,7 +59,10 @@ export const workspaceSlice: StateCreator<
     try {
       // null when the app has no workspaces yet (fresh install / all deleted).
       const ws = await invoke<Workspace | null>('get_current_workspace');
-      set({ currentWorkspace: ws, expandedWorkspaces: ws ? [ws.id] : [] });
+      // Clear any folder scoping from a previous workspace: activeRoot filters
+      // the treemap by folder name, and a stale value from another workspace
+      // would blank or misscope the freshly loaded graph.
+      set({ currentWorkspace: ws, expandedWorkspaces: ws ? [ws.id] : [], activeRoot: null });
       // Startup no longer scans on the backend, so a workspace whose graph was
       // never built (missing graph.json) loads empty — build it in the
       // background instead of freezing the app before the window appears.
@@ -129,7 +132,7 @@ export const workspaceSlice: StateCreator<
     set({ workspaceLoading: true });
     try {
       const ws = await invoke<Workspace>('create_workspace', { name, folders });
-      set({ currentWorkspace: ws });
+      set({ currentWorkspace: ws, activeRoot: null });
       await get().loadWorkspacesWithSessions();
       await get().loadSessions();
       await get().refreshGraph();
@@ -150,7 +153,9 @@ export const workspaceSlice: StateCreator<
     set({ workspaceLoading: true });
     try {
       const ws = await invoke<Workspace>('switch_workspace', { id });
-      set({ currentWorkspace: ws });
+      // Reset folder scoping — the old activeRoot points at a folder that isn't
+      // in this workspace's graph, which would blank or misscope the treemap.
+      set({ currentWorkspace: ws, activeRoot: null });
       await get().loadWorkspacesWithSessions();
       await get().loadSessions(); // Reload sessions to update the central sessions list immediately on switch workspace!
       await get().refreshGraph();
@@ -220,6 +225,9 @@ export const workspaceSlice: StateCreator<
       await invoke('delete_workspace', { id });
       await get().loadWorkspacesWithSessions();
       if (wasCurrent) {
+        // The backend switched to another workspace; drop the deleted
+        // workspace's folder scoping so the treemap shows the new graph.
+        set({ activeRoot: null });
         await get().loadSessions();
         await get().refreshGraph();
         const cur = get().currentWorkspace;
