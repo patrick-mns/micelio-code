@@ -86,8 +86,10 @@ export default function GitContext({ onPickWorkspace, refreshTick = 0 }: GitCont
 
   return (
     <div style={gitContextStyles.root}>
-      {/* Folder selector — only when workspace has folders */}
-      {folders.length > 0 && (
+      {/* Folder selector — only with multiple folders. With a single folder the
+          treemap already shows the whole graph, so switching scopes to nothing
+          and the control would just read as broken. */}
+      {folders.length > 1 && (
         <div ref={menuRef} style={{ position: 'relative' }}>
           <button
             className="btn btn-ghost"

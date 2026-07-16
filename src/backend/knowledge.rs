@@ -552,6 +552,13 @@ impl KnowledgeGraph {
             "LICENSE",
         ];
 
+        // Labels touched by THIS folder's walk. The parent-hierarchy pass below
+        // must only connect these — iterating the whole graph would grab bare,
+        // single-segment labels from other folders (whose path parent is empty)
+        // and wrongly attach them under this scan's root, nesting one folder's
+        // tree inside another's.
+        let mut scanned_labels: HashSet<String> = HashSet::new();
+
         let mut count = 0usize;
         let mut walked = 0usize;
         let mut truncated = false;
@@ -594,6 +601,7 @@ impl KnowledgeGraph {
 
             if let Some(ft) = entry.file_type() {
                 if ft.is_dir() {
+                    scanned_labels.insert(label.clone());
                     if let std::collections::hash_map::Entry::Vacant(slot) = by_label.entry(label) {
                         let id = self.add_with_desc(slot.key(), "", NodeKind::Directory);
                         slot.insert(id);
@@ -616,6 +624,7 @@ impl KnowledgeGraph {
                     {
                         continue;
                     }
+                    scanned_labels.insert(label.clone());
                     if !by_label.contains_key(&label) {
                         let size = entry.metadata().map(|m| m.len() as usize).unwrap_or(0);
                         let id = self.add_with_desc(&label, "", NodeKind::File);
@@ -719,9 +728,11 @@ impl KnowledgeGraph {
             }
         }
 
-        // Connect parent-child relationships based on path hierarchy
-        let all_labels: Vec<String> = self.nodes.iter().map(|n| n.label.clone()).collect();
-        for label in &all_labels {
+        // Connect parent-child relationships based on path hierarchy. Only the
+        // labels this folder's walk touched — a bare label from another folder
+        // has an empty path parent and would otherwise be re-parented under this
+        // scan's root.
+        for label in &scanned_labels {
             let path = Path::new(label);
             if let Some(parent) = path.parent() {
                 let parent_label = parent.to_string_lossy().to_string();
@@ -1070,5 +1081,52 @@ mod tests {
         assert!(lib.tokens > 0 && lib.attachment.is_some());
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn multi_folder_scan_keeps_roots_separate() {
+        // Two folders scanned into one graph (multi-folder workspace) must stay
+        // separate top-level trees. Regression for the bug where the second
+        // folder's parent-hierarchy pass re-parented the first folder's bare
+        // root label ("alpha") under the second root ("beta"), nesting one
+        // whole folder inside the other so the treemap only ever showed one.
+        let base = std::env::temp_dir().join(format!("mc-multi-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let alpha = base.join("alpha");
+        let beta = base.join("beta");
+        std::fs::create_dir_all(alpha.join("src")).unwrap();
+        std::fs::create_dir_all(beta.join("src")).unwrap();
+        std::fs::write(alpha.join("src/a.rs"), "fn a() {}\n").unwrap();
+        std::fs::write(beta.join("src/b.rs"), "fn b() {}\n").unwrap();
+
+        let mut g = KnowledgeGraph::new();
+        g.scan_workspace(&alpha, Some("alpha".into())).unwrap();
+        g.scan_workspace(&beta, Some("beta".into())).unwrap();
+
+        // The "beta" root must not contain the "alpha" root.
+        let alpha_id = g.find_by_label("alpha").unwrap();
+        let beta_id = g.find_by_label("beta").unwrap();
+        assert!(
+            !g.edges()
+                .iter()
+                .any(|e| e.from == beta_id && e.to == alpha_id),
+            "beta wrongly contains alpha"
+        );
+        assert!(
+            !g.edges()
+                .iter()
+                .any(|e| e.from == alpha_id && e.to == beta_id),
+            "alpha wrongly contains beta"
+        );
+
+        // Neither root is anyone's child → both survive as treemap roots.
+        for root in [alpha_id, beta_id] {
+            assert!(
+                !g.edges().iter().any(|e| e.to == root),
+                "root {root} was re-parented"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(base);
     }
 }
