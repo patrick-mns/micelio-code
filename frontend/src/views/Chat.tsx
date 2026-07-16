@@ -179,7 +179,10 @@ export default function Chat() {
     setStreamsBySession((prev) => ({ ...prev, [sessionId]: next }));
   }
 
-  function finishStream(sessionId: string) {
+  // Flush the in-flight stream buffer into permanent messages. Shared by the
+  // clean-finish and error paths so a failed turn keeps whatever streamed
+  // before it broke instead of discarding it.
+  function flushStreamBuffer(sessionId: string) {
     const s = streamsRef.current[sessionId];
     const store = useStore.getState();
     if (s) {
@@ -195,6 +198,12 @@ export default function Chat() {
     }
     delete streamsRef.current[sessionId];
     setStreamsBySession((prev) => { const n = { ...prev }; delete n[sessionId]; return n; });
+    return s;
+  }
+
+  function finishStream(sessionId: string) {
+    const s = flushStreamBuffer(sessionId);
+    const store = useStore.getState();
     store.setStreamingSession(null);
     store.setLoading(false);
     // Only set 'complete' if not canceled (cancel already set 'idle')
@@ -203,9 +212,10 @@ export default function Chat() {
 
   function errorStream(sessionId: string, msg: string) {
     const store = useStore.getState();
+    // Keep the partial response the user was already reading, then note the error.
+    flushStreamBuffer(sessionId);
     store.addMessage(sessionId, { role: 'assistant', content: `Error: ${msg}` });
-    delete streamsRef.current[sessionId];
-    setStreamsBySession((prev) => { const n = { ...prev }; delete n[sessionId]; return n; });
+    store.setStreamingSession(null);
     store.setLoading(false);
     store.setAgentStatus(sessionId, 'error');
   }

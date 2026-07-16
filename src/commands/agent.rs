@@ -101,11 +101,17 @@ pub fn run_agent_loop(
     // Persist the model context + the UI transcript for this turn, then tell
     // the frontend we're done. Finally, kick off background auto-summary of any
     // files this turn touched (non-blocking; emits node_summarized per file).
+    // `emit_done` distinguishes a clean turn end (emit `stream_done`, letting the
+    // frontend finalize the stream buffer) from a failure that still needs its
+    // partial output persisted: the error paths pass `false` and emit
+    // `stream_error` themselves, so the transcript keeps whatever streamed
+    // before the failure instead of silently dropping it on reload.
     let finish = move |app: &AppHandle,
                        history: &[Message],
                        thinking: &str,
                        tools: &[String],
-                       content: &str| {
+                       content: &str,
+                       emit_done: bool| {
         let state = app.state::<AppState>();
         // Always update this session's per-session history (regardless of which
         // session the user is currently viewing).
@@ -177,10 +183,12 @@ pub fn run_agent_loop(
                 }),
             );
         }
-        let _ = app.emit(
-            "stream_done",
-            serde_json::json!({ "session_id": session_id }),
-        );
+        if emit_done {
+            let _ = app.emit(
+                "stream_done",
+                serde_json::json!({ "session_id": session_id }),
+            );
+        }
 
         let touched: Vec<String> = dirty_for_finish.lock().unwrap().drain().collect();
         spawn_auto_summary(app, ws_for_finish.clone(), touched);
@@ -200,7 +208,7 @@ pub fn run_agent_loop(
     for _ in 0..MAX_TOOL_ROUNDS {
         // User hit Stop between rounds — persist what we have and bail.
         if cancel.load(Ordering::SeqCst) {
-            finish(&app, &history, &thinking_acc, &tool_summaries, "");
+            finish(&app, &history, &thinking_acc, &tool_summaries, "", true);
             return;
         }
         // Keep the working context within budget before the next model turn.
@@ -209,6 +217,10 @@ pub fn run_agent_loop(
         let mut stream = match provider.start_stream(&model, &history, &tools_advert) {
             Ok(s) => s,
             Err(e) => {
+                // Persist anything earlier rounds accumulated before surfacing
+                // the error, so a failure to open the stream doesn't drop the
+                // turn's thinking/tool trace on reload.
+                finish(&app, &history, &thinking_acc, &tool_summaries, "", false);
                 let _ = app.emit(
                     "stream_error",
                     serde_json::json!({ "session_id": session_id_ref, "error": e }),
@@ -224,11 +236,14 @@ pub fn run_agent_loop(
         while !turn_done {
             if cancel.load(Ordering::SeqCst) {
                 history.push(Message::assistant(content_acc.clone()));
-                finish(&app, &history, &thinking_acc, &tool_summaries, &content_acc);
+                finish(&app, &history, &thinking_acc, &tool_summaries, &content_acc, true);
                 return;
             }
 
             if stream_start.elapsed() > std::time::Duration::from_secs(300) {
+                // Persist the partial response before reporting the timeout.
+                history.push(Message::assistant(content_acc.clone()));
+                finish(&app, &history, &thinking_acc, &tool_summaries, &content_acc, false);
                 let _ = app.emit("stream_error", serde_json::json!({ "session_id": session_id_ref, "error": "Model timed out — no response after 5 minutes" }));
                 return;
             }
@@ -237,6 +252,9 @@ pub fn run_agent_loop(
                 Ok(events) => {
                     if events.is_empty() {
                         if last_event.elapsed() > std::time::Duration::from_secs(120) {
+                            // Persist the partial response before reporting the stall.
+                            history.push(Message::assistant(content_acc.clone()));
+                            finish(&app, &history, &thinking_acc, &tool_summaries, &content_acc, false);
                             let _ = app.emit("stream_error", serde_json::json!({ "session_id": session_id_ref, "error": "Stream timed out — no data from model for 2 minutes" }));
                             return;
                         }
@@ -289,6 +307,10 @@ pub fn run_agent_loop(
                     }
                 }
                 Err(e) => {
+                    // A mid-stream failure (e.g. the network dropped) must not
+                    // throw away what already streamed — persist it, then report.
+                    history.push(Message::assistant(content_acc.clone()));
+                    finish(&app, &history, &thinking_acc, &tool_summaries, &content_acc, false);
                     let _ = app.emit(
                         "stream_error",
                         serde_json::json!({ "session_id": session_id_ref, "error": e }),
@@ -322,7 +344,7 @@ pub fn run_agent_loop(
                     &mut history,
                     &session_id_ref,
                 );
-                finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
+                finish(&app, &history, &thinking_acc, &tool_summaries, &summary, true);
                 return;
             }
 
@@ -357,7 +379,7 @@ pub fn run_agent_loop(
                     &mut history,
                     &session_id_ref,
                 );
-                finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
+                finish(&app, &history, &thinking_acc, &tool_summaries, &summary, true);
                 return;
             }
 
@@ -393,7 +415,7 @@ pub fn run_agent_loop(
                     &mut history,
                     &session_id_ref,
                 );
-                finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
+                finish(&app, &history, &thinking_acc, &tool_summaries, &summary, true);
                 return;
             }
             if consecutive_errors >= REFLEXION_AFTER_ERRORS {
@@ -428,6 +450,7 @@ pub fn run_agent_loop(
             &thinking_acc,
             &tool_summaries,
             &final_content,
+            true,
         );
         return;
     }
@@ -447,6 +470,7 @@ pub fn run_agent_loop(
         &thinking_acc,
         &tool_summaries,
         &summary_content,
+        true,
     );
 }
 
