@@ -175,6 +175,11 @@ pub const NEEDS_TOOL: &str =
 pub const SUMMARY_REQUEST: &str = "You've completed all the necessary tasks. Write a concise \
 summary of exactly what you did for the user. Be specific about files created or modified.";
 
+/// Injected when the model returned an empty turn (no text, no tool call) with
+/// nothing pending — nudge it to actually answer before the loop gives up.
+pub const EMPTY_RESPONSE_RETRY: &str = "Your last response was empty. Please answer the user's \
+last message directly now.";
+
 /// Appended to the system prompt in Chat mode, where no tools are available.
 pub const CHAT_MODE: &str = "You are in CHAT mode: read-only. You may use the read-only tools \
 available this turn (read files, search, read the knowledge graph, fetch URLs, look at images \

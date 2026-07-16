@@ -69,6 +69,9 @@ pub fn run_agent_loop(
     let needs_tool = needs_tool && mode != AgentMode::Chat;
     let mut did_any_tool = false;
     let mut retried_for_tool = false;
+    // One retry when the model returns a completely empty turn, before we fall
+    // back to a canned reply — an empty completion is usually transient.
+    let mut retried_empty = false;
     let mut consecutive_errors: u32 = 0;
     // Stagnation guard: signature of the previous tool call and how many times
     // it has repeated back-to-back.
@@ -101,11 +104,17 @@ pub fn run_agent_loop(
     // Persist the model context + the UI transcript for this turn, then tell
     // the frontend we're done. Finally, kick off background auto-summary of any
     // files this turn touched (non-blocking; emits node_summarized per file).
+    // `emit_done` distinguishes a clean turn end (emit `stream_done`, letting the
+    // frontend finalize the stream buffer) from a failure that still needs its
+    // partial output persisted: the error paths pass `false` and emit
+    // `stream_error` themselves, so the transcript keeps whatever streamed
+    // before the failure instead of silently dropping it on reload.
     let finish = move |app: &AppHandle,
                        history: &[Message],
                        thinking: &str,
                        tools: &[String],
-                       content: &str| {
+                       content: &str,
+                       emit_done: bool| {
         let state = app.state::<AppState>();
         // Always update this session's per-session history (regardless of which
         // session the user is currently viewing).
@@ -177,10 +186,12 @@ pub fn run_agent_loop(
                 }),
             );
         }
-        let _ = app.emit(
-            "stream_done",
-            serde_json::json!({ "session_id": session_id }),
-        );
+        if emit_done {
+            let _ = app.emit(
+                "stream_done",
+                serde_json::json!({ "session_id": session_id }),
+            );
+        }
 
         let touched: Vec<String> = dirty_for_finish.lock().unwrap().drain().collect();
         spawn_auto_summary(app, ws_for_finish.clone(), touched);
@@ -200,7 +211,7 @@ pub fn run_agent_loop(
     for _ in 0..MAX_TOOL_ROUNDS {
         // User hit Stop between rounds — persist what we have and bail.
         if cancel.load(Ordering::SeqCst) {
-            finish(&app, &history, &thinking_acc, &tool_summaries, "");
+            finish(&app, &history, &thinking_acc, &tool_summaries, "", true);
             return;
         }
         // Keep the working context within budget before the next model turn.
@@ -209,6 +220,10 @@ pub fn run_agent_loop(
         let mut stream = match provider.start_stream(&model, &history, &tools_advert) {
             Ok(s) => s,
             Err(e) => {
+                // Persist anything earlier rounds accumulated before surfacing
+                // the error, so a failure to open the stream doesn't drop the
+                // turn's thinking/tool trace on reload.
+                finish(&app, &history, &thinking_acc, &tool_summaries, "", false);
                 let _ = app.emit(
                     "stream_error",
                     serde_json::json!({ "session_id": session_id_ref, "error": e }),
@@ -224,11 +239,28 @@ pub fn run_agent_loop(
         while !turn_done {
             if cancel.load(Ordering::SeqCst) {
                 history.push(Message::assistant(content_acc.clone()));
-                finish(&app, &history, &thinking_acc, &tool_summaries, &content_acc);
+                finish(
+                    &app,
+                    &history,
+                    &thinking_acc,
+                    &tool_summaries,
+                    &content_acc,
+                    true,
+                );
                 return;
             }
 
             if stream_start.elapsed() > std::time::Duration::from_secs(300) {
+                // Persist the partial response before reporting the timeout.
+                history.push(Message::assistant(content_acc.clone()));
+                finish(
+                    &app,
+                    &history,
+                    &thinking_acc,
+                    &tool_summaries,
+                    &content_acc,
+                    false,
+                );
                 let _ = app.emit("stream_error", serde_json::json!({ "session_id": session_id_ref, "error": "Model timed out — no response after 5 minutes" }));
                 return;
             }
@@ -237,6 +269,16 @@ pub fn run_agent_loop(
                 Ok(events) => {
                     if events.is_empty() {
                         if last_event.elapsed() > std::time::Duration::from_secs(120) {
+                            // Persist the partial response before reporting the stall.
+                            history.push(Message::assistant(content_acc.clone()));
+                            finish(
+                                &app,
+                                &history,
+                                &thinking_acc,
+                                &tool_summaries,
+                                &content_acc,
+                                false,
+                            );
                             let _ = app.emit("stream_error", serde_json::json!({ "session_id": session_id_ref, "error": "Stream timed out — no data from model for 2 minutes" }));
                             return;
                         }
@@ -289,6 +331,17 @@ pub fn run_agent_loop(
                     }
                 }
                 Err(e) => {
+                    // A mid-stream failure (e.g. the network dropped) must not
+                    // throw away what already streamed — persist it, then report.
+                    history.push(Message::assistant(content_acc.clone()));
+                    finish(
+                        &app,
+                        &history,
+                        &thinking_acc,
+                        &tool_summaries,
+                        &content_acc,
+                        false,
+                    );
                     let _ = app.emit(
                         "stream_error",
                         serde_json::json!({ "session_id": session_id_ref, "error": e }),
@@ -322,7 +375,14 @@ pub fn run_agent_loop(
                     &mut history,
                     &session_id_ref,
                 );
-                finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
+                finish(
+                    &app,
+                    &history,
+                    &thinking_acc,
+                    &tool_summaries,
+                    &ensure_reply(&app, &session_id_ref, summary),
+                    true,
+                );
                 return;
             }
 
@@ -357,7 +417,14 @@ pub fn run_agent_loop(
                     &mut history,
                     &session_id_ref,
                 );
-                finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
+                finish(
+                    &app,
+                    &history,
+                    &thinking_acc,
+                    &tool_summaries,
+                    &ensure_reply(&app, &session_id_ref, summary),
+                    true,
+                );
                 return;
             }
 
@@ -393,12 +460,29 @@ pub fn run_agent_loop(
                     &mut history,
                     &session_id_ref,
                 );
-                finish(&app, &history, &thinking_acc, &tool_summaries, &summary);
+                finish(
+                    &app,
+                    &history,
+                    &thinking_acc,
+                    &tool_summaries,
+                    &ensure_reply(&app, &session_id_ref, summary),
+                    true,
+                );
                 return;
             }
             if consecutive_errors >= REFLEXION_AFTER_ERRORS {
                 history.push(Message::system(prompt::REFLEXION));
             }
+            continue;
+        }
+
+        // Empty turn with no tool call and nothing pending (needs_tool was
+        // handled above): the model returned nothing at all. Nudge it once to
+        // answer before giving up — an empty completion is usually a transient
+        // glitch rather than the model deciding it's done.
+        if content.is_empty() && !did_any_tool && !retried_empty {
+            history.push(Message::system(prompt::EMPTY_RESPONSE_RETRY));
+            retried_empty = true;
             continue;
         }
 
@@ -408,16 +492,22 @@ pub fn run_agent_loop(
         // that signal instead of nagging it to find more work (the old
         // self-eval auto-continue caused scope creep and wasted round-trips).
 
-        // If tools ran but the model produced no text summary, request one so
-        // the user always gets a meaningful response.
-        let final_content = if did_any_tool && content.is_empty() {
-            request_summary(
-                &app,
-                provider.as_ref(),
-                &model,
-                &mut history,
-                &session_id_ref,
-            )
+        // Never end the turn silently: if the model produced no text, request a
+        // summary (when tools ran) and, failing that, fall back to a visible
+        // reply so the user always gets something back.
+        let final_content = if content.is_empty() {
+            let summary = if did_any_tool {
+                request_summary(
+                    &app,
+                    provider.as_ref(),
+                    &model,
+                    &mut history,
+                    &session_id_ref,
+                )
+            } else {
+                String::new()
+            };
+            ensure_reply(&app, &session_id_ref, summary)
         } else {
             content
         };
@@ -428,18 +518,23 @@ pub fn run_agent_loop(
             &thinking_acc,
             &tool_summaries,
             &final_content,
+            true,
         );
         return;
     }
 
     // Safety valve: too many rounds — ask model for a summary so the user
     // always gets a final response, then finish.
-    let summary_content = request_summary(
+    let summary_content = ensure_reply(
         &app,
-        provider.as_ref(),
-        &model,
-        &mut history,
         &session_id_ref,
+        request_summary(
+            &app,
+            provider.as_ref(),
+            &model,
+            &mut history,
+            &session_id_ref,
+        ),
     );
     finish(
         &app,
@@ -447,6 +542,7 @@ pub fn run_agent_loop(
         &thinking_acc,
         &tool_summaries,
         &summary_content,
+        true,
     );
 }
 
@@ -482,6 +578,26 @@ fn force_stop_summary(
             history.pop();
             String::new()
         }
+    }
+}
+
+/// Shown to the user when the model produced no response at all and every
+/// attempt to coax one out failed. Better an honest note than a blank turn.
+const EMPTY_REPLY_FALLBACK: &str =
+    "I wasn't able to generate a response. Please try again or rephrase your request.";
+
+/// Guarantee the turn ends with something visible: if `content` is empty, emit
+/// the fallback as stream content (so the live view shows it, matching what
+/// `finish` will persist) and return it. Otherwise pass `content` through.
+fn ensure_reply(app: &AppHandle, session_id: &str, content: String) -> String {
+    if content.trim().is_empty() {
+        let _ = app.emit(
+            "stream_content",
+            serde_json::json!({ "session_id": session_id, "delta": EMPTY_REPLY_FALLBACK }),
+        );
+        EMPTY_REPLY_FALLBACK.to_string()
+    } else {
+        content
     }
 }
 

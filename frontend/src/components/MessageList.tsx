@@ -26,6 +26,9 @@ interface MessageListProps {
   liveContentLen: number;
   prefs: Prefs;
   StreamStatus: ComponentType<StreamStatusComponentProps>;
+  /** Bumped by the parent when the user sends a message: jump to the bottom
+   *  regardless of the current scroll position. */
+  scrollToBottomSignal: number;
 }
 
 // Virtuoso measures item heights with a ResizeObserver, which ignores margins —
@@ -123,6 +126,7 @@ export default function MessageList({
   liveContentLen,
   prefs,
   StreamStatus,
+  scrollToBottomSignal,
 }: MessageListProps) {
   // Zero-height items break Virtuoso's positioning — drop hidden ones instead.
   const items = useMemo(
@@ -145,6 +149,18 @@ export default function MessageList({
     });
     return () => cancelAnimationFrame(raf);
   }, [streaming, liveContentLen]);
+
+  // Sending a message forces the list to the bottom even if the user had
+  // scrolled up, and re-arms the at-bottom flag so the streamed reply keeps
+  // following. Skips the initial mount (signal starts at 0).
+  useEffect(() => {
+    if (scrollToBottomSignal === 0) return;
+    atBottomRef.current = true;
+    const raf = requestAnimationFrame(() => {
+      virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [scrollToBottomSignal]);
 
   return (
     <Virtuoso

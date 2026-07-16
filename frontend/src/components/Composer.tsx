@@ -1,5 +1,5 @@
 import React, { useRef, type ComponentType, type RefObject } from 'react';
-import { ArrowElbowDownLeft, Stop, Broom, ImageSquare, X } from '@phosphor-icons/react';
+import { ArrowElbowDownLeft, Stop, Broom, ImageSquare, X, CircleNotch } from '@phosphor-icons/react';
 import { theme } from '@/theme';
 import { useStore } from '@/store';
 import { renderInlineMentions } from '@/utils/skillMentions';
@@ -31,6 +31,8 @@ interface ComposerProps {
   fileInputRef: RefObject<HTMLInputElement | null>;
   taRef: RefObject<HTMLTextAreaElement | null>;
   isLoading: boolean;
+  /** Stop was pressed and the backend is unwinding — show a spinner meanwhile. */
+  canceling: boolean;
   onDrop: (e: React.DragEvent) => void;
   autosize: (el: HTMLTextAreaElement) => void;
   showPalette: boolean;
@@ -47,7 +49,7 @@ interface ComposerProps {
 
 export default function Composer({
   input, setInput, onKeyDown, onPaste, send, cancel, clear,
-  attachment, setAttachment, attachImage, fileInputRef, taRef, isLoading,
+  attachment, setAttachment, attachImage, fileInputRef, taRef, isLoading, canceling,
   onDrop, autosize, showPalette, filteredCmds, cmdSelected, setCmdSelected,
   runCommand, CommandPalette,
   showSkillPalette, filteredSkills, skillSelected, pickSkill,
@@ -150,15 +152,17 @@ export default function Composer({
             <button
               className="send-btn"
               onClick={isLoading ? cancel : send}
-              disabled={!input.trim() && !attachment && !isLoading}
+              disabled={canceling || (!input.trim() && !attachment && !isLoading)}
               style={{
                 ...styles.sendBtn,
                 background: input.trim() || attachment || isLoading ? theme.cardActive : theme.card,
                 border: `1px solid ${theme.border}`,
               }}
-              title={isLoading ? 'Stop generating' : 'Send (Enter)'}
+              title={canceling ? 'Canceling…' : isLoading ? 'Stop generating' : 'Send (Enter)'}
             >
-              {isLoading ? (
+              {canceling ? (
+                <CircleNotch size={14} color={theme.dim} style={{ animation: 'spin 0.8s linear infinite' }} />
+              ) : isLoading ? (
                 <Stop size={13} weight="fill" color={theme.text} />
               ) : (
                 <ArrowElbowDownLeft size={15} color={input.trim() || attachment ? theme.text : theme.faint} />

@@ -81,6 +81,9 @@ export default function Chat() {
   const [mentionDismissed, setMentionDismissed] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [gitRefreshTick, setGitRefreshTick] = useState(0);
+  // Bumped when the user sends a message, so the list jumps to the bottom even
+  // if they'd scrolled up into history.
+  const [sendTick, setSendTick] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -160,6 +163,9 @@ export default function Chat() {
   function pushTo(sessionId: string, key: 'content' | 'thinking' | 'tools', chunk: string) {
     const cur = streamsRef.current[sessionId];
     if (!cur) return;
+    // Once the user hits stop, drop any chunks still arriving while the backend
+    // unwinds, so content visibly stops immediately.
+    if (cur.canceled) return;
     let next: StreamSession;
     if (key === 'thinking') {
       next = { ...cur, thinking: cur.thinking + chunk };
@@ -179,7 +185,10 @@ export default function Chat() {
     setStreamsBySession((prev) => ({ ...prev, [sessionId]: next }));
   }
 
-  function finishStream(sessionId: string) {
+  // Flush the in-flight stream buffer into permanent messages. Shared by the
+  // clean-finish and error paths so a failed turn keeps whatever streamed
+  // before it broke instead of discarding it.
+  function flushStreamBuffer(sessionId: string) {
     const s = streamsRef.current[sessionId];
     const store = useStore.getState();
     if (s) {
@@ -195,6 +204,12 @@ export default function Chat() {
     }
     delete streamsRef.current[sessionId];
     setStreamsBySession((prev) => { const n = { ...prev }; delete n[sessionId]; return n; });
+    return s;
+  }
+
+  function finishStream(sessionId: string) {
+    const s = flushStreamBuffer(sessionId);
+    const store = useStore.getState();
     store.setStreamingSession(null);
     store.setLoading(false);
     // Only set 'complete' if not canceled (cancel already set 'idle')
@@ -203,9 +218,10 @@ export default function Chat() {
 
   function errorStream(sessionId: string, msg: string) {
     const store = useStore.getState();
+    // Keep the partial response the user was already reading, then note the error.
+    flushStreamBuffer(sessionId);
     store.addMessage(sessionId, { role: 'assistant', content: `Error: ${msg}` });
-    delete streamsRef.current[sessionId];
-    setStreamsBySession((prev) => { const n = { ...prev }; delete n[sessionId]; return n; });
+    store.setStreamingSession(null);
     store.setLoading(false);
     store.setAgentStatus(sessionId, 'error');
   }
@@ -338,6 +354,7 @@ export default function Chat() {
       : '');
 
     addMessage(activeSession, { role: 'user', content, attachment: att ? { name: att.name, preview: att.preview } : undefined });
+    setSendTick((t) => t + 1);
     setLoading(true);
 
     const buf: StreamSession = { thinking: '', parts: [], startedAt: Date.now() };
@@ -368,7 +385,16 @@ export default function Chat() {
   }, [input, attachment, streaming, viewingSession]);
 
   const cancel = useCallback(async () => {
-    if (streamsRef.current[viewingSession]) streamsRef.current[viewingSession].canceled = true;
+    const buf = streamsRef.current[viewingSession];
+    if (!buf || buf.canceled) return;
+    // Give immediate feedback: mark the stream as canceling (re-render so the
+    // button switches to a spinner) and stop new content from appearing right
+    // away. The buffer is kept until the backend confirms with stream_done —
+    // finalizing early would let a stale done event from this turn clobber a
+    // message the user might send during the unwind.
+    const next = { ...buf, canceled: true };
+    streamsRef.current[viewingSession] = next;
+    setStreamsBySession((prev) => ({ ...prev, [viewingSession]: next }));
     useStore.getState().setAgentStatus(viewingSession, 'idle');
     await ipc.stopChatStream().catch(console.error);
   }, [viewingSession]);
@@ -533,6 +559,7 @@ export default function Chat() {
         liveContentLen={liveContentLen}
         prefs={prefs}
         StreamStatus={StreamStatus}
+        scrollToBottomSignal={sendTick}
       />
 
       {/* Footer — QuestionCard, SummarizeBanner, GitContext, Composer */}
@@ -570,6 +597,7 @@ export default function Chat() {
             fileInputRef={fileInputRef}
             taRef={taRef}
             isLoading={streaming != null}
+            canceling={streaming?.canceled ?? false}
             onDrop={onDrop}
             autosize={autosize}
             showPalette={showPalette}
