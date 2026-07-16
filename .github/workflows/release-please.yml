@@ -31,7 +31,8 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            # Space-separated: passed to `rustup target add`, not to an action.
+            rust_targets: aarch64-apple-darwin x86_64-apple-darwin
             args: --target universal-apple-darwin
           - platform: ubuntu-22.04
             rust_targets: ''
@@ -59,8 +60,15 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust_targets }}
+
+      # Targets have to land on the toolchain rust-toolchain.toml pins, not on
+      # whatever the step above made the default — that mismatch is what broke
+      # the universal build: the targets went to `stable` while tauri built with
+      # the pinned toolchain and found none. `rustup target add` run inside the
+      # repo resolves through the pin file, so this can't drift apart again.
+      - name: Add build targets to the pinned toolchain
+        if: matrix.rust_targets != ''
+        run: rustup target add ${{ matrix.rust_targets }}
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
