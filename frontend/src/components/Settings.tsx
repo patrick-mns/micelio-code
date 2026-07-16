@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChatCircle, Cloud, FolderOpen, Wrench, Palette, Plug, X, type Icon } from '@phosphor-icons/react';
+import { ChatCircle, Cloud, FolderOpen, Wrench, Palette, Plug, ChartBar, CaretLeft, X, type Icon } from '@phosphor-icons/react';
 import { theme } from '@/theme';
 import { useI18n } from '@/i18n';
 import AppearanceSettings from './AppearanceSettings';
@@ -7,6 +7,7 @@ import ChatSettings from './ChatSettings';
 import ProviderSettings from './ProviderSettings';
 import McpSettings from './McpSettings';
 import WorkspaceSettings from './WorkspaceSettings';
+import UsageSettings from './UsageSettings';
 import AdvancedSettings from './AdvancedSettings';
 import { settingsModalStyles as modalStyles } from '@/utils/theme-styles';
 import { ipc } from '@/ipc';
@@ -14,12 +15,23 @@ import { ipc } from '@/ipc';
 import { useStore } from '@/store';
 import type { SettingsCategoryId } from '@/store/uiSlice';
 
-const CATEGORIES: { id: SettingsCategoryId; Icon: Icon; Panel: React.ComponentType }[] = [
+// A panel that drills into a sub-view reports it here, so the modal header can
+// swap its title for a back button. Panels without sub-views ignore the prop.
+export interface SubView {
+  title: string;
+  onBack: () => void;
+}
+export interface SettingsPanelProps {
+  onSubView?: (subView: SubView | null) => void;
+}
+
+const CATEGORIES: { id: SettingsCategoryId; Icon: Icon; Panel: React.ComponentType<SettingsPanelProps> }[] = [
   { id: 'appearance', Icon: Palette, Panel: AppearanceSettings },
   { id: 'chat', Icon: ChatCircle, Panel: ChatSettings },
   { id: 'providers', Icon: Cloud, Panel: ProviderSettings },
   { id: 'mcp', Icon: Plug, Panel: McpSettings },
   { id: 'workspace', Icon: FolderOpen, Panel: WorkspaceSettings },
+  { id: 'usage', Icon: ChartBar, Panel: UsageSettings },
   { id: 'advanced', Icon: Wrench, Panel: AdvancedSettings },
 ];
 
@@ -31,6 +43,8 @@ export default function Settings({ onClose }: SettingsProps) {
   const { t } = useI18n();
   const { settingsCategory: category, setSettingsCategory: setCategory } = useStore();
   const [version, setVersion] = useState('');
+  // Cleared by the panel's own effect cleanup when it unmounts on a category switch.
+  const [subView, setSubView] = useState<SubView | null>(null);
   const active = CATEGORIES.find((c) => c.id === category) ?? CATEGORIES[0];
 
   useEffect(() => {
@@ -65,13 +79,22 @@ export default function Settings({ onClose }: SettingsProps) {
         {/* Content */}
         <div style={modalStyles.content}>
           <div style={modalStyles.header}>
-            <span style={modalStyles.headerTitle}>{t('settings.' + active.id)}</span>
+            {subView ? (
+              <span style={modalStyles.headerBack}>
+                <button onClick={subView.onBack} className="icon-btn" title={t('settings.back')}>
+                  <CaretLeft size={15} weight="bold" />
+                </button>
+                <span style={modalStyles.headerTitle}>{subView.title}</span>
+              </span>
+            ) : (
+              <span style={modalStyles.headerTitle}>{t('settings.' + active.id)}</span>
+            )}
             <button onClick={onClose} className="close-btn" title={t('settings.close')}>
               <X size={15} />
             </button>
           </div>
           <div style={modalStyles.body}>
-            <active.Panel />
+            <active.Panel onSubView={setSubView} />
           </div>
         </div>
       </div>

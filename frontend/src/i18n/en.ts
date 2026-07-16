@@ -11,7 +11,6 @@ const en = {
   tabs: {
     chat: 'Chat',
     treemap: 'Treemap',
-    usage: 'Usage',
   },
 
   // ── Header buttons ───────────────────────────────────────────────────
@@ -71,11 +70,13 @@ const en = {
   settings: {
     title: 'Settings',
     close: 'Close',
+    back: 'Back',
     appearance: 'Appearance',
     chat: 'Chat',
     providers: 'Providers',
     mcp: 'MCP',
     workspace: 'Workspace',
+    usage: 'Usage',
     advanced: 'Advanced',
     // Appearance section
     theme: 'THEME',

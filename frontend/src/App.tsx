@@ -1,8 +1,7 @@
 import React, { useEffect, useState, type CSSProperties } from 'react';
-import { ChatCircle, SquaresFour, SidebarSimple, ChartBar, FileText, Info, type Icon } from '@phosphor-icons/react';
+import { ChatCircle, SquaresFour, SidebarSimple, FileText, Info, type Icon } from '@phosphor-icons/react';
 import Chat from '@/views/Chat';
 import TreemapView from '@/views/Treemap';
-import Usage from '@/views/Usage';
 import Settings from '@/components/Settings';
 import SystemPromptModal from '@/components/SystemPromptModal';
 import AboutModal from '@/components/AboutModal';
@@ -40,7 +39,6 @@ function ResizeHandle({ onMouseDown }: { onMouseDown: () => void }) {
 const TABS: { id: TabId; Icon: Icon }[] = [
   { id: 'chat', Icon: ChatCircle },
   { id: 'treemap', Icon: SquaresFour },
-  { id: 'usage', Icon: ChartBar },
 ];
 
 function basename(p: string | undefined): string {
@@ -256,7 +254,6 @@ const { t } = useI18n();
                   <Chat />
                 </div>
                 {activeTab === 'treemap' && <TreemapView />}
-                {activeTab === 'usage' && <Usage />}
               </>
             )}
           </div>

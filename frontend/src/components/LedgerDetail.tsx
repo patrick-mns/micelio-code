@@ -1,7 +1,6 @@
 import React, { useEffect, useState, type ReactNode } from 'react';
-import { X, ArrowSquareOut, CaretRight, Copy, Check } from '@phosphor-icons/react';
+import { ArrowSquareOut, CaretRight, Copy, Check } from '@phosphor-icons/react';
 import { theme } from '@/theme';
-import { usePanelResize } from '@/hooks/usePanelResize';
 import ProviderBadge from '@/components/ProviderBadge';
 import { shortModel, fmtTsFull } from '@/utils/usageHelpers';
 import { usageStyles as styles } from '@/utils/theme-styles';
@@ -11,22 +10,12 @@ import JsonBlock from './JsonBlock';
 
 interface LedgerDetailProps {
   entry: UsageLogEntry;
-  onClose: () => void;
   onOpenSession: () => void;
 }
 
-// Internal right-side drawer with the full detail of one ledger turn.
-export default function LedgerDetail({ entry, onClose, onOpenSession }: LedgerDetailProps) {
-  const { width, handleProps } = usePanelResize({
-    storageKey: 'turnDetailWidth', defaultWidth: 500, min: 300, side: 'right',
-  });
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
+// Full detail of one ledger turn. Rendered in place of the ledger list inside
+// the Usage settings panel; the caller owns the back navigation.
+export default function LedgerDetail({ entry, onOpenSession }: LedgerDetailProps) {
   // Heavy request/response payloads are excluded from the ledger list query for
   // speed — fetch them on demand when this detail panel opens.
   const [raw, setRaw] = useState<UsageRaw | null>(null);
@@ -40,43 +29,33 @@ export default function LedgerDetail({ entry, onClose, onOpenSession }: LedgerDe
   const tps = secs > 0 && entry.completion_tokens > 0 ? entry.completion_tokens / secs : null;
   const fmtDur = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
   return (
-    <>
-      <div style={styles.backdrop} onClick={onClose} />
-      <div className="ledger-drawer" style={{ ...styles.drawer, width }}>
-        <div {...handleProps} title="Drag to resize" />
-      <div style={styles.drawerHead}>
-        <span style={styles.drawerTitle}>Turn detail</span>
-        <button className="close-btn" style={styles.drawerClose} onClick={onClose} title="Close (Esc)"><X size={15} /></button>
-      </div>
-      <div style={styles.drawerBody}>
-        <DetailRow label="When" value={fmtTsFull(entry.ts)} />
-        <DetailRow label="Model" value={<span style={{ display: 'flex', alignItems: 'center' }}>{shortModel(entry.model)}<ProviderBadge provider={entry.provider} /></span>} />
+    <div>
+      <DetailRow label="When" value={fmtTsFull(entry.ts)} />
+      <DetailRow label="Model" value={<span style={{ display: 'flex', alignItems: 'center' }}>{shortModel(entry.model)}<ProviderBadge provider={entry.provider} /></span>} />
 
-        <div style={styles.drawerDivider} />
-        <DetailRow label="Latency" value={entry.duration_ms > 0 ? fmtDur(entry.duration_ms) : '—'} mono />
-        {tps && <DetailRow label="Throughput" value={`${tps.toFixed(1)} tok/s`} mono />}
+      <div style={styles.divider} />
+      <DetailRow label="Latency" value={entry.duration_ms > 0 ? fmtDur(entry.duration_ms) : '—'} mono />
+      {tps && <DetailRow label="Throughput" value={`${tps.toFixed(1)} tok/s`} mono />}
 
-        <div style={styles.drawerDivider} />
-        <DetailRow label="Prompt tokens" value={entry.prompt_tokens.toLocaleString()} mono />
-        <DetailRow label="Completion tokens" value={entry.completion_tokens.toLocaleString()} mono />
-        <DetailRow label="Total tokens" value={total.toLocaleString()} mono />
-        {entry.prompt_cost != null && <DetailRow label="Input cost" value={`$${entry.prompt_cost.toFixed(6)}`} mono />}
-        {entry.completion_cost != null && <DetailRow label="Output cost" value={`$${entry.completion_cost.toFixed(6)}`} mono />}
-        <DetailRow label="Cost" value={entry.cost > 0 ? `$${entry.cost.toFixed(6)}` : 'Free'} mono accent={entry.cost > 0} />
+      <div style={styles.divider} />
+      <DetailRow label="Prompt tokens" value={entry.prompt_tokens.toLocaleString()} mono />
+      <DetailRow label="Completion tokens" value={entry.completion_tokens.toLocaleString()} mono />
+      <DetailRow label="Total tokens" value={total.toLocaleString()} mono />
+      {entry.prompt_cost != null && <DetailRow label="Input cost" value={`$${entry.prompt_cost.toFixed(6)}`} mono />}
+      {entry.completion_cost != null && <DetailRow label="Output cost" value={`$${entry.completion_cost.toFixed(6)}`} mono />}
+      <DetailRow label="Cost" value={entry.cost > 0 ? `$${entry.cost.toFixed(6)}` : 'Free'} mono accent={entry.cost > 0} />
 
-        <div style={styles.drawerDivider} />
-        <DetailRow label="Session" value={entry.session_title || '(untitled)'} />
-        <button className="btn btn-lg btn-solid" style={{ width: '100%', marginTop: 12 }} onClick={onOpenSession} disabled={!entry.session_id}>
-          <ArrowSquareOut size={15} />
-          Open session
-        </button>
+      <div style={styles.divider} />
+      <DetailRow label="Session" value={entry.session_title || '(untitled)'} />
+      <button className="btn btn-lg btn-solid" style={{ width: '100%', marginTop: 12 }} onClick={onOpenSession} disabled={!entry.session_id}>
+        <ArrowSquareOut size={15} />
+        Open session
+      </button>
 
-        {raw && (raw.request_raw || raw.response_raw) && (
-          <RawNetwork request={raw.request_raw} response={raw.response_raw} />
-        )}
-      </div>
-      </div>
-    </>
+      {raw && (raw.request_raw || raw.response_raw) && (
+        <RawNetwork request={raw.request_raw} response={raw.response_raw} />
+      )}
+    </div>
   );
 }
 
