@@ -14,11 +14,18 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
         .ok_or_else(|| "tool call missing `command`".to_string())?;
     let background = super::get_bool_field(arguments, "background").unwrap_or(false);
 
+    // Sandbox the command unless the setting is off, no backend exists, or
+    // this call was approved to run unsandboxed (`sandbox:false` is gated by a
+    // user confirmation in the agent loop before it ever reaches here).
+    let sandboxed = crate::backend::config::sandbox_enabled()
+        && super::sandbox::status().is_available()
+        && super::get_bool_field(arguments, "sandbox") != Some(false);
+
     // Both paths spawn the same way: detached, writing stdout+stderr to a
     // per-task log file. The only difference is how long we wait before
     // returning. A unique log file (named by PID) means concurrent servers and
     // later re-reads via the `bg` tool never clobber each other.
-    let (mut child, log_path) = spawn_detached(&command, context)?;
+    let (mut child, log_path) = spawn_detached(&command, context, sandboxed)?;
     let pid = child.id();
 
     if background {
@@ -36,7 +43,7 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
             Ok(Some(status)) => {
                 let output = std::fs::read_to_string(&log_path).unwrap_or_default();
                 let _ = std::fs::remove_file(&log_path); // short-lived: don't litter
-                return format_output(status.code().unwrap_or(-1), &output, &command);
+                return format_output(status.code().unwrap_or(-1), &output, &command, sandboxed);
             }
             Ok(None) => {
                 if start.elapsed() >= FOREGROUND_TIMEOUT {
@@ -57,7 +64,13 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
 
 /// Spawn a fully detached process whose stdout+stderr go to a unique per-task
 /// log file under `.micelio/bg/`. Returns the child and its log path.
-fn spawn_detached(command: &str, context: &ToolContext) -> Result<(Child, PathBuf), String> {
+/// With `sandboxed`, the shell runs wrapped in the OS sandbox (write access
+/// limited to the workspace roots + temp/caches; network per the setting).
+fn spawn_detached(
+    command: &str,
+    context: &ToolContext,
+    sandboxed: bool,
+) -> Result<(Child, PathBuf), String> {
     let dir = context.workspace_root.join(".micelio/bg");
     std::fs::create_dir_all(&dir).map_err(|e| format!("failed to create log dir: {e}"))?;
     // Unique name (nanos since epoch) — concurrent servers never share a log.
@@ -75,10 +88,27 @@ fn spawn_detached(command: &str, context: &ToolContext) -> Result<(Child, PathBu
     let shell = if cfg!(windows) { "cmd.exe" } else { "sh" };
     let shell_arg = if cfg!(windows) { "/C" } else { "-lc" };
 
-    let mut cmd = no_window_cmd(shell);
-    cmd.arg(shell_arg)
-        .arg(command)
-        .current_dir(&context.workspace_root)
+    // The sandboxed and plain paths build the same `<shell> <arg> <command>`
+    // invocation; the wrapper only prefixes the sandbox runtime around it.
+    let sandbox_cmd = if sandboxed {
+        super::sandbox::wrap(
+            shell,
+            shell_arg,
+            command,
+            &super::sandbox::Spec {
+                writable_roots: context.workspace_roots.clone(),
+                allow_network: crate::backend::config::sandbox_network(),
+            },
+        )
+    } else {
+        None
+    };
+    let mut cmd = sandbox_cmd.unwrap_or_else(|| {
+        let mut c = no_window_cmd(shell);
+        c.arg(shell_arg).arg(command);
+        c
+    });
+    cmd.current_dir(&context.workspace_root)
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_err));
@@ -184,11 +214,16 @@ fn detach_child() {
     }
 }
 
-fn format_output(exit_code: i32, output: &str, command: &str) -> Result<ToolResult, String> {
+fn format_output(
+    exit_code: i32,
+    output: &str,
+    command: &str,
+    sandboxed: bool,
+) -> Result<ToolResult, String> {
     let trimmed = output.trim();
     if exit_code != 0 {
         let is_windows = cfg!(windows);
-        let msg = if trimmed.is_empty() {
+        let mut msg = if trimmed.is_empty() {
             // On Windows, cmd.exe often produces no output when a command is
             // not found, unlike bash which writes "command not found" to stderr.
             // Include the exact command in the hint so the model can self-correct.
@@ -216,10 +251,74 @@ This may mean the command was not found or couldn't execute."
                 first.to_string()
             }
         };
+        // A denial reads as "Operation not permitted" — tell the model how to
+        // escalate instead of letting it retry the same blocked command.
+        if sandboxed && trimmed.contains("Operation not permitted") {
+            msg.push_str(
+                "\nnote: this command ran inside the sandbox (writes limited to the \
+workspace). If it legitimately needs broader access, retry with \
+{\"sandbox\": false} — the user will be asked to approve.",
+            );
+        }
         Err(msg)
     } else {
+        let marker = if sandboxed { "sandboxed: true\n" } else { "" };
         Ok(ToolResult {
-            content: format!("output:\n{output}\nexit_code: {exit_code}\n"),
+            content: format!("output:\n{output}\nexit_code: {exit_code}\n{marker}"),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx(root: PathBuf) -> ToolContext {
+        ToolContext {
+            workspace_root: root.clone(),
+            workspace_roots: vec![root],
+            model_name: String::new(),
+            vision_model: String::new(),
+            history_len: 0,
+            show_tools: false,
+            debug: false,
+            graph_json: String::new(),
+            mcp: None,
+        }
+    }
+
+    /// End-to-end through the tool entry point: on a machine with a sandbox
+    /// backend the result carries the marker, writes inside the workspace
+    /// succeed, and writes outside it are denied with the escalation hint.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn run_sandboxes_by_default_and_hints_on_denial() {
+        let ws = std::env::temp_dir().join(format!("term-sbx-{}", std::process::id()));
+        std::fs::create_dir_all(&ws).unwrap();
+        let context = ctx(ws.clone());
+
+        let ok = run(r#"{"command":"echo hello > f.txt && cat f.txt"}"#, &context)
+            .expect("write inside the workspace succeeds");
+        assert!(ok.content.contains("hello"));
+        assert!(ok.content.contains("sandboxed: true"), "{}", ok.content);
+
+        let outside = std::env::temp_dir().join(format!("term-sbx-escape-{}", std::process::id()));
+        // temp_dir is an implicit writable root, so probe somewhere it isn't:
+        // $HOME (never a writable root in tests).
+        let probe = format!(
+            r#"{{"command":"touch $HOME/.term-sbx-escape-{} "}}"#,
+            std::process::id()
+        );
+        let err = run(&probe, &context).expect_err("write outside the roots is denied");
+        assert!(err.contains("sandbox"), "hint missing: {err}");
+
+        // Opting out is honored by the tool itself (the approval gate lives in
+        // the agent loop, which is exercised separately).
+        let plain = run(r#"{"command":"echo plain","sandbox":false}"#, &context)
+            .expect("unsandboxed run succeeds");
+        assert!(!plain.content.contains("sandboxed: true"));
+
+        let _ = std::fs::remove_dir_all(&ws);
+        let _ = std::fs::remove_file(outside);
     }
 }

@@ -2,7 +2,7 @@ import React, { useState, type CSSProperties } from 'react';
 import { toolEntryStyles } from '@/utils/theme-styles';
 import {
   CaretRight, Terminal, FileText, MagnifyingGlass,
-  PencilSimple, FilePlus, Folder, Wrench, GlobeSimple, GitBranch,
+  PencilSimple, FilePlus, Folder, Wrench, GlobeSimple, GitBranch, Cube,
   type Icon,
 } from '@phosphor-icons/react';
 import { theme } from '@/theme';
@@ -64,6 +64,8 @@ export default function ToolEntry({ content, showDetails = true, nested = false 
     : toolIcon(name);
   const detailLines = detail ? detail.split('\n') : [];
   const hasDetail = showDetails && detail;
+  // The terminal tool marks results that ran inside the OS sandbox.
+  const sandboxed = detail.includes('sandboxed: true');
 
   return (
     <div style={toolEntryStyles.wrap}>
@@ -84,6 +86,11 @@ export default function ToolEntry({ content, showDetails = true, nested = false 
         />
         <Icon size={13} color={theme.dim} weight="regular" style={{ flexShrink: 0 }} />
         <span style={toolEntryStyles.name}>{name}</span>
+        {sandboxed && (
+          <span title="Ran inside the OS sandbox — writes limited to the workspace" style={{ display: 'inline-flex', flexShrink: 0 }}>
+            <Cube size={12} color="#8b5cf6" weight="fill" />
+          </span>
+        )}
         {breadcrumb && <span style={toolEntryStyles.breadcrumb}>{breadcrumb}</span>}
         {hasDiff && (
           <span style={toolEntryStyles.stats}>
