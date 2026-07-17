@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.3](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.15.2...micelio-v0.15.3) (2026-07-17)
+
+
+### Bug Fixes
+
+* **review:** scope the changes panel to the selected folder ([c862795](https://github.com/patrick-mns/micelio-code/commit/c8627956e1d4a912ec4257a9d8250972e123ff5f))
+* **review:** scope the changes panel to the selected folder ([f0e3172](https://github.com/patrick-mns/micelio-code/commit/f0e317265ca981b5dc91db40335e1abe9910c1f5))
+
 ## [0.15.2](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.15.1...micelio-v0.15.2) (2026-07-16)
 
 
