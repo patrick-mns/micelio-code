@@ -113,6 +113,7 @@ const { t } = useI18n();
   const {
     status: reviewStatus,
     gitRevertFile, gitRevertAll,
+    refresh: refreshReview,
   } = useReview();
   const { switching, pickWorkspace } = useWorkspace();
   const { loadCurrentWorkspace, currentWorkspace, activeRoot } = useStore();
@@ -120,7 +121,14 @@ const { t } = useI18n();
   // The changes panel is scoped to a single active folder (backend workspace_root):
   // activeRoot when set, otherwise the workspace's first folder.
   const activeFolderPath = activeRoot || currentWorkspace?.folders?.[0] || '';
-  const activeFolderName = activeFolderPath.split('/').pop() || activeFolderPath.split('\\').pop() || '';
+
+  // Re-fetch the diff whenever the folder or workspace changes. The backend
+  // updates its workspace_root before either value settles, so by now
+  // get_review_status reads the newly-selected folder. Without this the panel
+  // keeps showing the previous folder's (or workspace's) changes.
+  useEffect(() => {
+    refreshReview();
+  }, [refreshReview, activeFolderPath, currentWorkspace?.id]);
 
   const handleDeleteSessionConfirm = async () => {
     const id = confirmDeleteSession;
@@ -264,8 +272,6 @@ const { t } = useI18n();
           {panelContent === 'review' ? (
             <ReviewPanel
               gitFiles={reviewStatus.changes.git_files}
-              folderName={activeFolderName}
-              folderPath={activeFolderPath}
               onClose={() => setRightPanel(null)}
               onRevert={gitRevertFile}
               onRevertAll={gitRevertAll}

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { reviewPanelStyles } from '@/utils/theme-styles';
-import { CheckCircle, X, GitFork, CaretDown, FolderOpen } from '@phosphor-icons/react';
+import { CheckCircle, X, GitFork, CaretDown } from '@phosphor-icons/react';
 import { theme } from '@/theme';
 import type { ReviewFileInfo } from '@/hooks/useReview';
 import { computeDiff } from '@/utils/diff';
@@ -160,9 +160,6 @@ function FileCard({ file, onRevert }: FileCardProps) {
 
 interface ReviewPanelProps {
   gitFiles: ReviewFileInfo[];
-  /** Active folder the diff is scoped to — shown so the source is unambiguous. */
-  folderName?: string;
-  folderPath?: string;
   onClose: () => void;
   onRevert: (path: string) => void;
   onRevertAll: () => void;
@@ -170,23 +167,15 @@ interface ReviewPanelProps {
 
 export function ReviewPanel({
   gitFiles,
-  folderName,
-  folderPath,
   onClose,
   onRevert,
   onRevertAll,
 }: ReviewPanelProps) {
   return (
     <div style={reviewPanelStyles.panel}>
-      {/* Header — title + which folder these changes come from */}
+      {/* Header */}
       <div style={reviewPanelStyles.head}>
         <span style={{ ...reviewPanelStyles.headTitle, flex: '0 0 auto' }}>Changes</span>
-        {folderName && (
-          <span style={reviewPanelStyles.headFolder} title={folderPath || folderName}>
-            <FolderOpen size={11} style={{ flexShrink: 0 }} />
-            <span style={reviewPanelStyles.headFolderName}>{folderName}</span>
-          </span>
-        )}
         <span style={{ flex: 1 }} />
         <button className="close-btn" onClick={onClose} title="Close"><X size={15} /></button>
       </div>
