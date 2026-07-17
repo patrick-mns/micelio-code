@@ -92,3 +92,5 @@ We use Google's `release-please` to automate version bumps and changelog generat
 * `feat!:` or `fix!:` (or `BREAKING CHANGE:`) triggers a MAJOR bump.
 
 While under `0.x`, minor versions may include breaking changes without a MAJOR bump. See [`CHANGELOG.md`](./CHANGELOG.md) for history.
+
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/407ced2a-d858-4468-b935-702ad2c2dd13" />
