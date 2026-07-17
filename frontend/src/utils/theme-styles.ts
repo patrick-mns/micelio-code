@@ -259,11 +259,6 @@ export const reviewPanelStyles: Record<string, CSSProperties> = {
     flexShrink: 0,
   },
   headTitle: { flex: 1, color: theme.text, fontSize: 13, fontWeight: 600 },
-  headFolder: {
-    display: 'flex', alignItems: 'center', gap: 4, minWidth: 0,
-    color: theme.dim, fontSize: 11.5,
-  },
-  headFolderName: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   closeBtn: {
     // Uses .close-btn from primitives.css — same as BgTasks
   },

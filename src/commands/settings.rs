@@ -523,8 +523,10 @@ pub async fn get_git_context(state: State<'_, AppState>) -> Result<GitContext, S
         .unwrap_or_else(|| "no git".to_string());
 
     // Diff stats vs HEAD so both staged and unstaged changes are counted.
+    // `--relative` scopes the stats to the selected folder (`root`), matching
+    // the changes panel; without it git reports the whole repo from a subfolder.
     let diff_output = no_window_cmd("git")
-        .args(["diff", "HEAD", "--numstat"])
+        .args(["diff", "HEAD", "--numstat", "--relative"])
         .current_dir(&*root)
         .output()
         .ok()

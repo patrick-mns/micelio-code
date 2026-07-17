@@ -128,10 +128,14 @@ pub fn git_diff_files(workspace_root: &Path) -> Result<Vec<ReviewFileInfo>, Stri
     use crate::backend::cmd::no_window_cmd;
 
     // 1. Get list of changed files vs HEAD (staged + unstaged, no untracked).
+    //    `--relative` scopes the diff to `workspace_root` — the selected folder —
+    //    excluding changes elsewhere in the repo and emitting folder-relative
+    //    paths. Without it, `git diff` reports the whole repository even when run
+    //    from a subfolder, so the panel would show changes outside the folder.
     //    On failure (not a git repo, or no commits yet) treat the tracked set
     //    as empty and still surface untracked files in step 3.
     let name_output = no_window_cmd("git")
-        .args(["diff", "HEAD", "--name-only"])
+        .args(["diff", "HEAD", "--name-only", "--relative"])
         .current_dir(workspace_root)
         .output()
         .map_err(|e| format!("git failed: {e}"))?;
@@ -148,9 +152,11 @@ pub fn git_diff_files(workspace_root: &Path) -> Result<Vec<ReviewFileInfo>, Stri
     // 2. For each file, get unified diff and also the original/current content
     let mut files = Vec::new();
     for name in &names {
-        // Original content (from HEAD)
+        // Original content (from HEAD). `name` is folder-relative (see
+        // `--relative` above), so prefix `./` to resolve it against the cwd
+        // rather than the repo root.
         let original = no_window_cmd("git")
-            .args(["show", &format!("HEAD:{}", name)])
+            .args(["show", &format!("HEAD:./{}", name)])
             .current_dir(workspace_root)
             .output()
             .ok()
