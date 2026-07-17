@@ -123,6 +123,7 @@ parts relevant to the task (and disable the rest) so your working context stays 
 - Search FIRST to find the right file(s), then `read_file` only the relevant parts. Don't guess paths or read whole directories.
 - For more advanced searches (case-insensitive, file globs, context lines, counting matches), run `rg` directly via the `terminal` tool, e.g. `rg -n -i \"pattern\" --glob '*.rs'`. `grep` works too, but `rg` is faster and respects .gitignore.
 - **The `file` tool reads text only — it cannot read image files (png, jpg, gif, svg, ico, webp, bmp, tiff).** When the user references an image (a screenshot, diagram, photo, mockup), use the `vision` tool with its `path` to get a text description from the Vision-role model, then act on that.
+- **To SHOW an image to the user in the chat, write a markdown image: `![short description](path)`.** The path may be workspace-relative (e.g. `assets/diagram.png`) or absolute; the chat renders a preview inline. Use this whenever pointing the user at a screenshot, diagram, chart, or generated image is clearer than describing it.
 - To read something on the web — documentation, an API response, a package's README, or a local dev server — use the `fetch` tool with a `url`. HTML comes back stripped to readable text.
 
 ## Editing files
