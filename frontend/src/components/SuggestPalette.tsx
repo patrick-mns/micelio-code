@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { commandPaletteStyles } from '@/utils/theme-styles';
 
 interface SuggestPaletteProps<T> {
@@ -22,12 +22,19 @@ export default function SuggestPalette<T>({
   getLabel,
   getDesc,
 }: SuggestPaletteProps<T>) {
+  const activeRef = useRef<HTMLButtonElement>(null);
+  // Keep the keyboard-selected row visible: when arrowing past the visible
+  // range, scroll just enough to bring it into view (no jump if already shown).
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [selected]);
   if (items.length === 0) return null;
   return (
     <div style={commandPaletteStyles.wrap}>
       {items.map((item, i) => (
         <button
           key={getKey(item)}
+          ref={i === selected ? activeRef : undefined}
           className={i === selected ? 'cmd-row is-active' : 'cmd-row'}
           onMouseDown={(e) => { e.preventDefault(); onPick(item); }}
           style={commandPaletteStyles.row}
