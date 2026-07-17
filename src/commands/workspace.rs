@@ -93,6 +93,118 @@ pub async fn set_active_root(state: State<'_, AppState>, path: String) -> Result
     Ok(())
 }
 
+/// One file offered by the `@` mention autocomplete: its workspace-relative
+/// path (what gets inserted and cited to the agent) and basename (for display).
+#[derive(serde::Serialize)]
+pub struct FileHit {
+    pub path: String,
+    pub name: String,
+}
+
+/// Fuzzy-search files under the selected folder for the `@` mention palette.
+/// Walks the active `workspace_root` respecting `.gitignore` (like the graph
+/// scan) and ranks a case-insensitive subsequence match on the relative path.
+/// Scoped to the selected folder to match the changes panel's behavior.
+#[tauri::command]
+pub async fn search_workspace_files(
+    state: State<'_, AppState>,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<FileHit>, String> {
+    // Same directories the graph scan skips — noise that should never surface.
+    const SKIP_DIRS: [&str; 7] = [
+        ".git",
+        "node_modules",
+        "target",
+        ".micelio",
+        ".minimal-context",
+        ".DS_Store",
+        ".opencode",
+    ];
+    // Cap the walk so a huge repo can't stall the palette.
+    const MAX_CANDIDATES: usize = 5_000;
+
+    let root = state.workspace_root.lock().unwrap().clone();
+    let limit = limit.unwrap_or(20);
+    let q = query.to_lowercase();
+
+    let mut hits: Vec<(FileHit, i32)> = Vec::new();
+    let walker = ignore::WalkBuilder::new(&root)
+        .hidden(false) // rely on SKIP_DIRS, not the dotfile heuristic
+        .filter_entry(|e| {
+            let name = e.file_name().to_string_lossy();
+            !SKIP_DIRS.iter().any(|d| name == *d)
+        })
+        .build();
+
+    let mut walked = 0usize;
+    for entry in walker.filter_map(|e| e.ok()) {
+        if !entry.file_type().is_some_and(|t| t.is_file()) {
+            continue;
+        }
+        walked += 1;
+        if walked > MAX_CANDIDATES {
+            break;
+        }
+        let Ok(rel) = entry.path().strip_prefix(&root) else {
+            continue;
+        };
+        // Normalize to forward slashes so cited paths look the same on Windows.
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        let name = entry.file_name().to_string_lossy().to_string();
+        if let Some(score) = fuzzy_score(&q, &rel_str, &name) {
+            hits.push((
+                FileHit {
+                    path: rel_str,
+                    name,
+                },
+                score,
+            ));
+        }
+    }
+
+    // Higher score first, then shorter path as a stable tiebreaker.
+    hits.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.path.len().cmp(&b.0.path.len())));
+    Ok(hits.into_iter().take(limit).map(|(h, _)| h).collect())
+}
+
+/// Score a file for the `@` palette. `None` means no match (filtered out).
+/// An empty query matches everything. Otherwise the query must be a
+/// case-insensitive subsequence of the relative path; a match inside the
+/// basename — especially a prefix — scores higher than a match spread across
+/// directory segments.
+fn fuzzy_score(query: &str, rel_lower_source: &str, name: &str) -> Option<i32> {
+    if query.is_empty() {
+        // Prefer shallower files when nothing is typed yet.
+        let depth = rel_lower_source.matches('/').count() as i32;
+        return Some(100 - depth);
+    }
+    let rel = rel_lower_source.to_lowercase();
+    let name_lower = name.to_lowercase();
+    if !is_subsequence(query, &rel) {
+        return None;
+    }
+    let mut score = 0;
+    if name_lower.starts_with(query) {
+        score += 1000;
+    } else if name_lower.contains(query) {
+        score += 500;
+    } else if rel.contains(query) {
+        score += 100;
+    }
+    // Shallower paths and shorter names rank a little higher.
+    score -= rel.matches('/').count() as i32;
+    Some(score)
+}
+
+/// True if `needle`'s chars appear in `haystack` in order (both lowercased).
+fn is_subsequence(needle: &str, haystack: &str) -> bool {
+    let mut chars = haystack.chars();
+    needle
+        .chars()
+        .all(|c| chars.any(|h| h == c))
+}
+
 #[tauri::command]
 pub async fn create_workspace(
     state: State<'_, AppState>,

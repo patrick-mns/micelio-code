@@ -354,6 +354,12 @@ export interface SkillSummary {
   source: string;
 }
 
+/** A file offered by the @-mention autocomplete (workspace-relative path). */
+export interface FileHit {
+  path: string;
+  name: string;
+}
+
 export interface SkillDetail {
   meta: {
     name: string;

@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import type {
   AskUser, BgTaskExited, BgTaskInfo, ChatMessage, CompactResult, ContextWindow,
-  EditReviewRequest, GitContext, McpServerStatus, McpToolInfo,
+  EditReviewRequest, FileHit, GitContext, McpServerStatus, McpToolInfo,
   ModelOption, ModelRole, NodeCode, NodeSummarized, Opener,
   ProviderInfo, ProviderInput, ProviderStatus, SessionInfo, SessionModels, SessionTitle,
   Settings, SkillDetail, SkillSummary, StreamDelta, StreamDone,
@@ -88,6 +88,10 @@ export const ipc = {
 
   // Workspace root management (switch active folder in multi-root workspace)
   setWorkspaceRoot: (path: string) => invoke<void>('set_active_root', { path }),
+
+  // Fuzzy file search under the active folder — backs the @-mention palette.
+  searchWorkspaceFiles: (query: string, limit?: number) =>
+    invoke<FileHit[]>('search_workspace_files', { query, limit }),
 
   // Native folder picker → returns the chosen path (or null if cancelled).
   pickFolder: (defaultPath?: string) =>

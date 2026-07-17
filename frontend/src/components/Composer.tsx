@@ -5,7 +5,7 @@ import { useStore } from '@/store';
 import { renderInlineMentions } from '@/utils/skillMentions';
 import ModelRolesSelector from '@/components/ModelRolesSelector';
 import SuggestPalette from '@/components/SuggestPalette';
-import type { SkillSummary } from '@/types';
+import type { FileHit, SkillSummary } from '@/types';
 import ModeSelector from '@/components/ModeSelector';
 import SandboxIndicator from '@/components/SandboxIndicator';
 import { chatStyles as styles } from '@/utils/theme-styles';
@@ -45,6 +45,10 @@ interface ComposerProps {
   filteredSkills: SkillSummary[];
   skillSelected: number;
   pickSkill: (skill: SkillSummary) => void;
+  showFilePalette: boolean;
+  fileHits: FileHit[];
+  fileSelected: number;
+  pickFile: (file: FileHit) => void;
 }
 
 export default function Composer({
@@ -53,6 +57,7 @@ export default function Composer({
   onDrop, autosize, showPalette, filteredCmds, cmdSelected, setCmdSelected,
   runCommand, CommandPalette,
   showSkillPalette, filteredSkills, skillSelected, pickSkill,
+  showFilePalette, fileHits, fileSelected, pickFile,
 }: ComposerProps) {
   const skills = useStore((s) => s.skills);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -72,6 +77,18 @@ export default function Composer({
             getKey={(s) => s.name}
             getLabel={(s) => `#${s.name}`}
             getDesc={(s) => s.description || s.display_name}
+          />
+        </div>
+      )}
+      {showFilePalette && (
+        <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, zIndex: 10 }}>
+          <SuggestPalette
+            items={fileHits}
+            selected={fileSelected}
+            onPick={pickFile}
+            getKey={(f) => f.path}
+            getLabel={(f) => f.name}
+            getDesc={(f) => f.path}
           />
         </div>
       )}

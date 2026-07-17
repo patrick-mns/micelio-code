@@ -23,19 +23,25 @@ function renderMentions(
   skills: SkillSummary[],
   style: React.CSSProperties,
 ): React.ReactNode {
-  if (!text.includes('#') || skills.length === 0) return text;
+  const hasSkill = text.includes('#') && skills.length > 0;
+  const hasFile = text.includes('@');
+  if (!hasSkill && !hasFile) return text;
   const known = new Set(skills.map((s) => s.name.toLowerCase()));
-  const parts = text.split(/(#[\w-]+)/g);
+  // Split on both #skill mentions (highlighted only when known) and @file
+  // references (always highlighted — every @token is a cited path).
+  const parts = text.split(/(#[\w-]+|@\S+)/g);
   if (parts.length === 1) return text;
-  return parts.map((part, i) =>
-    part.startsWith('#') && known.has(part.slice(1).toLowerCase()) ? (
+  return parts.map((part, i) => {
+    const isSkill = part.startsWith('#') && known.has(part.slice(1).toLowerCase());
+    const isFile = part.startsWith('@') && part.length > 1;
+    return isSkill || isFile ? (
       <span key={i} style={style}>
         {part}
       </span>
     ) : (
       part
-    ),
-  );
+    );
+  });
 }
 
 /** Chat bubbles: known #skill mentions as accent pills. */
