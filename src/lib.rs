@@ -238,10 +238,24 @@ pub fn run() {
     let mcp = Arc::new(backend::mcp::McpManager::new().expect("failed to build MCP runtime"));
     let mcp_for_setup = mcp.clone();
 
+    // Folders of the workspace open at startup — granted to the asset protocol
+    // in `setup` so their skill icons and image previews load in the webview.
+    let initial_asset_dirs: Vec<std::path::PathBuf> = current_workspace
+        .as_ref()
+        .map(|w| w.folders.clone())
+        .unwrap_or_default();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             backend::tools::bg::set_app_handle(app.handle().clone());
+
+            // Open the startup workspace's folders to the asset protocol (empty
+            // static scope in tauri.conf; the workspace is only known at runtime).
+            let asset_scope = app.asset_protocol_scope();
+            for dir in &initial_asset_dirs {
+                let _ = asset_scope.allow_directory(dir, true);
+            }
 
             // Connect to configured MCP servers off the main thread. Emits
             // `mcp_status` when done so the UI can refresh its server list.

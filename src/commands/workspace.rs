@@ -1,7 +1,19 @@
 use crate::backend::workspace::{list_workspaces, Workspace};
 use crate::AppState;
-use std::path::PathBuf;
-use tauri::State;
+use std::path::{Path, PathBuf};
+use tauri::{AppHandle, Manager, State};
+
+/// Grant the asset protocol read access to workspace folders so the webview can
+/// load local images from them — skill icons today, model-cited image previews
+/// next. The static scope in tauri.conf is empty; folders are opened here at
+/// runtime because the workspace is chosen dynamically. Recursive; failures are
+/// non-fatal (a disallowed image simply won't render).
+pub fn allow_workspace_assets<'a>(app: &AppHandle, dirs: impl IntoIterator<Item = &'a Path>) {
+    let scope = app.asset_protocol_scope();
+    for dir in dirs {
+        let _ = scope.allow_directory(dir, true);
+    }
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorkspaceWithSessions {
@@ -84,11 +96,16 @@ pub async fn list_all_workspaces_with_sessions(
 }
 
 #[tauri::command]
-pub async fn set_active_root(state: State<'_, AppState>, path: String) -> Result<(), String> {
+pub async fn set_active_root(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<(), String> {
     let path = PathBuf::from(&path);
     if !path.exists() {
         return Err(format!("path does not exist: {}", path.display()));
     }
+    allow_workspace_assets(&app, [path.as_path()]);
     *state.workspace_root.lock().unwrap() = path;
     Ok(())
 }
@@ -200,13 +217,12 @@ fn fuzzy_score(query: &str, rel_lower_source: &str, name: &str) -> Option<i32> {
 /// True if `needle`'s chars appear in `haystack` in order (both lowercased).
 fn is_subsequence(needle: &str, haystack: &str) -> bool {
     let mut chars = haystack.chars();
-    needle
-        .chars()
-        .all(|c| chars.any(|h| h == c))
+    needle.chars().all(|c| chars.any(|h| h == c))
 }
 
 #[tauri::command]
 pub async fn create_workspace(
+    app: AppHandle,
     state: State<'_, AppState>,
     name: String,
     folders: Vec<String>,
@@ -218,20 +234,25 @@ pub async fn create_workspace(
     ws.save().map_err(|e| e.to_string())?;
 
     // Switch right away
-    switch_workspace_internal(&state, &ws).await?;
+    switch_workspace_internal(&app, &state, &ws).await?;
 
     Ok(ws)
 }
 
 #[tauri::command]
-pub async fn switch_workspace(state: State<'_, AppState>, id: String) -> Result<Workspace, String> {
+pub async fn switch_workspace(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Workspace, String> {
     let ws = Workspace::load(&id).map_err(|e| format!("failed to load workspace: {e}"))?;
-    switch_workspace_internal(&state, &ws).await?;
+    switch_workspace_internal(&app, &state, &ws).await?;
     Ok(ws)
 }
 
 #[tauri::command]
 pub async fn add_folder_to_workspace(
+    app: AppHandle,
     state: State<'_, AppState>,
     folder_path: String,
 ) -> Result<Workspace, String> {
@@ -239,6 +260,7 @@ pub async fn add_folder_to_workspace(
     if !path.exists() {
         return Err(format!("path does not exist: {folder_path}"));
     }
+    allow_workspace_assets(&app, [path.as_path()]);
 
     let mut ws = {
         let current = state.current_workspace.lock().unwrap();
@@ -310,7 +332,11 @@ pub async fn rename_workspace(
 }
 
 #[tauri::command]
-pub async fn delete_workspace(state: State<'_, AppState>, id: String) -> Result<(), String> {
+pub async fn delete_workspace(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
     let ws_dir = workspaces_dir().join(&id);
     match std::fs::remove_dir_all(&ws_dir) {
         Ok(_) => (),
@@ -327,7 +353,7 @@ pub async fn delete_workspace(state: State<'_, AppState>, id: String) -> Result<
     if is_current {
         let remaining = list_workspaces();
         if let Some(next) = remaining.first() {
-            switch_workspace_internal(&state, next).await?;
+            switch_workspace_internal(&app, &state, next).await?;
         } else {
             // No workspaces left — drop to the empty onboarding state instead of
             // recreating a phantom default. The UI will prompt to create one.
@@ -361,9 +387,14 @@ fn workspaces_dir() -> std::path::PathBuf {
 
 /// Internal helper to change the current active workspace in AppState
 async fn switch_workspace_internal(
+    app: &AppHandle,
     state: &State<'_, AppState>,
     ws: &Workspace,
 ) -> Result<(), String> {
+    // Open every folder of the incoming workspace to the asset protocol so its
+    // skill icons and image previews load.
+    allow_workspace_assets(app, ws.folders.iter().map(PathBuf::as_path));
+
     // 1. Core paths
     let ws_dir = ws.dir();
     let graph_path = ws_dir.join("graph.json");
