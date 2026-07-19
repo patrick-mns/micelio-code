@@ -33,8 +33,14 @@ export default function ModeSelector() {
   const {
     agentMode, setAgentMode,
     currentSession, sessionModes, setSessionModeLocal,
-    isLoading,
+    agentStatus,
   } = useStore();
+  // Only the session currently on screen should gate the composer. A turn
+  // streaming in a *different* session must not lock this session's controls,
+  // so a chat you open (or create new) while another one answers stays usable.
+  const busy = currentSession
+    ? agentStatus[currentSession] === 'running' || agentStatus[currentSession] === 'awaiting_input'
+    : false;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -76,8 +82,8 @@ export default function ModeSelector() {
         className="btn btn-ghost"
         style={styles.trigger}
         onClick={() => setOpen((o) => !o)}
-        disabled={isLoading}
-        title={isLoading ? 'Wait for the current turn to finish' : 'Agent mode'}
+        disabled={busy}
+        title={busy ? 'Wait for the current turn to finish' : 'Agent mode'}
       >
         <CurrentIcon size={15} color={current.color} weight="fill" />
         <span style={styles.triggerLabel}>{current.label}</span>
