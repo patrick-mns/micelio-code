@@ -406,7 +406,7 @@ export default function Chat() {
     streamsRef.current[viewingSession] = next;
     setStreamsBySession((prev) => ({ ...prev, [viewingSession]: next }));
     useStore.getState().setAgentStatus(viewingSession, 'idle');
-    await ipc.stopChatStream().catch(console.error);
+    await ipc.stopChatStream(viewingSession).catch(console.error);
   }, [viewingSession]);
 
   const clear = useCallback(async () => {
@@ -424,7 +424,7 @@ export default function Chat() {
   const cancelAsk = useCallback(async () => {
     setPendingAsk(null);
     useStore.getState().setAgentStatus(viewingSession, 'idle');
-    await ipc.stopChatStream().catch(console.error);
+    await ipc.stopChatStream(viewingSession).catch(console.error);
   }, [viewingSession]);
 
   // ── EditApprovalCard ────────────────────────────────────────────────────────
