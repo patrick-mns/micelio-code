@@ -41,18 +41,15 @@ pub struct AppState {
     pub session_histories: Mutex<HashMap<String, Vec<backend::llm::Message>>>,
     /// Per-session cancel flags so stopping one stream doesn't affect others.
     pub session_cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
-    /// Parked ask_user call: (session_id, reply channel).
-    pub session_pending: Mutex<Option<(String, std::sync::mpsc::Sender<String>)>>,
-    /// Parked file edit/write approval (review mode): (session_id, reply channel).
-    pub pending_edit: Mutex<Option<(String, std::sync::mpsc::Sender<bool>)>>,
-    /// Parked generic tool confirmation (review mode) for side-effecting
-    /// non-file tools: (session_id, reply channel).
-    pub pending_confirm: Mutex<
-        Option<(
-            String,
-            std::sync::mpsc::Sender<backend::review::ConfirmDecision>,
-        )>,
-    >,
+    /// Parked ask_user calls keyed by session, so a question in one session
+    /// doesn't get answered by another session's reply.
+    pub session_pending: Mutex<HashMap<String, std::sync::mpsc::Sender<String>>>,
+    /// Parked file edit/write approvals (review mode), keyed by session.
+    pub pending_edit: Mutex<HashMap<String, std::sync::mpsc::Sender<bool>>>,
+    /// Parked generic tool confirmations (review mode) for side-effecting
+    /// non-file tools, keyed by session.
+    pub pending_confirm:
+        Mutex<HashMap<String, std::sync::mpsc::Sender<backend::review::ConfirmDecision>>>,
     /// Per-session set of tool names the user chose to "always allow" this
     /// session (Review-mode confirmations). In-memory only; cleared on restart.
     pub session_tool_allow: Mutex<HashMap<String, std::collections::HashSet<String>>>,
@@ -298,9 +295,9 @@ pub fn run() {
             scan_cancel: Arc::new(AtomicBool::new(false)),
             session_histories: Mutex::new(initial_histories),
             session_cancels: Mutex::new(HashMap::new()),
-            session_pending: Mutex::new(None),
-            pending_edit: Mutex::new(None),
-            pending_confirm: Mutex::new(None),
+            session_pending: Mutex::new(HashMap::new()),
+            pending_edit: Mutex::new(HashMap::new()),
+            pending_confirm: Mutex::new(HashMap::new()),
             session_tool_allow: Mutex::new(HashMap::new()),
             review: Mutex::new(backend::review::ReviewManager::new()),
             mcp,

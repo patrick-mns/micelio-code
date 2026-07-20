@@ -707,7 +707,10 @@ fn execute_tool_call(
         let (tx, rx) = std::sync::mpsc::channel::<String>();
         {
             let st = app.state::<AppState>();
-            *st.session_pending.lock().unwrap() = Some((session_id.to_string(), tx));
+            st.session_pending
+                .lock()
+                .unwrap()
+                .insert(session_id.to_string(), tx);
         }
         let _ = app.emit(
             "ask_user",
@@ -737,7 +740,7 @@ fn execute_tool_call(
         };
         {
             let st = app.state::<AppState>();
-            *st.session_pending.lock().unwrap() = None;
+            st.session_pending.lock().unwrap().remove(session_id);
         }
 
         let summary = format!("ask_user completed\n{answer}");
@@ -866,7 +869,10 @@ fn execute_tool_call(
             let (tx, rx) = std::sync::mpsc::channel::<crate::backend::review::ConfirmDecision>();
             {
                 let st = app.state::<AppState>();
-                *st.pending_confirm.lock().unwrap() = Some((session_id.to_string(), tx));
+                st.pending_confirm
+                    .lock()
+                    .unwrap()
+                    .insert(session_id.to_string(), tx);
             }
             let _ = app.emit(
                 "confirm_request",
@@ -901,7 +907,7 @@ fn execute_tool_call(
             };
             {
                 let st = app.state::<AppState>();
-                *st.pending_confirm.lock().unwrap() = None;
+                st.pending_confirm.lock().unwrap().remove(session_id);
             }
 
             match decision {
@@ -978,7 +984,10 @@ fn execute_tool_call(
         let (tx, rx) = std::sync::mpsc::channel::<bool>();
         {
             let st = app.state::<AppState>();
-            *st.pending_edit.lock().unwrap() = Some((session_id.to_string(), tx));
+            st.pending_edit
+                .lock()
+                .unwrap()
+                .insert(session_id.to_string(), tx);
         }
         let _ = app.emit(
             "review_request",
@@ -1011,7 +1020,7 @@ fn execute_tool_call(
         };
         {
             let st = app.state::<AppState>();
-            *st.pending_edit.lock().unwrap() = None;
+            st.pending_edit.lock().unwrap().remove(session_id);
         }
 
         if accepted {

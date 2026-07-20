@@ -1,3 +1,4 @@
+use super::take_pending;
 use crate::backend::llm::{self, Message};
 use crate::backend::tools;
 use crate::AppState;
@@ -285,23 +286,31 @@ pub async fn stop_chat_stream(
 }
 
 #[tauri::command]
-pub async fn answer_question(state: State<'_, AppState>, answer: String) -> Result<(), String> {
-    let entry = state.session_pending.lock().unwrap().take();
-    match entry {
-        Some((_sid, tx)) => {
-            tx.send(answer)
-                .map_err(|_| "worker no longer waiting".to_string())?;
-            Ok(())
-        }
+pub async fn answer_question(
+    state: State<'_, AppState>,
+    answer: String,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    let tx = {
+        let mut pending = state.session_pending.lock().unwrap();
+        take_pending(&mut pending, session_id.as_deref())
+    };
+    match tx {
+        Some(tx) => tx
+            .send(answer)
+            .map_err(|_| "worker no longer waiting".to_string()),
         None => Err("no pending question".into()),
     }
 }
 
 #[tauri::command]
-pub async fn get_history(state: State<'_, AppState>) -> Result<Vec<ChatMessage>, String> {
+pub async fn get_history(
+    state: State<'_, AppState>,
+    session_id: Option<String>,
+) -> Result<Vec<ChatMessage>, String> {
+    let target = session_id.unwrap_or_else(|| state.current_session.lock().unwrap().clone());
     let store = state.sessions.lock().unwrap();
-    let current = state.current_session.lock().unwrap().clone();
-    let events = store.load_events(&current)?;
+    let events = store.load_events(&target)?;
     Ok(events
         .into_iter()
         .map(|e| event_to_message(e.kind, e.title, e.content))
@@ -309,13 +318,16 @@ pub async fn get_history(state: State<'_, AppState>) -> Result<Vec<ChatMessage>,
 }
 
 #[tauri::command]
-pub async fn clear_history(state: State<'_, AppState>) -> Result<(), String> {
-    let current = state.current_session.lock().unwrap().clone();
+pub async fn clear_history(
+    state: State<'_, AppState>,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    let target = session_id.unwrap_or_else(|| state.current_session.lock().unwrap().clone());
     {
         let store = state.sessions.lock().unwrap();
-        let _ = store.clear_events(&current);
+        let _ = store.clear_events(&target);
     }
-    state.session_histories.lock().unwrap().remove(&current);
+    state.session_histories.lock().unwrap().remove(&target);
     Ok(())
 }
 

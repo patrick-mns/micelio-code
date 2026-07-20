@@ -98,7 +98,7 @@ export default function Chat() {
   // ── Fetch history on session change ────────────────────────────────────────
   useEffect(() => {
     if (!viewingSession) return;
-    ipc.getHistory().then((msgs) => setMessages(viewingSession, msgs)).catch(console.error);
+    ipc.getHistory(viewingSession).then((msgs) => setMessages(viewingSession, msgs)).catch(console.error);
   }, [viewingSession]);
 
   // ── Summarization banner ───────────────────────────────────────────────────
@@ -410,7 +410,7 @@ export default function Chat() {
   }, [viewingSession]);
 
   const clear = useCallback(async () => {
-    await ipc.clearHistory().catch(console.error);
+    await ipc.clearHistory(viewingSession).catch(console.error);
     setMessages(viewingSession, []);
   }, [viewingSession]);
 
@@ -418,7 +418,7 @@ export default function Chat() {
   const answerAsk = useCallback(async (answer: string) => {
     setPendingAsk(null);
     useStore.getState().setAgentStatus(viewingSession, 'running');
-    await ipc.answerQuestion(answer).catch(console.error);
+    await ipc.answerQuestion(answer, viewingSession).catch(console.error);
   }, [viewingSession]);
 
   const cancelAsk = useCallback(async () => {
@@ -429,23 +429,26 @@ export default function Chat() {
 
   // ── EditApprovalCard ────────────────────────────────────────────────────────
   const acceptEdit = useCallback(async () => {
+    const sid = pendingEdit?.session_id ?? viewingSession;
     setPendingEdit(null);
-    useStore.getState().setAgentStatus(viewingSession, 'running');
-    await ipc.answerEditReview(true).catch(console.error);
-  }, [viewingSession]);
+    useStore.getState().setAgentStatus(sid, 'running');
+    await ipc.answerEditReview(true, sid).catch(console.error);
+  }, [viewingSession, pendingEdit]);
 
   const rejectEdit = useCallback(async () => {
+    const sid = pendingEdit?.session_id ?? viewingSession;
     setPendingEdit(null);
-    useStore.getState().setAgentStatus(viewingSession, 'running');
-    await ipc.answerEditReview(false).catch(console.error);
-  }, [viewingSession]);
+    useStore.getState().setAgentStatus(sid, 'running');
+    await ipc.answerEditReview(false, sid).catch(console.error);
+  }, [viewingSession, pendingEdit]);
 
   // ── ToolConfirmCard ─────────────────────────────────────────────────────────
   const answerConfirm = useCallback(async (decision: 'reject' | 'once' | 'always') => {
+    const sid = pendingConfirm?.session_id ?? viewingSession;
     setPendingConfirm(null);
-    useStore.getState().setAgentStatus(viewingSession, 'running');
-    await ipc.answerToolConfirm(decision).catch(console.error);
-  }, [viewingSession]);
+    useStore.getState().setAgentStatus(sid, 'running');
+    await ipc.answerToolConfirm(decision, sid).catch(console.error);
+  }, [viewingSession, pendingConfirm]);
 
   // ── Slash commands ─────────────────────────────────────────────────────────
   const showPalette = input.startsWith('/') && !input.includes(' ');

@@ -86,10 +86,17 @@ pub async fn git_revert_all_review(state: State<'_, AppState>) -> Result<Vec<Str
 /// Answer a pending edit approval request (see `execute_tool_call`), the same
 /// way `answer_question` answers a pending `ask_user` call.
 #[tauri::command]
-pub async fn answer_edit_review(state: State<'_, AppState>, accepted: bool) -> Result<(), String> {
-    let entry = state.pending_edit.lock().unwrap().take();
-    match entry {
-        Some((_sid, tx)) => tx
+pub async fn answer_edit_review(
+    state: State<'_, AppState>,
+    accepted: bool,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    let tx = {
+        let mut pending = state.pending_edit.lock().unwrap();
+        super::take_pending(&mut pending, session_id.as_deref())
+    };
+    match tx {
+        Some(tx) => tx
             .send(accepted)
             .map_err(|_| "worker no longer waiting".to_string()),
         None => Err("no pending edit review".into()),
@@ -103,10 +110,14 @@ pub async fn answer_edit_review(state: State<'_, AppState>, accepted: bool) -> R
 pub async fn answer_tool_confirm(
     state: State<'_, AppState>,
     decision: String,
+    session_id: Option<String>,
 ) -> Result<(), String> {
-    let entry = state.pending_confirm.lock().unwrap().take();
-    match entry {
-        Some((_sid, tx)) => tx
+    let tx = {
+        let mut pending = state.pending_confirm.lock().unwrap();
+        super::take_pending(&mut pending, session_id.as_deref())
+    };
+    match tx {
+        Some(tx) => tx
             .send(ConfirmDecision::from_str(&decision))
             .map_err(|_| "worker no longer waiting".to_string()),
         None => Err("no pending tool confirmation".into()),
