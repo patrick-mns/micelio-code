@@ -16,7 +16,7 @@ import { useWorkspace } from '@/hooks/useWorkspace';
 import { COMMANDS, type Attachment, type CommandContext, type ChatMessageView, type RenderedItem, type SlashCommand } from '@/utils/chatHelpers';
 import { MIN_SCAN_MS } from '@/utils/treemapHelpers';
 import { chatStyles as styles } from '@/utils/theme-styles';
-import type { EditReviewRequest, SkillSummary, ToolConfirmRequest, Usage } from '@/types';
+import type { EditReviewRequest, FileHit, SkillSummary, ToolConfirmRequest, Usage } from '@/types';
 import type { StreamPart, StreamState } from '@/components/StreamStatus';
 import type { Question } from '@/components/QuestionCard';
 
@@ -98,7 +98,7 @@ export default function Chat() {
   // ── Fetch history on session change ────────────────────────────────────────
   useEffect(() => {
     if (!viewingSession) return;
-    ipc.getHistory().then((msgs) => setMessages(viewingSession, msgs)).catch(console.error);
+    ipc.getHistory(viewingSession).then((msgs) => setMessages(viewingSession, msgs)).catch(console.error);
   }, [viewingSession]);
 
   // ── Summarization banner ───────────────────────────────────────────────────
@@ -349,8 +349,18 @@ export default function Chat() {
     const att = attachment;
     setAttachment(null);
 
-    const sentContent = content + (att
-      ? `${content ? '\n\n' : ''}[The user attached an image at ${att.path}. Use the vision tool with this path to view it before answering.]`
+    // @file mentions are cited, not inlined: tell the agent which workspace
+    // files the user pointed at so it can read them with the file tool. Only
+    // @tokens at the start or after whitespace count (so an email@host doesn't).
+    const fileMentions = [...new Set(
+      [...content.matchAll(/(?:^|\s)@(\S+)/g)].map((m) => m[1]),
+    )];
+    const fileNote = fileMentions.length > 0
+      ? `${content ? '\n\n' : ''}[The user referenced these workspace files: ${fileMentions.join(', ')}. Read them with the file tool if relevant before answering.]`
+      : '';
+
+    const sentContent = content + fileNote + (att
+      ? `${content || fileNote ? '\n\n' : ''}[The user attached an image at ${att.path}. Use the vision tool with this path to view it before answering.]`
       : '');
 
     addMessage(activeSession, { role: 'user', content, attachment: att ? { name: att.name, preview: att.preview } : undefined });
@@ -396,11 +406,11 @@ export default function Chat() {
     streamsRef.current[viewingSession] = next;
     setStreamsBySession((prev) => ({ ...prev, [viewingSession]: next }));
     useStore.getState().setAgentStatus(viewingSession, 'idle');
-    await ipc.stopChatStream().catch(console.error);
+    await ipc.stopChatStream(viewingSession).catch(console.error);
   }, [viewingSession]);
 
   const clear = useCallback(async () => {
-    await ipc.clearHistory().catch(console.error);
+    await ipc.clearHistory(viewingSession).catch(console.error);
     setMessages(viewingSession, []);
   }, [viewingSession]);
 
@@ -408,34 +418,37 @@ export default function Chat() {
   const answerAsk = useCallback(async (answer: string) => {
     setPendingAsk(null);
     useStore.getState().setAgentStatus(viewingSession, 'running');
-    await ipc.answerQuestion(answer).catch(console.error);
+    await ipc.answerQuestion(answer, viewingSession).catch(console.error);
   }, [viewingSession]);
 
   const cancelAsk = useCallback(async () => {
     setPendingAsk(null);
     useStore.getState().setAgentStatus(viewingSession, 'idle');
-    await ipc.stopChatStream().catch(console.error);
+    await ipc.stopChatStream(viewingSession).catch(console.error);
   }, [viewingSession]);
 
   // ── EditApprovalCard ────────────────────────────────────────────────────────
   const acceptEdit = useCallback(async () => {
+    const sid = pendingEdit?.session_id ?? viewingSession;
     setPendingEdit(null);
-    useStore.getState().setAgentStatus(viewingSession, 'running');
-    await ipc.answerEditReview(true).catch(console.error);
-  }, [viewingSession]);
+    useStore.getState().setAgentStatus(sid, 'running');
+    await ipc.answerEditReview(true, sid).catch(console.error);
+  }, [viewingSession, pendingEdit]);
 
   const rejectEdit = useCallback(async () => {
+    const sid = pendingEdit?.session_id ?? viewingSession;
     setPendingEdit(null);
-    useStore.getState().setAgentStatus(viewingSession, 'running');
-    await ipc.answerEditReview(false).catch(console.error);
-  }, [viewingSession]);
+    useStore.getState().setAgentStatus(sid, 'running');
+    await ipc.answerEditReview(false, sid).catch(console.error);
+  }, [viewingSession, pendingEdit]);
 
   // ── ToolConfirmCard ─────────────────────────────────────────────────────────
   const answerConfirm = useCallback(async (decision: 'reject' | 'once' | 'always') => {
+    const sid = pendingConfirm?.session_id ?? viewingSession;
     setPendingConfirm(null);
-    useStore.getState().setAgentStatus(viewingSession, 'running');
-    await ipc.answerToolConfirm(decision).catch(console.error);
-  }, [viewingSession]);
+    useStore.getState().setAgentStatus(sid, 'running');
+    await ipc.answerToolConfirm(decision, sid).catch(console.error);
+  }, [viewingSession, pendingConfirm]);
 
   // ── Slash commands ─────────────────────────────────────────────────────────
   const showPalette = input.startsWith('/') && !input.includes(' ');
@@ -461,6 +474,36 @@ export default function Chat() {
   const pickSkill = useCallback(
     (s: SkillSummary) => {
       setInput(input.replace(/#[\w-]*$/, `#${s.name} `));
+      setCmdSelected(0);
+      requestAnimationFrame(() => taRef.current?.focus());
+    },
+    [input, setInput],
+  );
+
+  // ── @file mention autocomplete ─────────────────────────────────────────────
+  // Triggered by an "@token" at the end of the draft (start of text or after
+  // whitespace). Paths contain '/', '.', '-', so the token is any non-space run.
+  // Results come from a debounced fuzzy search over the selected folder.
+  const [fileHits, setFileHits] = useState<FileHit[]>([]);
+  const [fileDismissed, setFileDismissed] = useState(false);
+  const fileMatch = !showPalette && !showSkillPalette ? input.match(/(^|\s)@(\S*)$/) : null;
+  const fileQuery = fileMatch ? fileMatch[2] : null;
+  useEffect(() => setFileDismissed(false), [fileQuery]);
+  useEffect(() => {
+    if (fileQuery == null) { setFileHits([]); return; }
+    let alive = true;
+    const t = setTimeout(() => {
+      ipc.searchWorkspaceFiles(fileQuery, 20)
+        .then((hits) => { if (alive) setFileHits(hits); })
+        .catch(() => { if (alive) setFileHits([]); });
+    }, 120);
+    return () => { alive = false; clearTimeout(t); };
+  }, [fileQuery]);
+  const showFilePalette = fileQuery != null && !fileDismissed && fileHits.length > 0;
+
+  const pickFile = useCallback(
+    (f: FileHit) => {
+      setInput(input.replace(/@\S*$/, `@${f.path} `));
       setCmdSelected(0);
       requestAnimationFrame(() => taRef.current?.focus());
     },
@@ -512,8 +555,14 @@ export default function Chat() {
       if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickSkill(filteredSkills[Math.min(cmdSelected, filteredSkills.length - 1)]); return; }
       if (e.key === 'Escape') { e.preventDefault(); setMentionDismissed(true); return; }
     }
+    if (showFilePalette) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setCmdSelected((i) => (i + 1) % fileHits.length); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setCmdSelected((i) => (i - 1 + fileHits.length) % fileHits.length); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickFile(fileHits[Math.min(cmdSelected, fileHits.length - 1)]); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setFileDismissed(true); return; }
+    }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-  }, [showPalette, filteredCmds, cmdSelected, runCommand, send, showSkillPalette, filteredSkills, pickSkill]);
+  }, [showPalette, filteredCmds, cmdSelected, runCommand, send, showSkillPalette, filteredSkills, pickSkill, showFilePalette, fileHits, pickFile]);
 
   const autosize = useCallback((el: HTMLTextAreaElement) => {
     el.style.height = 'auto';
@@ -610,6 +659,10 @@ export default function Chat() {
             filteredSkills={filteredSkills}
             skillSelected={cmdSelected}
             pickSkill={pickSkill}
+            showFilePalette={showFilePalette}
+            fileHits={fileHits}
+            fileSelected={cmdSelected}
+            pickFile={pickFile}
           />
           <SkillDock workspaceRoot={workspaceRoot} />
         </div>

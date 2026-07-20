@@ -55,8 +55,13 @@ export default function ModelRolesSelector() {
   const {
     models, setModels, setChatModel, setSummarizeModel,
     currentSession, sessionModels, setSessionModels,
-    isLoading,
+    agentStatus,
   } = useStore();
+  // Gate on the *viewing* session's own turn — a stream running in another
+  // session must not lock the model picker here (e.g. in a freshly created chat).
+  const busy = currentSession
+    ? agentStatus[currentSession] === 'running' || agentStatus[currentSession] === 'awaiting_input'
+    : false;
   const [roles, setRoles] = useState<ModelRole[]>([]);
   const [open, setOpen] = useState(false);
   const [openRole, setOpenRole] = useState<string | null>(null);
@@ -139,7 +144,7 @@ export default function ModelRolesSelector() {
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button className="btn btn-ghost" style={modelRolesSelectorStyles.trigger} onClick={() => setOpen((o) => !o)} disabled={isLoading} title={isLoading ? 'Wait for the current turn to finish' : 'Model assignments'}>
+      <button className="btn btn-ghost" style={modelRolesSelectorStyles.trigger} onClick={() => setOpen((o) => !o)} disabled={busy} title={busy ? 'Wait for the current turn to finish' : 'Model assignments'}>
         <span style={modelRolesSelectorStyles.dots}>
           {roles.map((r) => (
             <span

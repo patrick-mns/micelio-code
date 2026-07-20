@@ -41,18 +41,15 @@ pub struct AppState {
     pub session_histories: Mutex<HashMap<String, Vec<backend::llm::Message>>>,
     /// Per-session cancel flags so stopping one stream doesn't affect others.
     pub session_cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
-    /// Parked ask_user call: (session_id, reply channel).
-    pub session_pending: Mutex<Option<(String, std::sync::mpsc::Sender<String>)>>,
-    /// Parked file edit/write approval (review mode): (session_id, reply channel).
-    pub pending_edit: Mutex<Option<(String, std::sync::mpsc::Sender<bool>)>>,
-    /// Parked generic tool confirmation (review mode) for side-effecting
-    /// non-file tools: (session_id, reply channel).
-    pub pending_confirm: Mutex<
-        Option<(
-            String,
-            std::sync::mpsc::Sender<backend::review::ConfirmDecision>,
-        )>,
-    >,
+    /// Parked ask_user calls keyed by session, so a question in one session
+    /// doesn't get answered by another session's reply.
+    pub session_pending: Mutex<HashMap<String, std::sync::mpsc::Sender<String>>>,
+    /// Parked file edit/write approvals (review mode), keyed by session.
+    pub pending_edit: Mutex<HashMap<String, std::sync::mpsc::Sender<bool>>>,
+    /// Parked generic tool confirmations (review mode) for side-effecting
+    /// non-file tools, keyed by session.
+    pub pending_confirm:
+        Mutex<HashMap<String, std::sync::mpsc::Sender<backend::review::ConfirmDecision>>>,
     /// Per-session set of tool names the user chose to "always allow" this
     /// session (Review-mode confirmations). In-memory only; cleared on restart.
     pub session_tool_allow: Mutex<HashMap<String, std::collections::HashSet<String>>>,
@@ -238,10 +235,24 @@ pub fn run() {
     let mcp = Arc::new(backend::mcp::McpManager::new().expect("failed to build MCP runtime"));
     let mcp_for_setup = mcp.clone();
 
+    // Folders of the workspace open at startup — granted to the asset protocol
+    // in `setup` so their skill icons and image previews load in the webview.
+    let initial_asset_dirs: Vec<std::path::PathBuf> = current_workspace
+        .as_ref()
+        .map(|w| w.folders.clone())
+        .unwrap_or_default();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             backend::tools::bg::set_app_handle(app.handle().clone());
+
+            // Open the startup workspace's folders to the asset protocol (empty
+            // static scope in tauri.conf; the workspace is only known at runtime).
+            let asset_scope = app.asset_protocol_scope();
+            for dir in &initial_asset_dirs {
+                let _ = asset_scope.allow_directory(dir, true);
+            }
 
             // Connect to configured MCP servers off the main thread. Emits
             // `mcp_status` when done so the UI can refresh its server list.
@@ -284,9 +295,9 @@ pub fn run() {
             scan_cancel: Arc::new(AtomicBool::new(false)),
             session_histories: Mutex::new(initial_histories),
             session_cancels: Mutex::new(HashMap::new()),
-            session_pending: Mutex::new(None),
-            pending_edit: Mutex::new(None),
-            pending_confirm: Mutex::new(None),
+            session_pending: Mutex::new(HashMap::new()),
+            pending_edit: Mutex::new(HashMap::new()),
+            pending_confirm: Mutex::new(HashMap::new()),
             session_tool_allow: Mutex::new(HashMap::new()),
             review: Mutex::new(backend::review::ReviewManager::new()),
             mcp,
@@ -337,6 +348,7 @@ pub fn run() {
             commands::workspace::get_current_workspace,
             commands::workspace::list_all_workspaces,
             commands::workspace::set_active_root,
+            commands::workspace::search_workspace_files,
             commands::workspace::list_all_workspaces_with_sessions,
             commands::workspace::create_workspace,
             commands::workspace::switch_workspace,

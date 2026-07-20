@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import type {
   AskUser, BgTaskExited, BgTaskInfo, ChatMessage, CompactResult, ContextWindow,
-  EditReviewRequest, GitContext, McpServerStatus, McpToolInfo,
+  EditReviewRequest, FileHit, GitContext, McpServerStatus, McpToolInfo,
   ModelOption, ModelRole, NodeCode, NodeSummarized, Opener,
   ProviderInfo, ProviderInput, ProviderStatus, SessionInfo, SessionModels, SessionTitle,
   Settings, SkillDetail, SkillSummary, StreamDelta, StreamDone,
@@ -27,10 +27,10 @@ export const ipc = {
   mcpGetConfig: () => invoke<string>('mcp_get_config'),
   mcpSaveConfig: (raw: string) => invoke<McpServerStatus[]>('mcp_save_config', { raw }),
   mcpReload: () => invoke<McpServerStatus[]>('mcp_reload'),
-  stopChatStream: () => invoke<void>('stop_chat_stream'),
-  answerQuestion: (answer: string) => invoke<void>('answer_question', { answer }),
-  getHistory: () => invoke<ChatMessage[]>('get_history'),
-  clearHistory: () => invoke<void>('clear_history'),
+  stopChatStream: (sessionId?: string) => invoke<void>('stop_chat_stream', { sessionId }),
+  answerQuestion: (answer: string, sessionId?: string) => invoke<void>('answer_question', { answer, sessionId }),
+  getHistory: (sessionId?: string) => invoke<ChatMessage[]>('get_history', { sessionId }),
+  clearHistory: (sessionId?: string) => invoke<void>('clear_history', { sessionId }),
   getContextWindow: () => invoke<ContextWindow>('get_context_window'),
   getTranscript: () => invoke<Transcript>('get_transcript'),
   getSystemPrompt: () => invoke<SystemPromptInfo>('get_system_prompt'),
@@ -89,6 +89,10 @@ export const ipc = {
   // Workspace root management (switch active folder in multi-root workspace)
   setWorkspaceRoot: (path: string) => invoke<void>('set_active_root', { path }),
 
+  // Fuzzy file search under the active folder — backs the @-mention palette.
+  searchWorkspaceFiles: (query: string, limit?: number) =>
+    invoke<FileHit[]>('search_workspace_files', { query, limit }),
+
   // Native folder picker → returns the chosen path (or null if cancelled).
   pickFolder: (defaultPath?: string) =>
     open({ directory: true, multiple: false, defaultPath }) as Promise<string | null>,
@@ -101,7 +105,7 @@ export const ipc = {
   onStreamError: (cb: (p: StreamError) => void) => on<StreamError>('stream_error', cb),
   onAskUser: (cb: (p: AskUser) => void) => on<AskUser>('ask_user', cb),
   onMcpStatus: (cb: (p: McpServerStatus[]) => void) => on<McpServerStatus[]>('mcp_status', cb),
-  answerEditReview: (accepted: boolean) => invoke<void>('answer_edit_review', { accepted }),
+  answerEditReview: (accepted: boolean, sessionId?: string) => invoke<void>('answer_edit_review', { accepted, sessionId }),
   getAgentMode: () => invoke<string>('get_agent_mode'),
   setAgentMode: (mode: string) => invoke<string>('set_agent_mode', { mode }),
   getSessionMode: (sessionId: string) => invoke<string>('get_session_mode', { sessionId }),
@@ -109,7 +113,7 @@ export const ipc = {
     invoke<string>('set_session_mode', { sessionId, mode }),
   onReviewRequest: (cb: (p: EditReviewRequest) => void) => on<EditReviewRequest>('review_request', cb),
   // decision: 'reject' | 'once' | 'always'
-  answerToolConfirm: (decision: string) => invoke<void>('answer_tool_confirm', { decision }),
+  answerToolConfirm: (decision: string, sessionId?: string) => invoke<void>('answer_tool_confirm', { decision, sessionId }),
   onConfirmRequest: (cb: (p: ToolConfirmRequest) => void) => on<ToolConfirmRequest>('confirm_request', cb),
 
   onGraphUpdated: (cb: (p: null) => void) => on<null>('graph_updated', cb),
