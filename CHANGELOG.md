@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.16.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.15.3...micelio-v0.16.0) (2026-07-20)
+
+
+### Features
+
+* **chat:** preview images the model cites ([51e328f](https://github.com/patrick-mns/micelio-code/commit/51e328fed40bb0b3463154f0034e254392ff84cd))
+* **chat:** reference files with @ mentions ([a4f9114](https://github.com/patrick-mns/micelio-code/commit/a4f9114d4af6166eae696617bcd8a6964c4534cc))
+
+
+### Bug Fixes
+
+* **assets:** enable the asset protocol for local images ([807c6c9](https://github.com/patrick-mns/micelio-code/commit/807c6c9c84b4f634046af83c400f0ab8b5aba0e3))
+* **chat:** keep composer controls usable in idle sessions during a stream ([fad31f8](https://github.com/patrick-mns/micelio-code/commit/fad31f8849335491593af879e9e11316b4dc6921))
+* **chat:** keep the keyboard-selected palette row in view ([08dbec2](https://github.com/patrick-mns/micelio-code/commit/08dbec26d6513a8566c4984f831bcb280fb2565c))
+* **chat:** key pending prompts and history reads by session ([9b1e2b3](https://github.com/patrick-mns/micelio-code/commit/9b1e2b37df60e11d2f99fa93e3397f45f98721ef))
+* **chat:** scope stream cancel to the viewing session ([f8e5a2b](https://github.com/patrick-mns/micelio-code/commit/f8e5a2ba9aa44989c3225b5a2e9959191f45408a))
+
 ## [0.15.3](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.15.2...micelio-v0.15.3) (2026-07-17)
 
 
