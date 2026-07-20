@@ -2069,7 +2069,7 @@ dependencies = [
 
 [[package]]
 name = "micelio"
-version = "0.15.3"
+version = "0.16.0"
 dependencies = [
  "base64 0.22.1",
  "ignore",
