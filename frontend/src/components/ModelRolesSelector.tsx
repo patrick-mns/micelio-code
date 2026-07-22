@@ -115,13 +115,17 @@ export default function ModelRolesSelector() {
     setOpenRole(null);
     setFilter('');
 
-    // Always persist to the current session (updates global if session not set)
-    ipc.setSessionModel(currentSession || '', role, name).catch(console.error);
     if (currentSession) {
+      // Persist to the per-session model pin in the backend
+      ipc.setSessionModel(currentSession, role, name).catch(console.error);
       setSessionModels(currentSession, {
         ...(sessionModels[currentSession] ?? { chat: '', summarize: '', vision: '' }),
         [role]: name,
       });
+    } else {
+      // No session open: save to global defaults instead
+      if (role === 'chat') ipc.setModel(name).catch(console.error);
+      if (role === 'summarize') ipc.setSummarizeModel(name).catch(console.error);
     }
     // Also update global store so the rest of the app uses this model
     if (role === 'chat') setChatModel(name);

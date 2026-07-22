@@ -44,10 +44,29 @@ const { t } = useI18n();
     try { setSessionModels(id, await ipc.getSessionModels(id)); } catch {}
   };
 
-  useEffect(() => { loadWorkspacesWithSessions(); }, [loadWorkspacesWithSessions]);
+  // Load models for all sessions in the list
+  const loadAllSessionModels = async (sessionList: SessionInfo[]) => {
+    for (const session of sessionList) {
+      try {
+        const models = await ipc.getSessionModels(session.id);
+        setSessionModels(session.id, models);
+      } catch (e) {
+        // silently ignore errors for individual sessions
+      }
+    }
+  };
 
   useEffect(() => {
-    refresh();
+    (async () => {
+      await loadWorkspacesWithSessions();
+      // After loading workspaces, load models for all sessions they contain
+      const sessionList = await refresh();
+      await loadAllSessionModels(sessionList);
+    })();
+  }, [loadWorkspacesWithSessions]);
+
+  useEffect(() => {
+    refresh().then(loadAllSessionModels);
   }, []);
 
   const curMsgs = currentSession ? messagesBySession[currentSession] : undefined;
