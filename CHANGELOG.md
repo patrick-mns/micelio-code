@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.16.0...micelio-v0.17.0) (2026-07-23)
+
+
+### Features
+
+* **mcp:** add OAuth authorization for HTTP servers ([48e23a9](https://github.com/patrick-mns/micelio-code/commit/48e23a90f5b79d2f5a0f24b6698e81ab56925c89))
+* **mcp:** OAuth authorization for HTTP servers ([7668340](https://github.com/patrick-mns/micelio-code/commit/7668340535cc74336af9f30fa89e426d30ab01ef))
+
+
+### Bug Fixes
+
+* **chat:** persist session model selections ([ecc6bd0](https://github.com/patrick-mns/micelio-code/commit/ecc6bd029aca98f614d296e9d337106de336c114))
+
 ## [0.16.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.15.3...micelio-v0.16.0) (2026-07-20)
 
 
