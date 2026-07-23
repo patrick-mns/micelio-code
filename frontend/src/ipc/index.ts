@@ -27,6 +27,12 @@ export const ipc = {
   mcpGetConfig: () => invoke<string>('mcp_get_config'),
   mcpSaveConfig: (raw: string) => invoke<McpServerStatus[]>('mcp_save_config', { raw }),
   mcpReload: () => invoke<McpServerStatus[]>('mcp_reload'),
+  /** Run the interactive OAuth flow for an HTTP server; resolves when done + reconnected. */
+  mcpAuthorize: (serverName: string) =>
+    invoke<McpServerStatus[]>('mcp_authorize', { serverName }),
+  /** Fires with the authorization URL when an OAuth flow starts (fallback if browser didn't open). */
+  onMcpOauthUrl: (cb: (p: { server_name: string; auth_url: string }) => void) =>
+    on<{ server_name: string; auth_url: string }>('mcp_oauth_url', cb),
   stopChatStream: (sessionId?: string) => invoke<void>('stop_chat_stream', { sessionId }),
   answerQuestion: (answer: string, sessionId?: string) => invoke<void>('answer_question', { answer, sessionId }),
   getHistory: (sessionId?: string) => invoke<ChatMessage[]>('get_history', { sessionId }),

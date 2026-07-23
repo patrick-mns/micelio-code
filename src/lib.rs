@@ -375,6 +375,7 @@ pub fn run() {
             commands::mcp::mcp_get_config,
             commands::mcp::mcp_save_config,
             commands::mcp::mcp_reload,
+            commands::mcp::mcp_authorize,
             commands::review::get_review_status,
             commands::review::set_agent_mode,
             commands::review::get_agent_mode,

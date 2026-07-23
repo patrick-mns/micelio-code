@@ -166,6 +166,19 @@ const { t } = useI18n();
     // Backend resets agent mode to its default on restart — push the persisted
     // choice so the two stay in sync.
     useStore.getState().syncAgentMode();
+    // Load session models for all sessions on startup
+    (async () => {
+      try {
+        const sessions = await ipc.listSessions();
+        const { setSessionModels } = useStore.getState();
+        for (const session of sessions) {
+          const models = await ipc.getSessionModels(session.id);
+          setSessionModels(session.id, models);
+        }
+      } catch (e) {
+        console.error('Failed to load session models on startup', e);
+      }
+    })();
   }, [loadCurrentWorkspace]);
 
   return (

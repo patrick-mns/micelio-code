@@ -16,6 +16,7 @@
 pub mod config;
 #[cfg(test)]
 mod e2e_test;
+pub mod oauth;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -67,9 +68,12 @@ pub struct McpServerStatus {
     pub error: Option<String>,
     /// Full raw error, surfaced on hover for debugging.
     pub error_detail: Option<String>,
+    /// True when this HTTP server requires OAuth authorization the user hasn't
+    /// completed yet — the settings UI shows an **Authorize** button.
+    pub needs_auth: bool,
 }
 
-type Client = RunningService<RoleClient, ()>;
+pub(crate) type Client = RunningService<RoleClient, ()>;
 type McpConnectResult = (
     String,
     String,
@@ -131,12 +135,16 @@ impl McpManager {
                     transport: transport.to_string(),
                     error: None,
                     error_detail: None,
+                    needs_auth: false,
                 });
                 continue;
             }
             let transport = transport.to_string();
             set.spawn_on(
-                async move { (name, transport, connect_server(server).await) },
+                async move {
+                    let result = connect_server(&name, server).await;
+                    (name, transport, result)
+                },
                 self.rt.handle(),
             );
         }
@@ -168,17 +176,34 @@ impl McpManager {
                         transport,
                         error: None,
                         error_detail: None,
+                        needs_auth: false,
                     });
                 }
-                Err(e) => status.push(McpServerStatus {
-                    name,
-                    enabled: true,
-                    connected: false,
-                    tool_count: 0,
-                    transport,
-                    error: Some(friendly_error(&e)),
-                    error_detail: Some(e),
-                }),
+                Err(e) => {
+                    // A `NEEDS_AUTH_PREFIX` error means "the user must authorize",
+                    // not a hard failure — flag it so the UI offers an Authorize
+                    // button instead of a scary error.
+                    let needs_auth = e.starts_with(oauth::NEEDS_AUTH_PREFIX);
+                    let clean = e
+                        .strip_prefix(oauth::NEEDS_AUTH_PREFIX)
+                        .unwrap_or(&e)
+                        .trim()
+                        .to_string();
+                    status.push(McpServerStatus {
+                        name,
+                        enabled: true,
+                        connected: false,
+                        tool_count: 0,
+                        transport,
+                        error: Some(if needs_auth {
+                            "Authorization required — click Authorize to sign in.".to_string()
+                        } else {
+                            friendly_error(&clean)
+                        }),
+                        error_detail: Some(clean),
+                        needs_auth,
+                    });
+                }
             }
         }
 
@@ -286,14 +311,59 @@ impl McpManager {
     pub fn server_status(&self) -> Vec<McpServerStatus> {
         self.state.lock().unwrap().status.clone()
     }
+
+    /// Run the interactive OAuth authorization flow for one HTTP server: opens
+    /// the browser, waits for the callback, and persists the token. Blocking —
+    /// returns once the user finishes (or the wait times out). Call
+    /// [`McpManager::reload`] afterwards to connect with the new token.
+    ///
+    /// `on_auth_url` receives the authorization URL as soon as it's known, so
+    /// the caller can surface it (in case the browser didn't open).
+    pub fn authorize(
+        &self,
+        server_name: &str,
+        on_auth_url: impl FnOnce(&str),
+    ) -> Result<(), String> {
+        let cfg = config::load();
+        let server = cfg
+            .mcp_servers
+            .get(server_name)
+            .ok_or_else(|| format!("server `{server_name}` is not in mcp.json"))?;
+        if !server.is_http() {
+            return Err("OAuth is only supported for HTTP MCP servers".to_string());
+        }
+        let url = server.url.clone().unwrap_or_default();
+        let auth = server.auth.as_ref();
+        let scopes: Vec<String> = auth
+            .and_then(|a| a.scope.clone())
+            .map(|s| s.split_whitespace().map(|s| s.to_string()).collect())
+            .unwrap_or_default();
+        let client_id = auth.and_then(|a| a.client_id.as_deref());
+        let client_secret = auth.and_then(|a| a.client_secret.as_deref());
+
+        // Fresh token: drop any stale one first so a re-auth starts clean.
+        oauth::clear_token(server_name);
+
+        self.rt.block_on(oauth::run_authorization_flow(
+            server_name,
+            &url,
+            &scopes,
+            client_id,
+            client_secret,
+            on_auth_url,
+        ))
+    }
 }
 
 /// Connect to one server and list its tools. A free async fn (not a method) so
 /// it can be spawned as an independent task per server during [`McpManager::reload`].
+///
+/// `name` is the `mcp.json` key — used to look up any persisted OAuth token.
 async fn connect_server(
+    name: &str,
     server: McpServerConfig,
 ) -> Result<(Client, Vec<rmcp::model::Tool>), String> {
-    let client: Client = if server.is_stdio() {
+    if server.is_stdio() {
         let command = server.command.clone().unwrap_or_default();
         let mut std_cmd = crate::backend::cmd::no_window_cmd(&command);
         std_cmd.args(&server.args);
@@ -302,16 +372,42 @@ async fn connect_server(
         }
         let cmd = tokio::process::Command::from(std_cmd);
         let transport = TokioChildProcess::new(cmd).map_err(|e| e.to_string())?;
-        ().serve(transport).await.map_err(|e| e.to_string())?
-    } else if server.is_http() {
+        let client: Client = ().serve(transport).await.map_err(|e| e.to_string())?;
+        let tools = client.list_all_tools().await.map_err(|e| e.to_string())?;
+        return Ok((client, tools));
+    }
+
+    if server.is_http() {
         let url = server.url.clone().unwrap_or_default();
+
+        // OAuth path: the server is configured with `auth`, or we already have a
+        // stored token for it. Use the authorized transport (restores/refreshes
+        // the token). A missing/expired token surfaces as `NEEDS_AUTH_PREFIX` so
+        // the UI prompts the user to authorize.
+        if server.auth.is_some() || oauth::has_token(name) {
+            return oauth::connect_authorized(name, &url).await;
+        }
+
+        // Plain HTTP: try unauthenticated. If the server answers with an auth
+        // challenge, translate that into a "needs authorization" result so the
+        // UI can offer the Authorize button instead of a raw transport error.
         let transport = StreamableHttpClientTransport::from_uri(url);
-        ().serve(transport).await.map_err(|e| e.to_string())?
-    } else {
-        return Err("server has neither `command` nor `url`".to_string());
-    };
-    let tools = client.list_all_tools().await.map_err(|e| e.to_string())?;
-    Ok((client, tools))
+        let client: Client = match ().serve(transport).await {
+            Ok(c) => c,
+            Err(e) => {
+                let msg = e.to_string();
+                let low = msg.to_lowercase();
+                if low.contains("auth") || low.contains("401") || low.contains("unauthorized") {
+                    return Err(format!("{} {}", oauth::NEEDS_AUTH_PREFIX, msg));
+                }
+                return Err(msg);
+            }
+        };
+        let tools = client.list_all_tools().await.map_err(|e| e.to_string())?;
+        return Ok((client, tools));
+    }
+
+    Err("server has neither `command` nor `url`".to_string())
 }
 
 /// Build the namespaced tool name for a server + tool pair.
