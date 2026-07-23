@@ -4,7 +4,7 @@
 //! per-field mutation commands — saving validates, persists, and reconnects in
 //! one round-trip, returning the fresh server status.
 
-use tauri::{State, Emitter};
+use tauri::{Emitter, State};
 
 use crate::backend::mcp::{config, McpServerStatus, McpToolInfo};
 use crate::AppState;

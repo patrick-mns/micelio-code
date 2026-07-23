@@ -14,9 +14,9 @@
 //! alive for the lifetime of the manager.
 
 pub mod config;
-pub mod oauth;
 #[cfg(test)]
 mod e2e_test;
+pub mod oauth;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -397,10 +397,7 @@ async fn connect_server(
             Err(e) => {
                 let msg = e.to_string();
                 let low = msg.to_lowercase();
-                if low.contains("auth")
-                    || low.contains("401")
-                    || low.contains("unauthorized")
-                {
+                if low.contains("auth") || low.contains("401") || low.contains("unauthorized") {
                     return Err(format!("{} {}", oauth::NEEDS_AUTH_PREFIX, msg));
                 }
                 return Err(msg);

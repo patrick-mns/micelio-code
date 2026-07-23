@@ -45,7 +45,13 @@ fn oauth_dir() -> PathBuf {
 fn token_path(server_name: &str) -> PathBuf {
     let safe: String = server_name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     oauth_dir().join(format!("{safe}.json"))
 }
@@ -148,10 +154,7 @@ pub async fn run_authorization_flow(
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| format!("failed to bind callback listener: {e}"))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| e.to_string())?
-        .port();
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
 
     // Two paths to a configured OAuth client:
@@ -309,9 +312,7 @@ fn registration_error(raw: &str) -> String {
 /// Await a single HTTP request on the loopback listener and pull `code` and
 /// `state` out of the query string. Replies with a small confirmation page so
 /// the user knows they can close the tab.
-async fn wait_for_callback(
-    listener: tokio::net::TcpListener,
-) -> Result<(String, String), String> {
+async fn wait_for_callback(listener: tokio::net::TcpListener) -> Result<(String, String), String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     loop {
@@ -404,10 +405,7 @@ fn url_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-async fn respond(
-    stream: &mut tokio::net::TcpStream,
-    body: &str,
-) -> std::io::Result<()> {
+async fn respond(stream: &mut tokio::net::TcpStream, body: &str) -> std::io::Result<()> {
     use tokio::io::AsyncWriteExt;
     let html = format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Micélio</title></head>\
