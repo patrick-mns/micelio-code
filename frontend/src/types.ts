@@ -164,6 +164,8 @@ export interface McpServerStatus {
   transport: string; // "stdio" | "http"
   error: string | null; // short, human-readable
   errorDetail: string | null; // full raw error (shown on hover)
+  /** True when this HTTP server needs OAuth authorization the user hasn't done yet. */
+  needsAuth: boolean;
 }
 
 export interface McpToolInfo {

@@ -43,6 +43,7 @@ fn connects_lists_and_calls_a_real_server() {
             ],
             env: BTreeMap::new(),
             url: None,
+            auth: None,
             enabled: true,
         },
     );
@@ -104,6 +105,7 @@ fn connects_over_http() {
             args: vec![],
             env: BTreeMap::new(),
             url: Some("http://localhost:3001/mcp".into()),
+            auth: None,
             enabled: true,
         },
     );
@@ -163,6 +165,7 @@ fn connects_over_https_deepwiki() {
             args: vec![],
             env: BTreeMap::new(),
             url: Some("https://mcp.deepwiki.com/mcp".into()),
+            auth: None,
             enabled: true,
         },
     );

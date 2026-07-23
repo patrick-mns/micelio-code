@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { ArrowsClockwise, CaretRight, CircleNotch, FloppyDisk, Plugs, PlugsConnected, Warning } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretRight, CircleNotch, FloppyDisk, Plugs, PlugsConnected, SignIn, Warning } from '@phosphor-icons/react';
 import { ipc } from '@/ipc';
 import { theme } from '@/theme';
 import Section from './Section';
@@ -17,6 +17,8 @@ export default function McpSettings() {
   const [saved, setSaved] = useState(false);
   const [busyAction, setBusyAction] = useState<'save' | 'reload' | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  /** Server name currently mid-OAuth (waiting on the browser sign-in). */
+  const [authorizing, setAuthorizing] = useState<string | null>(null);
 
   const toggleExpand = (name: string) =>
     setExpanded((prev) => {
@@ -76,6 +78,20 @@ export default function McpSettings() {
     } finally {
       setBusy(false);
       setBusyAction(null);
+    }
+  };
+
+  const authorize = async (name: string) => {
+    setAuthorizing(name);
+    setError(null);
+    try {
+      // Blocks in the backend until the user finishes signing in in the browser.
+      setServers(await ipc.mcpAuthorize(name));
+      setTools(await ipc.mcpListTools());
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setAuthorizing(null);
     }
   };
 
@@ -178,14 +194,37 @@ export default function McpSettings() {
                   >
                     {s.transport}
                   </span>
-                  <span style={{ fontSize: 11.5, color: theme.dim, marginLeft: 'auto' }}>
-                    {!s.enabled
-                      ? 'disabled'
-                      : s.connected
-                        ? `${s.toolCount} tool${s.toolCount !== 1 ? 's' : ''}`
-                        : s.error
-                          ? 'error'
-                          : 'connecting…'}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+                    {s.needsAuth && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); authorize(s.name); }}
+                        disabled={authorizing !== null}
+                        className="btn btn-sm btn-solid"
+                        title="Sign in to this server with OAuth"
+                      >
+                        {authorizing === s.name ? (
+                          <>
+                            <CircleNotch size={13} style={{ animation: 'spin 0.8s linear infinite' }} />
+                            Waiting for sign-in…
+                          </>
+                        ) : (
+                          <>
+                            <SignIn size={13} /> Authorize
+                          </>
+                        )}
+                      </button>
+                    )}
+                    <span style={{ fontSize: 11.5, color: theme.dim }}>
+                      {!s.enabled
+                        ? 'disabled'
+                        : s.connected
+                          ? `${s.toolCount} tool${s.toolCount !== 1 ? 's' : ''}`
+                          : s.needsAuth
+                            ? 'sign-in required'
+                            : s.error
+                              ? 'error'
+                              : 'connecting…'}
+                    </span>
                   </span>
                 </div>
 
@@ -198,15 +237,21 @@ export default function McpSettings() {
                         gap: 7,
                         alignItems: 'flex-start',
                         fontSize: 11.5,
-                        color: theme.error,
+                        color: s.needsAuth ? theme.dim : theme.error,
                         lineHeight: 1.45,
-                        background: 'color-mix(in srgb, var(--color-error) 9%, transparent)',
-                        border: `1px solid color-mix(in srgb, var(--color-error) 30%, transparent)`,
+                        background: s.needsAuth
+                          ? theme.cardActive
+                          : 'color-mix(in srgb, var(--color-error) 9%, transparent)',
+                        border: s.needsAuth
+                          ? `1px solid ${theme.border}`
+                          : `1px solid color-mix(in srgb, var(--color-error) 30%, transparent)`,
                         borderRadius: 'var(--radius-sm)',
                         padding: '7px 9px',
                       }}
                     >
-                      <Warning size={13} weight="fill" style={{ flexShrink: 0, marginTop: 1 }} />
+                      {s.needsAuth
+                        ? <SignIn size={13} weight="fill" style={{ flexShrink: 0, marginTop: 1 }} />
+                        : <Warning size={13} weight="fill" style={{ flexShrink: 0, marginTop: 1 }} />}
                       <span>{s.error}</span>
                     </div>
                   </div>
@@ -286,7 +331,9 @@ export default function McpSettings() {
         <div style={fieldStyles.desc}>
           Stored at <code>~/.micelio/mcp.json</code>. A server has a <code>command</code> (stdio)
           or a <code>url</code> (HTTP). Set <code>"enabled": false</code> to keep an entry without
-          connecting.
+          connecting. For servers that need OAuth, add <code>"auth": {'{}'}</code> and click
+          Authorize to sign in. If the provider rejects dynamic registration, add its issued{' '}
+          <code>client_id</code> / <code>client_secret</code> inside <code>auth</code>.
         </div>
 
         <div style={{ marginTop: 10 }}>

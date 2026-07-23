@@ -9,6 +9,26 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+/// OAuth configuration for HTTP servers.
+///
+/// By default the client registers itself with the authorization server
+/// (Dynamic Client Registration, RFC 7591). Some servers reject DCR and only
+/// accept pre-registered clients — set `client_id` (and `client_secret` when the
+/// server issues one) to skip registration and use those credentials directly.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OAuthConfig {
+    /// OAuth scope(s) required by the server (space-separated). Auto-detected
+    /// from the server's metadata when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    /// Pre-registered OAuth client id. When set, dynamic registration is skipped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    /// Client secret for a confidential pre-registered client (optional).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_secret: Option<String>,
+}
+
 /// A single MCP server definition. Presence of `command` selects the stdio
 /// transport; presence of `url` selects Streamable HTTP. `enabled` defaults to
 /// true so a freshly pasted config connects without extra flags.
@@ -26,6 +46,9 @@ pub struct McpServerConfig {
     /// HTTP: Streamable HTTP endpoint URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    /// OAuth configuration for HTTP servers (optional).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<OAuthConfig>,
     /// Whether Micélio should connect to this server. Defaults to true.
     #[serde(default = "default_true")]
     pub enabled: bool,
