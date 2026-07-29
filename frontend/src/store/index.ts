@@ -11,6 +11,7 @@ import { localeSlice, type LocaleSlice } from './localeSlice';
 import { updateSlice, type UpdateSlice } from './updateSlice';
 import { workspaceSlice, type WorkspaceSlice } from './workspaceSlice';
 import { skillsSlice, type SkillsSlice } from './skillsSlice';
+import { panelSlice, type PanelSlice } from './panelSlice';
 
 export type { SessionBrief } from './workspaceSlice';
 
@@ -26,7 +27,8 @@ export type AppState =
   & LocaleSlice
   & UpdateSlice
   & WorkspaceSlice
-  & SkillsSlice;
+  & SkillsSlice
+  & PanelSlice;
 
 export const useStore = create<AppState>()((...a) => ({
   ...chatSlice(...a),
@@ -41,4 +43,5 @@ export const useStore = create<AppState>()((...a) => ({
   ...updateSlice(...a),
   ...workspaceSlice(...a),
   ...skillsSlice(...a),
+  ...panelSlice(...a),
 }));

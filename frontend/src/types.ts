@@ -376,3 +376,15 @@ export interface SkillDetail {
   enabled: boolean;
   source: string;
 }
+
+// ── Dock/tab system (frontend-only; see store/panelSlice.ts) ──────────────
+/** A view a dock can host. Not bound to a dock — the same view can be opened
+ * in the bottom or the right one. */
+export type PanelTabType = 'bg-tasks' | 'review';
+
+export interface PanelTab {
+  id: string;
+  type: PanelTabType;
+  label: string;
+  icon?: 'terminal' | 'activity' | 'check' | 'list';
+}
