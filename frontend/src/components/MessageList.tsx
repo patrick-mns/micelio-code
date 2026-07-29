@@ -170,7 +170,13 @@ export default function MessageList({
       computeItemKey={(index) => items[index].key}
       initialTopMostItemIndex={Math.max(0, items.length - 1)}
       increaseViewportBy={{ top: 400, bottom: 400 }}
-      followOutput={(isAtBottom) => (isAtBottom ? 'smooth' : false)}
+      // Instant, not 'smooth'. A smooth follow animates over several frames,
+      // and the effect above jumps to the bottom on every token — so a new
+      // token yanked the scroller mid-animation, the animation resumed from
+      // somewhere else, and the next token yanked it again. That fight is what
+      // shook the list while the agent was answering. Both mechanisms now go
+      // to the same place the same way, so they can't disagree.
+      followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}
       atBottomThreshold={80}
       atBottomStateChange={(atBottom) => { atBottomRef.current = atBottom; }}
       context={{ streaming, elapsed, liveTokens, liveContentLen, prefs, StreamStatus }}
