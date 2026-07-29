@@ -1,5 +1,5 @@
 import React from 'react';
-import type { PanelTab, PanelTabType } from '@/types';
+import type { PanelTab, PanelView } from '@/types';
 import { panelDockStyles as styles } from '@/utils/theme-styles';
 import TabBar, { TabIcon } from './TabBar';
 
@@ -8,24 +8,27 @@ interface PanelContainerProps {
   activeTabId: string | null;
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
-  /** Views this dock can host that aren't open right now — offered by "+", and
-   * listed directly when the dock is empty. */
-  openable?: PanelTab[];
-  onOpenTab?: (tab: PanelTab) => void;
+  /** Views this dock can host — offered by "+", and listed directly when the
+   * dock is empty. Already-open singletons are filtered out by the caller. */
+  openable?: PanelView[];
+  onOpenTab?: (view: PanelView) => void;
   onClosePanel?: () => void;
   /** Where this dock sits — only changes the card's outer margins, since the
    * bottom dock already gets its top gap from the resize handle. */
   dock?: 'bottom' | 'right';
-  /** Real content per tab type, supplied by the caller (App.tsx) since it owns
-   * the live data (bg tasks, review status, …). Keeps this a dumb shell rather
-   * than something that reaches into app state itself. Panels rendered here
-   * must drop their own card chrome (`embedded`) — this shell is the card. */
-  content: Partial<Record<PanelTabType, React.ReactNode>>;
+  /** Renders one open tab, supplied by the caller (App.tsx) since it owns the
+   * live data (bg tasks, review status, …). A function rather than a map by
+   * type: two tabs of the same kind are different instances holding different
+   * things, so each has to be rendered from its own tab. Keeps this a dumb
+   * shell rather than something that reaches into app state itself. Panels
+   * rendered here must drop their own card chrome (`embedded`) — this shell is
+   * the card. */
+  renderTab: (tab: PanelTab) => React.ReactNode;
 }
 
 export default function PanelContainer({
   tabs, activeTabId, onSelectTab, onCloseTab, openable = [], onOpenTab, onClosePanel,
-  dock = 'right', content,
+  dock = 'right', renderTab,
 }: PanelContainerProps) {
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
 
@@ -42,16 +45,19 @@ export default function PanelContainer({
       />
       <div style={styles.body}>
         {activeTab ? (
-          content[activeTab.type] ?? null
+          // Keyed by tab id: two tabs of the same kind are separate instances,
+          // and without a key React would reuse one's state for the other when
+          // you switch between them.
+          <React.Fragment key={activeTab.id}>{renderTab(activeTab)}</React.Fragment>
         ) : openable.length && onOpenTab ? (
           // Empty dock: offer the views themselves rather than pointing at the
           // "+". This is the panel's whole content, so it's a launcher list,
           // not a hint.
           <div style={styles.launcher}>
-            {openable.map((tab) => (
-              <button key={tab.id} className="dock-launcher-item" onClick={() => onOpenTab(tab)}>
-                <TabIcon icon={tab.icon} size={15} />
-                {tab.label}
+            {openable.map((view) => (
+              <button key={view.type} className="dock-launcher-item" onClick={() => onOpenTab(view)}>
+                <TabIcon icon={view.icon} size={15} />
+                {view.label}
               </button>
             ))}
           </div>
