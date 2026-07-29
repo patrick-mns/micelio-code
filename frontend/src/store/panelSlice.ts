@@ -100,6 +100,29 @@ export function labelFor(ref: FileRef | undefined, fallback: string): string {
   return name || fallback;
 }
 
+/** The tabs as the strip should show them for `workspaceId`.
+ *
+ * A File tab is named after the file it holds, and that file belongs to the
+ * workspace it was opened in. After a switch the viewer already falls back to
+ * its picker, so a tab still carrying the other project's filename would be the
+ * only thing left claiming that file is open — the name said one thing and the
+ * panel below it showed another.
+ *
+ * Derived here rather than cleared when the workspace changes, for the same
+ * reason the reference carries its workspace instead of being reset: nothing
+ * that switches workspace has to remember to do it. Returns the original array
+ * when nothing is stale, so the common case costs no new identities.
+ */
+export function labelledFor(tabs: PanelTab[], workspaceId: string | null): PanelTab[] {
+  let stale = false;
+  const next = tabs.map((t) => {
+    if (t.type !== 'file' || !t.params || t.params.workspaceId === workspaceId) return t;
+    stale = true;
+    return { ...t, label: FILE_VIEW.label };
+  });
+  return stale ? next : tabs;
+}
+
 const basename = (p: string | null | undefined): string =>
   p?.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || '';
 

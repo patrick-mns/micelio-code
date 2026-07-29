@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { create } from 'zustand';
 import type { StoreApi, UseBoundStore } from 'zustand';
-import { panelSlice, terminalLabel, VIEW_CATALOG, type PanelSlice } from './panelSlice';
+import { labelledFor, panelSlice, terminalLabel, VIEW_CATALOG, type PanelSlice } from './panelSlice';
 import type { PanelTab, PanelView } from '@/types';
 
 type TestState = PanelSlice & {
@@ -265,6 +265,46 @@ describe('terminals', () => {
 
   it('falls back to the view name when there is no folder at all', () => {
     expect(terminalLabel(null, [], 'Terminal')).toBe('Terminal');
+  });
+});
+
+describe('tab labels across a workspace switch', () => {
+  const fileTab = (id: string, label: string, workspaceId: string | null): PanelTab => ({
+    id,
+    type: 'file',
+    label,
+    params: { workspaceId, path: 'src/a.ts', root: '/w/first' },
+  });
+
+  it('drops the filename from a tab whose file belongs to another workspace', () => {
+    const tabs = [fileTab('file:1', 'a.ts', 'ws-1')];
+
+    expect(labelledFor(tabs, 'ws-2').map((t) => t.label)).toEqual(['File']);
+  });
+
+  it('leaves tabs of the current workspace named after their file', () => {
+    const tabs = [fileTab('file:1', 'a.ts', 'ws-1')];
+
+    expect(labelledFor(tabs, 'ws-1')).toBe(tabs);
+  });
+
+  it('renames only the stale ones, and keeps other kinds alone', () => {
+    const tabs: PanelTab[] = [
+      fileTab('file:1', 'a.ts', 'ws-1'),
+      fileTab('file:2', 'b.ts', 'ws-2'),
+      // Named after its folder, which a workspace switch doesn't invalidate —
+      // the shell is still running there.
+      { id: 'terminal:1', type: 'terminal', label: 'first', cwd: '/w/first' },
+      { id: 'review', type: 'review', label: 'Review' },
+    ];
+
+    expect(labelledFor(tabs, 'ws-2').map((t) => t.label)).toEqual(['File', 'b.ts', 'first', 'Review']);
+  });
+
+  it('leaves a File tab that never held a file alone', () => {
+    const tabs: PanelTab[] = [{ id: 'file:1', type: 'file', label: 'File' }];
+
+    expect(labelledFor(tabs, 'ws-9')).toBe(tabs);
   });
 });
 

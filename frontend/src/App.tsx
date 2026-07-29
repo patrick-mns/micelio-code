@@ -1,4 +1,4 @@
-import React, { useEffect, useState, type CSSProperties } from 'react';
+import React, { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { ChatCircle, SquaresFour, SidebarSimple, Rows, FileText, Info, type Icon } from '@phosphor-icons/react';
 import Chat from '@/views/Chat';
 import TreemapView from '@/views/Treemap';
@@ -20,7 +20,7 @@ import AnimatedPanel from '@/components/AnimatedPanel';
 import Toasts from '@/components/Toasts';
 import PanelContainer from '@/components/PanelContainer';
 import { useStore } from '@/store';
-import { TERMINAL_VIEW, VIEW_CATALOG, type DockId } from '@/store/panelSlice';
+import { labelledFor, TERMINAL_VIEW, VIEW_CATALOG, type DockId } from '@/store/panelSlice';
 import type { PanelTab } from '@/types';
 import { theme } from '@/theme';
 import { useI18n } from '@/i18n';
@@ -215,6 +215,12 @@ const { t } = useI18n();
   const inScope = (ref: PanelTab['params']) =>
     ref && ref.workspaceId === (currentWorkspace?.id ?? null) ? ref : null;
 
+  // …and the same goes for the name on the tab, which would otherwise keep
+  // announcing a file the panel below it is no longer showing.
+  const workspaceId = currentWorkspace?.id ?? null;
+  const shownBottomTabs = useMemo(() => labelledFor(bottomTabs, workspaceId), [bottomTabs, workspaceId]);
+  const shownRightTabs = useMemo(() => labelledFor(rightTabs, workspaceId), [rightTabs, workspaceId]);
+
   // One definition per view, shared by both docks — a view renders the same
   // wherever it's docked, so this can't drift between the two. It takes the
   // tab, not just its type: two File tabs are separate instances holding
@@ -405,7 +411,7 @@ const { t } = useI18n();
           <AnimatedPanel open={bottomPanelOpen} side="bottom" size={bottomResize.size} resizing={bottomResize.isResizing}>
             <PanelContainer
               dock="bottom"
-              tabs={bottomTabs}
+              tabs={shownBottomTabs}
               activeTabId={activeBottomTab}
               onSelectTab={(id) => setActiveDockTab('bottom', id)}
               onCloseTab={(id) => closeTab('bottom', id)}
@@ -421,7 +427,7 @@ const { t } = useI18n();
         <AnimatedPanel open={!!rightPanelOpen} side="right" size={bgResize.size} resizing={bgResize.isResizing}>
           <PanelContainer
             dock="right"
-            tabs={rightTabs}
+            tabs={shownRightTabs}
             activeTabId={activeRightTab}
             onSelectTab={(id) => setActiveDockTab('right', id)}
             onCloseTab={(id) => closeTab('right', id)}
