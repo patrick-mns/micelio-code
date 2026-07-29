@@ -5,7 +5,8 @@ import type {
   AskUser, BgTaskExited, BgTaskInfo, ChatMessage, CompactResult, ContextWindow,
   EditReviewRequest, FileContent, FileHit, GitContext, McpServerStatus, McpToolInfo,
   ModelOption, ModelRole, NodeCode, NodeSummarized, Opener,
-  ProviderInfo, ProviderInput, ProviderStatus, SessionInfo, SessionModels, SessionTitle,
+  ProviderInfo, ProviderInput, ProviderStatus, PtyExit, PtyOutput,
+  SessionInfo, SessionModels, SessionTitle,
   Settings, SkillDetail, SkillSummary, StreamDelta, StreamDone,
   StreamError, StreamTool, StreamUsage, SummarizeProgress, SystemPromptInfo,
   ToolConfirmRequest, ToolInfo, Transcript, TreemapNode, UsageLogEntry, UsageRaw, UsageStats,
@@ -152,6 +153,23 @@ export const ipc = {
   getBgTaskLog: (pid: number) => invoke<string>('get_bg_task_log', { pid }),
   onBgTaskExited: (cb: (p: BgTaskExited) => void) => on<BgTaskExited>('bg_task_exited', cb),
   onUpdateStatus: (cb: (p: any) => void) => on<any>('update_status', cb),
+
+  // Terminal — one pty session per dock tab, keyed by the tab's own id.
+  /** Attach to the session for `id`, starting a shell if there isn't one.
+   * Resolves to its scrollback (base64), which is empty for a fresh shell and
+   * is the replay when a tab comes back after being switched away from.
+   * `cwd` omitted means the selected workspace folder. */
+  ptyOpen: (id: string, cols: number, rows: number, cwd?: string | null) =>
+    invoke<string>('pty_open', { id, cols, rows, cwd: cwd ?? null }),
+  ptyWrite: (id: string, data: string) => invoke<void>('pty_write', { id, data }),
+  ptyResize: (id: string, cols: number, rows: number) =>
+    invoke<void>('pty_resize', { id, cols, rows }),
+  /** Kills the shell. Bound to closing the tab — not to unmounting, which is
+   * what a tab switch does. */
+  ptyClose: (id: string) => invoke<void>('pty_close', { id }),
+  ptyIsAlive: (id: string) => invoke<boolean>('pty_is_alive', { id }),
+  onPtyOutput: (cb: (p: PtyOutput) => void) => on<PtyOutput>('pty_output', cb),
+  onPtyExit: (cb: (p: PtyExit) => void) => on<PtyExit>('pty_exit', cb),
 
   // Skills
   onSkillsChanged: (cb: () => void) => on<void>('skills_changed', cb),

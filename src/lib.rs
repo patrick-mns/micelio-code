@@ -280,6 +280,14 @@ pub fn run() {
 
             Ok(())
         })
+        // Terminal shells are children of this process, not of the webview, so
+        // nothing else would reap them. The pty closing usually HUPs them
+        // anyway; this makes it certain rather than incidental.
+        .on_window_event(|_window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                backend::pty::close_all();
+            }
+        })
         .manage(AppState {
             graph: Mutex::new(graph),
             workspace_root: Mutex::new(workspace_root),
@@ -399,6 +407,11 @@ pub fn run() {
             commands::skills::toggle_skill,
             commands::skills::set_skill_enabled,
             commands::skills::get_skill,
+            commands::terminal::pty_open,
+            commands::terminal::pty_write,
+            commands::terminal::pty_resize,
+            commands::terminal::pty_close,
+            commands::terminal::pty_is_alive,
         ])
         .run(tauri::generate_context!())
         .expect("error running Tauri app");

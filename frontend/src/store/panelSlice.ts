@@ -3,11 +3,12 @@
 // either one, so the same view can be moved from the side to the bottom.
 //
 // A tab is an *instance* of a view, not the view itself: its identity is its
-// id, and `params` carries what makes it that instance (which file). That's
-// what lets one dock hold several files at once — and, later, several
-// terminals — instead of a single slot per kind.
+// id, and `params`/`cwd` carry what makes it that instance (which file, which
+// folder). That's what lets one dock hold several files — or several terminals
+// — at once, instead of a single slot per kind.
 import type { StateCreator } from 'zustand';
 import type { AppState } from './index';
+import { loadPrefs, savePrefs, type StoredTerminal } from './_persist';
 import type { FileRef, PanelTab, PanelView } from '@/types';
 
 export type DockId = 'bottom' | 'right';
@@ -19,13 +20,16 @@ export const VIEW_CATALOG: PanelView[] = [
   { type: 'bg-tasks', label: 'Background', icon: 'activity' },
   { type: 'review', label: 'Review', icon: 'check' },
   { type: 'file', label: 'File', icon: 'file', multi: true },
+  { type: 'terminal', label: 'Terminal', icon: 'terminal', multi: true },
 ];
 
 const FILE_VIEW = VIEW_CATALOG.find((v) => v.type === 'file')!;
+export const TERMINAL_VIEW = VIEW_CATALOG.find((v) => v.type === 'terminal')!;
 
 export interface PanelSlice {
-  // Both docks start empty: opening one shows an empty dock with a "+", and
-  // the user picks what goes in it rather than inheriting a default view.
+  // Both docks start empty apart from restored terminals: opening one shows an
+  // empty dock with a "+", and the user picks what goes in it rather than
+  // inheriting a default view.
   bottomTabs: PanelTab[];
   activeBottomTab: string | null;
   bottomPanelOpen: boolean;
@@ -108,6 +112,42 @@ export function labelFor(ref: FileRef | undefined, fallback: string): string {
   return name || fallback;
 }
 
+const basename = (p: string | null | undefined): string =>
+  p?.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || '';
+
+/** A Terminal tab is named after the folder its shell started in — same reason
+ * File tabs carry a filename. Folders repeat where filenames don't, so a
+ * second shell in the same place is numbered rather than left ambiguous. */
+export function terminalLabel(cwd: string | null | undefined, tabs: PanelTab[], fallback: string): string {
+  const name = basename(cwd) || fallback;
+  const siblings = tabs.filter(
+    (t) => t.type === 'terminal' && (basename(t.cwd) || fallback) === name,
+  ).length;
+  return siblings ? `${name} ${siblings + 1}` : name;
+}
+
+// Terminal tabs are the one kind worth remembering across restarts: a file tab
+// is one click from the palette, but a terminal is a place you set up. Only the
+// tab comes back — the shell itself died with the app, and the restored tab
+// starts a fresh one in the same folder.
+const storedTerminals = (tabs: PanelTab[], dock: DockId): StoredTerminal[] =>
+  tabs
+    .filter((t) => t.type === 'terminal')
+    .map((t) => ({ id: t.id, dock, label: t.label, cwd: t.cwd ?? null }));
+
+/** Rebuild the terminal tabs of one dock from the last session. */
+export function restoreTerminals(dock: DockId): PanelTab[] {
+  return (loadPrefs().terminals ?? [])
+    .filter((t) => t.dock === dock)
+    .map((t) => ({
+      id: t.id,
+      type: 'terminal' as const,
+      label: t.label,
+      icon: 'terminal' as const,
+      cwd: t.cwd,
+    }));
+}
+
 // The two docks hold identical shapes, so every action is written once against
 // whichever set of keys the dock maps to.
 const KEYS = {
@@ -134,12 +174,27 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
   const show = (dock: DockId, tabId: string) =>
     set({ [KEYS[dock].active]: tabId, [KEYS[dock].open]: true } as Partial<AppState>);
 
+  // Write the terminal tabs of both docks back to prefs. Called after anything
+  // that adds or removes one, so the stored list is always the live one.
+  const persistTerminals = () => {
+    const s = get();
+    savePrefs({
+      ...loadPrefs(),
+      terminals: [
+        ...storedTerminals(s.bottomTabs, 'bottom'),
+        ...storedTerminals(s.rightTabs, 'right'),
+      ],
+    });
+  };
+
   return {
-    bottomTabs: [],
+    // Both docks start empty apart from the terminals the last session left
+    // open — see `restoreTerminals`.
+    bottomTabs: restoreTerminals('bottom'),
     activeBottomTab: null,
     bottomPanelOpen: false,
 
-    rightTabs: [],
+    rightTabs: restoreTerminals('right'),
     activeRightTab: null,
     rightPanelOpen: false,
 
@@ -149,18 +204,29 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
 
     // An empty dock is a designed state (it shows the "+"), so closing the last
     // tab leaves the dock open — dismissing it is the dock's own X.
-    closeDockTab: (dock, tabId) => set((s) => {
-      const k = KEYS[dock];
-      const tabs = tabsOf(s, dock);
-      return {
-        [k.tabs]: tabs.filter((t) => t.id !== tabId),
-        [k.active]: s[k.active] === tabId ? neighbourOf(tabs, tabId) : s[k.active],
-      } as Partial<AppState>;
-    }),
+    closeDockTab: (dock, tabId) => {
+      set((s) => {
+        const k = KEYS[dock];
+        const tabs = tabsOf(s, dock);
+        return {
+          [k.tabs]: tabs.filter((t) => t.id !== tabId),
+          [k.active]: s[k.active] === tabId ? neighbourOf(tabs, tabId) : s[k.active],
+        } as Partial<AppState>;
+      });
+      persistTerminals();
+    },
 
     openDockTab: (dock, view) => {
       const s = get();
-      const tab = instantiate(view, [...s.bottomTabs, ...s.rightTabs]);
+      const all = [...s.bottomTabs, ...s.rightTabs];
+      const tab = instantiate(view, all);
+      // A terminal is pinned to the folder selected when it opened. Reading it
+      // live would make every open shell appear to follow the folder picker,
+      // which is not where its shell is actually sitting.
+      if (view.type === 'terminal') {
+        tab.cwd = s.activeRoot || s.currentWorkspace?.folders?.[0] || null;
+        tab.label = terminalLabel(tab.cwd, all, view.label);
+      }
       set((cur) => {
         const k = KEYS[dock];
         const other = KEYS[dock === 'bottom' ? 'right' : 'bottom'];
@@ -180,6 +246,7 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
               : cur[other.active],
         } as Partial<AppState>;
       });
+      if (view.type === 'terminal') persistTerminals();
       return tab.id;
     },
 

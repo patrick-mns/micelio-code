@@ -184,6 +184,12 @@ const en = {
     workspaceChanges: 'Workspace changes',
   },
 
+  // ── Terminal (dock tab) ──────────────────────────────────────────────
+  terminal: {
+    // Followed by the exit code in parentheses.
+    exited: 'Shell exited',
+  },
+
   // ── Bg Tasks ─────────────────────────────────────────────────────────
   bgTasks: {
     title: 'Background Tasks',

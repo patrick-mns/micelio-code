@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { create } from 'zustand';
 import type { StoreApi, UseBoundStore } from 'zustand';
-import { orderTabs, panelSlice, VIEW_CATALOG, type PanelSlice } from './panelSlice';
+import { orderTabs, panelSlice, terminalLabel, VIEW_CATALOG, type PanelSlice } from './panelSlice';
 import type { PanelTab, PanelView } from '@/types';
 
 type TestState = PanelSlice & {
@@ -29,6 +29,7 @@ const view = (type: PanelView['type']) => VIEW_CATALOG.find((v) => v.type === ty
 const REVIEW = view('review');
 const FILE = view('file');
 const BG = view('bg-tasks');
+const TERMINAL = view('terminal');
 
 describe('singleton views', () => {
   it('opening one twice in a dock keeps a single tab', () => {
@@ -193,6 +194,56 @@ describe('file references carry their scope', () => {
     expect(s.getState().rightTabs).toHaveLength(1);
     expect(s.getState().rightTabs[0].id).toBe(first);
     expect(s.getState().rightTabs[0].params?.workspaceId).toBe('ws-2');
+  });
+});
+
+describe('terminals', () => {
+  it('pins the shell to the folder selected when it opened', () => {
+    const s = makeStore({ id: 'ws-1', folders: ['/w/first'] }, '/w/second');
+    const id = s.getState().openDockTab('bottom', TERMINAL);
+
+    // Selecting another folder afterwards must not appear to move a shell
+    // that is still sitting where it was started.
+    s.setState({ activeRoot: '/w/third' });
+
+    expect(s.getState().bottomTabs.find((t) => t.id === id)?.cwd).toBe('/w/second');
+  });
+
+  it('falls back to the first folder when none is selected', () => {
+    const s = makeStore({ id: 'ws-1', folders: ['/w/first'] }, null);
+    s.getState().openDockTab('bottom', TERMINAL);
+
+    expect(s.getState().bottomTabs[0].cwd).toBe('/w/first');
+  });
+
+  it('names a tab after its folder, numbering repeats in the same one', () => {
+    const s = makeStore({ id: 'ws-1', folders: ['/w/api'] }, '/w/api');
+    s.getState().openDockTab('bottom', TERMINAL);
+    s.getState().openDockTab('bottom', TERMINAL);
+
+    expect(s.getState().bottomTabs.map((t) => t.label)).toEqual(['api', 'api 2']);
+  });
+
+  it('numbers across both docks, since a tab can be in either', () => {
+    const s = makeStore({ id: 'ws-1', folders: ['/w/api'] }, '/w/api');
+    s.getState().openDockTab('bottom', TERMINAL);
+    s.getState().openDockTab('right', TERMINAL);
+
+    expect(s.getState().bottomTabs[0].label).toBe('api');
+    expect(s.getState().rightTabs[0].label).toBe('api 2');
+  });
+
+  it('leaves terminals in other folders out of the count', () => {
+    const tabs: PanelTab[] = [
+      { id: 'terminal:1', type: 'terminal', label: 'api', cwd: '/w/api' },
+      { id: 'terminal:2', type: 'terminal', label: 'web', cwd: '/w/web' },
+    ];
+
+    expect(terminalLabel('/w/api', tabs, 'Terminal')).toBe('api 2');
+  });
+
+  it('falls back to the view name when there is no folder at all', () => {
+    expect(terminalLabel(null, [], 'Terminal')).toBe('Terminal');
   });
 });
 

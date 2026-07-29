@@ -178,6 +178,12 @@ const ptBR: Translations = {
     workspaceChanges: 'Alterações do workspace',
   },
 
+  // ── Terminal (aba do dock) ───────────────────────────────────────────
+  terminal: {
+    // Seguido do código de saída entre parênteses.
+    exited: 'Shell encerrado',
+  },
+
   // ── Bg Tasks ─────────────────────────────────────────────────────────
   bgTasks: {
     title: 'Tarefas em Segundo Plano',

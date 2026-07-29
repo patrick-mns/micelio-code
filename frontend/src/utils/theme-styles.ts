@@ -230,6 +230,29 @@ export const panelDockStyles: Record<string, CSSProperties> = {
   },
 };
 
+// ── TerminalPanel.tsx ────────────────────────────────────────────────────
+// Same shape as the file viewer: the dock draws the card, this is just the
+// terminal's own surface inside it.
+export const terminalPanelStyles: Record<string, CSSProperties> = {
+  panel: { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  // `overflow: hidden` is load-bearing: xterm measures its host to decide how
+  // many columns fit, and a host that can scroll would let it size past the
+  // dock and never settle.
+  host: {
+    flex: 1, minHeight: 0, overflow: 'hidden',
+    background: theme.bgDeep, border: `1px solid ${theme.border}`,
+    borderRadius: 'var(--radius-lg)', padding: '8px 4px 8px 10px',
+    margin: '0 8px 8px',
+  },
+  // The shell is gone but the tab isn't — a quiet footer, not an error.
+  exited: {
+    flexShrink: 0, padding: '0 12px 8px',
+    color: theme.dim, fontSize: 11.5,
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+  },
+  error: { color: theme.error, fontSize: 12.5, padding: 12 },
+};
+
 // ── FilePanel.tsx ────────────────────────────────────────────────────────
 // The dock already draws the card and the tab strip, so this is only the
 // file's own header + body.

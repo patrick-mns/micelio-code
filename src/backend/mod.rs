@@ -11,6 +11,7 @@ pub mod mcp;
 pub mod ollama;
 pub mod openai_compat;
 pub mod prompt;
+pub mod pty;
 pub mod review;
 pub mod sessions;
 pub mod skill_watcher;
