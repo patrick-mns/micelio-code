@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { create } from 'zustand';
 import type { StoreApi, UseBoundStore } from 'zustand';
-import { orderTabs, panelSlice, terminalLabel, VIEW_CATALOG, type PanelSlice } from './panelSlice';
+import { panelSlice, terminalLabel, VIEW_CATALOG, type PanelSlice } from './panelSlice';
 import type { PanelTab, PanelView } from '@/types';
 
 type TestState = PanelSlice & {
@@ -86,15 +86,36 @@ describe('multi views', () => {
 });
 
 describe('tab order', () => {
-  it('groups instances by view, keeping siblings in the order opened', () => {
-    const tabs: PanelTab[] = [
-      { id: 'file:1', type: 'file', label: 'a.md' },
-      { id: 'review', type: 'review', label: 'Review' },
-      { id: 'file:2', type: 'file', label: 'b.md' },
-      { id: 'bg-tasks', type: 'bg-tasks', label: 'Background' },
-    ];
+  it('appends a new tab at the end whatever kind it is', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', FILE);
+    s.getState().openDockTab('right', TERMINAL);
+    // Earlier in the catalog than both of the above — the case that used to
+    // send a new tab to the front of the strip.
+    s.getState().openDockTab('right', BG);
 
-    expect(orderTabs(tabs).map((t) => t.id)).toEqual(['bg-tasks', 'review', 'file:1', 'file:2']);
+    expect(s.getState().rightTabs.map((t) => t.id)).toEqual(['file:1', 'terminal:1', 'bg-tasks']);
+  });
+
+  it('keeps the positions of the tabs already open', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', BG);
+    s.getState().openDockTab('right', FILE);
+    const before = s.getState().rightTabs.map((t) => t.id);
+
+    s.getState().openDockTab('right', REVIEW);
+
+    expect(s.getState().rightTabs.map((t) => t.id)).toEqual([...before, 'review']);
+  });
+
+  it('reopening a closed singleton puts it back at the end, not its old spot', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', BG);
+    s.getState().openDockTab('right', FILE);
+    s.getState().closeDockTab('right', 'bg-tasks');
+    s.getState().openDockTab('right', BG);
+
+    expect(s.getState().rightTabs.map((t) => t.id)).toEqual(['file:1', 'bg-tasks']);
   });
 });
 
@@ -248,7 +269,7 @@ describe('terminals', () => {
 });
 
 describe('closing', () => {
-  it('hands focus to the neighbour', () => {
+  it('hands focus to the neighbour — the tab that takes the closed one\'s place', () => {
     const s = makeStore();
     const a = s.getState().openDockTab('right', FILE);
     const b = s.getState().openDockTab('right', FILE);
@@ -257,7 +278,18 @@ describe('closing', () => {
 
     s.getState().closeDockTab('right', b);
 
-    expect(s.getState().rightTabs.map((t) => t.id)).toEqual(['review', a]);
+    expect(s.getState().rightTabs.map((t) => t.id)).toEqual([a, 'review']);
+    expect(s.getState().activeRightTab).toBe('review');
+  });
+
+  it('falls back to the tab on the left when the closed one was last', () => {
+    const s = makeStore();
+    const a = s.getState().openDockTab('right', FILE);
+    const b = s.getState().openDockTab('right', FILE);
+    s.getState().setActiveDockTab('right', b);
+
+    s.getState().closeDockTab('right', b);
+
     expect(s.getState().activeRightTab).toBe(a);
   });
 

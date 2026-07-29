@@ -72,18 +72,6 @@ export function neighbourOf(tabs: PanelTab[], closedId: string): string | null {
   return (rest[i] ?? rest[i - 1] ?? rest[0])?.id ?? null;
 }
 
-// Reopening keeps catalog order instead of appending, so a view always lands in
-// the same place regardless of the order things were closed and reopened.
-// Instances of the same view group together — the sort is by kind, and a stable
-// sort leaves siblings in the order they were opened.
-export function orderTabs(tabs: PanelTab[]): PanelTab[] {
-  const rank = (t: PanelTab) => {
-    const i = VIEW_CATALOG.findIndex((v) => v.type === t.type);
-    return i === -1 ? VIEW_CATALOG.length : i;
-  };
-  return [...tabs].sort((a, b) => rank(a) - rank(b));
-}
-
 /** A fresh id for another instance of `type`, unique across *both* docks —
  * tabs move between them, and two tabs sharing an id would collapse into one. */
 export function nextInstanceId(type: PanelTab['type'], tabs: PanelTab[]): string {
@@ -234,7 +222,12 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
         const otherTabs = tabsOf(cur, dock === 'bottom' ? 'right' : 'bottom');
         const held = tabs.some((t) => t.id === tab.id);
         return {
-          [k.tabs]: held ? tabs : orderTabs([...tabs, tab]),
+          // Appended, never sorted. Tabs used to be kept in catalog order, which
+          // meant opening a Background or Review tab pushed it in front of files
+          // and terminals already open — you asked for a tab and it appeared
+          // somewhere other than where you were looking. Position now records
+          // the order you opened things in, like every other tabbed UI.
+          [k.tabs]: held ? tabs : [...tabs, tab],
           [k.active]: tab.id,
           [k.open]: true,
           // Only a singleton is taken from the other dock: a new instance
