@@ -1,5 +1,6 @@
 import React, { useEffect, useState, type CSSProperties } from 'react';
 import { ChatCircle, SquaresFour, SidebarSimple, FileText, Info, type Icon } from '@phosphor-icons/react';
+import { Group, Panel, Separator } from 'react-resizable-panels';
 import Chat from '@/views/Chat';
 import TreemapView from '@/views/Treemap';
 import Settings from '@/components/Settings';
@@ -16,6 +17,7 @@ import BgTasksChip, { BgTasksPanel } from '@/components/BgTasksChip';
 import ReviewChip, { ReviewPanel } from '@/components/ReviewChip';
 import AnimatedPanel from '@/components/AnimatedPanel';
 import Toasts from '@/components/Toasts';
+import PanelContainer from '@/components/PanelContainer';
 import { useStore } from '@/store';
 import { theme } from '@/theme';
 import { useI18n } from '@/i18n';
@@ -51,6 +53,9 @@ export default function App() {
     activeTab, setActiveTab, showSettings, setShowSettings,
     settings, setSettings, sidebarOpen, setSidebarOpen, scanning,
     update, setUpdateState, checkForUpdates,
+    // Panel state
+    bottomTabs, activeBottomTab, setActiveBottomTab, bottomPanelOpen, setBottomPanelOpen,
+    rightTabs, activeRightTab, setActiveRightTab, rightPanelOpen, setRightPanelOpen,
   } = useStore();
   const [rightPanel, setRightPanel] = useState<'bg' | 'review' | null>(null);
   const [panelContent, setPanelContent] = useState<'bg' | 'review' | null>(null);
@@ -256,47 +261,87 @@ const { t } = useI18n();
               >
                 <FileText size={16} />
               </button>
-              <BgTasksChip running={runningCount} active={rightPanel === 'bg'} onClick={() => setRightPanel((p) => (p === 'bg' ? null : 'bg'))} />
-              <ReviewChip pendingCount={reviewStatus.pending_count} active={rightPanel === 'review'} onClick={() => setRightPanel((p) => (p === 'review' ? null : 'review'))} />
+              <BgTasksChip
+                running={runningCount}
+                active={activeRightTab === 'bg-tasks'}
+                onClick={() => {
+                  if (rightPanelOpen && activeRightTab === 'bg-tasks') {
+                    setRightPanelOpen(false);
+                  } else {
+                    setRightPanelOpen(true);
+                    setActiveRightTab('bg-tasks');
+                  }
+                }}
+              />
+              <ReviewChip
+                pendingCount={reviewStatus.pending_count}
+                active={activeRightTab === 'review'}
+                onClick={() => {
+                  if (rightPanelOpen && activeRightTab === 'review') {
+                    setRightPanelOpen(false);
+                  } else {
+                    setRightPanelOpen(true);
+                    setActiveRightTab('review');
+                  }
+                }}
+              />
               <OpenInButton />
               {platform.showWindowControls && <WindowControls />}
             </div>
           </div>
-          <div style={appStyles.view}>
-            {/* No workspace yet → onboarding. Wait for the initial load so
-                returning users don't flash it. */}
-            {!wsReady ? null : !currentWorkspace ? (
-              <Onboarding />
-            ) : (
+          <Group direction="vertical" style={{ flex: 1, minHeight: 0 }}>
+            {/* Main content area: chat + treemap */}
+            <Panel defaultSize={100} minSize={30}>
+              <div style={appStyles.view}>
+                {/* No workspace yet → onboarding. Wait for the initial load so
+                    returning users don't flash it. */}
+                {!wsReady ? null : !currentWorkspace ? (
+                  <Onboarding />
+                ) : (
+                  <>
+                    {/* Chat stays mounted across tab switches so an in-flight stream
+                        keeps rendering when you leave to the treemap and come back. */}
+                    <div style={{ display: activeTab === 'chat' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+                      <Chat />
+                    </div>
+                    {activeTab === 'treemap' && <TreemapView />}
+                  </>
+                )}
+              </div>
+            </Panel>
+
+            {/* Bottom panel with tabs */}
+            {bottomPanelOpen && (
               <>
-                {/* Chat stays mounted across tab switches so an in-flight stream
-                    keeps rendering when you leave to the treemap and come back. */}
-                <div style={{ display: activeTab === 'chat' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
-                  <Chat />
-                </div>
-                {activeTab === 'treemap' && <TreemapView />}
+                <Separator
+                  style={{
+                    height: 8,
+                    backgroundColor: theme.border,
+                    cursor: 'row-resize',
+                  }}
+                />
+                <Panel defaultSize={20} minSize={15} maxSize={50}>
+                  <PanelContainer
+                    tabs={bottomTabs}
+                    activeTabId={activeBottomTab}
+                    onSelectTab={setActiveBottomTab}
+                    height={240}
+                  />
+                </Panel>
               </>
             )}
-          </div>
+          </Group>
         </div>
 
-        {rightPanel && <ResizeHandle onMouseDown={bgResize.startResize} />}
-        <AnimatedPanel open={!!rightPanel} side="right" width={bgResize.width} resizing={bgResize.isResizing}>
-          {panelContent === 'review' ? (
-            <ReviewPanel
-              gitFiles={reviewStatus.changes.git_files}
-              onClose={() => setRightPanel(null)}
-              onRevert={gitRevertFile}
-              onRevertAll={gitRevertAll}
-            />
-          ) : (
-            <BgTasksPanel
-              tasks={bgTasks}
-              onClose={() => setRightPanel(null)}
-              onStop={stopBg}
-              onClear={clearBg}
-            />
-          )}
+        {rightPanelOpen && <ResizeHandle onMouseDown={bgResize.startResize} />}
+        <AnimatedPanel open={!!rightPanelOpen} side="right" width={bgResize.width} resizing={bgResize.isResizing}>
+          <PanelContainer
+            tabs={rightTabs}
+            activeTabId={activeRightTab}
+            onSelectTab={setActiveRightTab}
+            orientation="vertical"
+            width={bgResize.width}
+          />
         </AnimatedPanel>
       </div>
 

@@ -376,3 +376,30 @@ export interface SkillDetail {
   enabled: boolean;
   source: string;
 }
+
+// ── Panel/Tab System ──────────────────────────────────────────────────────
+export type PanelTabType = 'terminal' | 'output' | 'bg-tasks' | 'review';
+
+export interface PanelTab {
+  id: string;
+  type: PanelTabType;
+  label: string;
+  icon?: 'terminal' | 'activity' | 'check' | 'list';
+  isDirty?: boolean;
+}
+
+export type PanelPosition = 'bottom' | 'right';
+
+export interface PanelState {
+  // Bottom panel tabs
+  bottomTabs: PanelTab[];
+  activeBottomTab: string | null;
+  bottomPanelOpen: boolean;
+  bottomPanelHeight: number;
+
+  // Right panel tabs
+  rightTabs: PanelTab[];
+  activeRightTab: string | null;
+  rightPanelOpen: boolean;
+  rightPanelWidth: number;
+}
