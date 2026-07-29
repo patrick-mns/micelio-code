@@ -80,6 +80,19 @@
   color: var(--color-text);
 }
 
+/* Unread marker for an icon button — "there's something here you haven't
+   seen". Add `.has-dot` to the button and render a `.icon-btn-dot` child. */
+.icon-btn.has-dot { position: relative; }
+.icon-btn-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
 /* ── Window control buttons (minimize / maximize / close) ────────────────────
    For custom titlebar buttons. Base background is transparent so hover can paint
    over it — never set background inline on these buttons. */

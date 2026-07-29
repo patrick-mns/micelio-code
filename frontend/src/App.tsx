@@ -295,33 +295,26 @@ const { t } = useI18n();
                 <FileText size={16} />
               </button>
               {/* One toggle per dock, not a chip per feature — which views a
-                  dock hosts is chosen inside it, via the tab bar's "+". */}
+                  dock hosts is chosen inside it, via the tab bar's "+".
+                  Same `.icon-btn` + fill-when-open pattern as the sidebar
+                  toggle on the left, so all three read as one control type. */}
               <button
-                className="btn btn-icon btn-ghost"
-                style={{ color: bottomPanelOpen ? theme.text : theme.dim }}
+                className="icon-btn"
                 title="Toggle bottom panel"
                 onClick={() => toggleDock('bottom')}
               >
-                <Rows size={16} weight={bottomPanelOpen ? 'fill' : 'regular'} />
+                <Rows size={18} weight={bottomPanelOpen ? 'fill' : 'regular'} />
               </button>
               <button
-                className="btn btn-icon btn-ghost"
-                style={{ color: rightPanelOpen ? theme.text : theme.dim, position: 'relative' }}
+                className="icon-btn has-dot"
                 title="Toggle right panel"
                 onClick={() => toggleDock('right')}
               >
-                <SidebarSimple size={16} weight={rightPanelOpen ? 'fill' : 'regular'} style={{ transform: 'scaleX(-1)' }} />
+                <SidebarSimple size={18} weight={rightPanelOpen ? 'fill' : 'regular'} style={{ transform: 'scaleX(-1)' }} />
                 {/* "There's activity you can't see right now" — a view counts as
                     seen only if it's the showing tab of an open dock, since
                     either dock may be hosting it. */}
-                {hasUnseenActivity && (
-                  <span
-                    style={{
-                      position: 'absolute', top: 4, right: 4, width: 6, height: 6,
-                      borderRadius: '50%', background: theme.text,
-                    }}
-                  />
-                )}
+                {hasUnseenActivity && <span className="icon-btn-dot" />}
               </button>
               <OpenInButton />
               {platform.showWindowControls && <WindowControls />}
