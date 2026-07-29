@@ -230,6 +230,62 @@ export const panelDockStyles: Record<string, CSSProperties> = {
   },
 };
 
+// ── FilePanel.tsx ────────────────────────────────────────────────────────
+// The dock already draws the card and the tab strip, so this is only the
+// file's own header + body.
+export const filePanelStyles: Record<string, CSSProperties> = {
+  panel: { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  head: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '2px 8px 8px 12px', flexShrink: 0, minWidth: 0,
+  },
+  name: { color: theme.text, fontSize: 12.5, fontWeight: 600, flexShrink: 0 },
+  // The directory part is context, not identity: it shrinks first and clips
+  // from the left, so the end of the path (the part nearest the file) survives.
+  path: {
+    flex: 1, minWidth: 0,
+    color: theme.faint, fontSize: 11.5,
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'rtl',
+    textAlign: 'left',
+  },
+  body: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '0 8px 8px' },
+  codeWrap: { flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 },
+  mdWrap: {
+    flex: 1, minHeight: 0, overflowY: 'auto',
+    background: theme.bgDeep, border: `1px solid ${theme.border}`,
+    borderRadius: 'var(--radius-lg)', padding: '14px 18px',
+  },
+  // Centred and contained, scrolling only if the picture is bigger than the
+  // dock. The deep background reads as a canvas and gives a transparent PNG
+  // something to sit against.
+  imageWrap: {
+    flex: 1, minHeight: 0, overflow: 'auto',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12,
+    background: theme.bgDeep, border: `1px solid ${theme.border}`, borderRadius: 'var(--radius-lg)',
+  },
+  image: { maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' },
+  hint: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 12px', color: theme.faint, fontSize: 12.5, textAlign: 'center' },
+  error: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 12px', color: theme.error, fontSize: 12.5, textAlign: 'center', lineHeight: 1.5 },
+  notice: {
+    display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+    padding: '6px 10px', marginBottom: 6,
+    background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 'var(--radius-md)',
+    color: theme.dim, fontSize: 11.5,
+  },
+  // Quick open — the whole body when no file is showing, a dropdown over it
+  // once one is.
+  finder: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6, padding: '4px 4px 0' },
+  finderRow: { display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 },
+  hits: { flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 },
+  hitName: { color: theme.text, fontSize: 12.5, flexShrink: 0 },
+  hitPath: {
+    color: theme.faint, fontSize: 11,
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+};
+
 // ── BgTasksChip.tsx ──────────────────────────────────────────────────────
 export const bgTasksChipStyles: Record<string, CSSProperties> = {
   chip: {

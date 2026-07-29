@@ -14,6 +14,7 @@ import ScanOverlay from '@/components/ScanOverlay';
 import OpenInButton from '@/components/OpenInButton';
 import { BgTasksPanel } from '@/components/BgTasksChip';
 import { ReviewPanel } from '@/components/ReviewChip';
+import FilePanel from '@/components/FilePanel';
 import AnimatedPanel from '@/components/AnimatedPanel';
 import Toasts from '@/components/Toasts';
 import PanelContainer from '@/components/PanelContainer';
@@ -64,6 +65,7 @@ export default function App() {
     bottomTabs, activeBottomTab, bottomPanelOpen,
     rightTabs, activeRightTab, rightPanelOpen,
     setActiveDockTab, toggleDock, closeDockTab, openDockTab,
+    openFileRef, openFile,
   } = useStore();
 
   // A dock offers everything it isn't already showing — including views open
@@ -203,6 +205,12 @@ const { t } = useI18n();
     (runningCount > 0 && !isViewShowing('bg-tasks')) ||
     (reviewStatus.pending_count > 0 && !isViewShowing('review'));
 
+  // A file reference belongs to the workspace it was opened in: its path is
+  // relative, so carrying it across a switch would silently show the new
+  // project's file of the same name. Out of scope → the viewer's picker.
+  const fileRef =
+    openFileRef?.workspaceId === (currentWorkspace?.id ?? null) ? openFileRef : null;
+
   // One definition per view, shared by both docks — a view renders the same
   // wherever it's docked, so this can't drift between the two.
   const dockContent = {
@@ -224,6 +232,7 @@ const { t } = useI18n();
         onRevertAll={gitRevertAll}
       />
     ),
+    file: <FilePanel file={fileRef} onOpenPath={openFile} />,
   };
 
   return (

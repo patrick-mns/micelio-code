@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { X, Plus, Terminal, Check, Rows } from '@phosphor-icons/react';
+import { X, Plus, Terminal, Check, Rows, FileText } from '@phosphor-icons/react';
 import type { PanelTab, PanelTabType } from '@/types';
 import { panelDockStyles as styles } from '@/utils/theme-styles';
 
@@ -22,6 +22,7 @@ const ICONS: Record<NonNullable<PanelTab['icon']>, React.ElementType> = {
   activity: Rows,
   check: Check,
   list: Rows,
+  file: FileText,
 };
 
 // Always `regular`: swapping to `fill` on the active tab visibly deforms
