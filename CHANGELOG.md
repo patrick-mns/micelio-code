@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.19.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.18.0...micelio-v0.19.0) (2026-07-29)
+
+
+### Features
+
+* **ui:** file viewer dock and instance-based tabs ([c40e0f7](https://github.com/patrick-mns/micelio-code/commit/c40e0f7165aac1380b19a20bb1c2097108846ece))
+* **ui:** read workspace files in a dock ([118397e](https://github.com/patrick-mns/micelio-code/commit/118397e262bbc5fc6ff995a73541b4c848f3f474))
+* **ui:** read workspace files in a dock ([19e798d](https://github.com/patrick-mns/micelio-code/commit/19e798db49e2fc226921bb4271d9b59fb1ca79d2))
+
+
+### Bug Fixes
+
+* **commands:** borrow the test root instead of cloning it ([6f0736c](https://github.com/patrick-mns/micelio-code/commit/6f0736cf73424946d0a85775e4ee60c9d60133ad))
+
 ## [0.18.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.17.0...micelio-v0.18.0) (2026-07-29)
 
 
