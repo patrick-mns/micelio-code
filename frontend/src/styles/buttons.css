@@ -195,6 +195,35 @@
   background: rgba(var(--overlay), 0.12);
 }
 
+/* ── Dock launcher rows ──────────────────────────────────────────────────────
+   The empty dock's picker: one wide row per view it can host. Roomier than
+   `.menu-item` because these are the panel's whole content, not a popover. */
+.dock-launcher-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  flex-shrink: 0;
+  padding: 0 12px;
+  height: 34px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-card-active);
+  color: var(--color-text-soft);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  transition: background-color 0.12s, color 0.12s;
+}
+.dock-launcher-item:hover {
+  background: rgba(var(--overlay), 0.1);
+  color: var(--color-text);
+}
+.dock-launcher-item svg { color: var(--color-dim); flex-shrink: 0; }
+.dock-launcher-item:hover svg { color: var(--color-text); }
+
 /* ── Menu / dropdown items ───────────────────────────────────────────────────
    Full-width left-aligned rows inside popovers/menus. */
 .menu-item {

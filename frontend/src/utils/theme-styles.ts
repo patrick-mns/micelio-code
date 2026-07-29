@@ -217,7 +217,17 @@ export const panelDockStyles: Record<string, CSSProperties> = {
     boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
   },
   body: { flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-  placeholder: { padding: '24px 12px', color: theme.faint, fontSize: 12.5, textAlign: 'center' },
+  // Empty dock: instead of telling you to press "+", it offers the views
+  // directly as a launcher — the "+" stays for when the dock isn't empty.
+  launcher: {
+    flex: 1, minHeight: 0, overflowY: 'auto',
+    display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4,
+    padding: '16px max(12px, calc((100% - 360px) / 2))',
+  },
+  launcherEmpty: {
+    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: '24px 12px', color: theme.faint, fontSize: 12.5, textAlign: 'center',
+  },
 };
 
 // ── BgTasksChip.tsx ──────────────────────────────────────────────────────

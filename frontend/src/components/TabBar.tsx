@@ -27,10 +27,10 @@ const ICONS: Record<NonNullable<PanelTab['icon']>, React.ElementType> = {
 // Always `regular`: swapping to `fill` on the active tab visibly deforms
 // outline glyphs like Check, and the tab's own background already carries
 // the selected state.
-function TabIcon({ icon }: { icon?: PanelTab['icon'] }) {
+export function TabIcon({ icon, size = 14 }: { icon?: PanelTab['icon']; size?: number }) {
   if (!icon) return null;
   const Icon = ICONS[icon];
-  return <Icon size={14} weight="regular" />;
+  return <Icon size={size} weight="regular" />;
 }
 
 // The dock's tab strip: closable tabs plus a "+" that reopens whatever this

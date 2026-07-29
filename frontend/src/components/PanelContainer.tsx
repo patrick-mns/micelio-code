@@ -1,19 +1,20 @@
 import React from 'react';
 import type { PanelTab, PanelTabType } from '@/types';
 import { panelDockStyles as styles } from '@/utils/theme-styles';
-import TabBar from './TabBar';
+import TabBar, { TabIcon } from './TabBar';
 
 interface PanelContainerProps {
   tabs: PanelTab[];
   activeTabId: string | null;
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
-  /** Views this dock can host that aren't open right now — offered by "+". */
+  /** Views this dock can host that aren't open right now — offered by "+", and
+   * listed directly when the dock is empty. */
   openable?: PanelTab[];
   onOpenTab?: (tab: PanelTab) => void;
   onClosePanel?: () => void;
   /** Where this dock sits — only changes the card's outer margins, since the
-   * bottom dock already gets its top gap from the resize separator. */
+   * bottom dock already gets its top gap from the resize handle. */
   dock?: 'bottom' | 'right';
   /** Real content per tab type, supplied by the caller (App.tsx) since it owns
    * the live data (bg tasks, review status, …). Keeps this a dumb shell rather
@@ -23,7 +24,7 @@ interface PanelContainerProps {
 }
 
 export default function PanelContainer({
-  tabs, activeTabId, onSelectTab, onCloseTab, openable, onOpenTab, onClosePanel,
+  tabs, activeTabId, onSelectTab, onCloseTab, openable = [], onOpenTab, onClosePanel,
   dock = 'right', content,
 }: PanelContainerProps) {
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
@@ -40,9 +41,23 @@ export default function PanelContainer({
         onClosePanel={onClosePanel}
       />
       <div style={styles.body}>
-        {activeTab
-          ? content[activeTab.type] ?? null
-          : <div style={styles.placeholder}>No views open. Use + to open one.</div>}
+        {activeTab ? (
+          content[activeTab.type] ?? null
+        ) : openable.length && onOpenTab ? (
+          // Empty dock: offer the views themselves rather than pointing at the
+          // "+". This is the panel's whole content, so it's a launcher list,
+          // not a hint.
+          <div style={styles.launcher}>
+            {openable.map((tab) => (
+              <button key={tab.id} className="dock-launcher-item" onClick={() => onOpenTab(tab)}>
+                <TabIcon icon={tab.icon} size={15} />
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div style={styles.launcherEmpty}>Nothing to open here.</div>
+        )}
       </div>
     </div>
   );
