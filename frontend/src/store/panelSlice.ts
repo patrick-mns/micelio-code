@@ -1,19 +1,27 @@
-// Dock state — which views are open in the bottom/right docks and which one
-// each is showing. Docks are generic: any view in the catalog can be opened in
+// Dock state — which tabs are open in the bottom/right docks and which one each
+// is showing. Docks are generic: any view in the catalog can be opened in
 // either one, so the same view can be moved from the side to the bottom.
+//
+// A tab is an *instance* of a view, not the view itself: its identity is its
+// id, and `params` carries what makes it that instance (which file). That's
+// what lets one dock hold several files at once — and, later, several
+// terminals — instead of a single slot per kind.
 import type { StateCreator } from 'zustand';
 import type { AppState } from './index';
-import type { PanelTab } from '@/types';
+import type { FileRef, PanelTab, PanelView } from '@/types';
 
 export type DockId = 'bottom' | 'right';
 
 /** Every view a dock can host. Both docks draw from this one list — nothing is
  * bound to a particular dock. Adding a view to the app means adding it here
- * and supplying its content in App.tsx. */
-export const VIEW_CATALOG: PanelTab[] = [
-  { id: 'bg-tasks', type: 'bg-tasks', label: 'Background', icon: 'activity' },
-  { id: 'review', type: 'review', label: 'Review', icon: 'check' },
+ * and rendering its type in App.tsx. */
+export const VIEW_CATALOG: PanelView[] = [
+  { type: 'bg-tasks', label: 'Background', icon: 'activity' },
+  { type: 'review', label: 'Review', icon: 'check' },
+  { type: 'file', label: 'File', icon: 'file', multi: true },
 ];
+
+const FILE_VIEW = VIEW_CATALOG.find((v) => v.type === 'file')!;
 
 export interface PanelSlice {
   // Both docks start empty: opening one shows an empty dock with a "+", and
@@ -29,26 +37,75 @@ export interface PanelSlice {
   setActiveDockTab: (dock: DockId, tabId: string) => void;
   toggleDock: (dock: DockId) => void;
   closeDockTab: (dock: DockId, tabId: string) => void;
-  /** Opens a view in `dock`, removing it from the other one — a view lives in
-   * a single place, so picking it from the bottom dock's "+" moves it there
-   * rather than showing two copies. */
-  openDockTab: (dock: DockId, tab: PanelTab) => void;
+  /** Opens `view` in `dock` and returns the tab's id.
+   *
+   * A singleton lives in a single place, so opening one that's in the other
+   * dock moves it rather than showing two copies. A `multi` view has nothing
+   * to move: every call is a new instance, sitting alongside its siblings. */
+  openDockTab: (dock: DockId, view: PanelView) => string;
+
+  /** Shows `path` in a File tab: the one already holding it, else the showing
+   * File tab, else a new one. Following a link navigates in place instead of
+   * piling up tabs; deliberately opening a second File tab from "+" is what
+   * gets you two at once.
+   *
+   * `root` is the folder the path was cited against; omit it to use the
+   * selected folder, and pass it when the citation came from somewhere else —
+   * a link inside a document belongs to *that* document's folder, not to
+   * whichever folder happens to be selected now. */
+  openFile: (path: string, root?: string | null) => void;
+  /** Points one specific File tab at a file — what the viewer's own picker and
+   * in-document links use, since those act on the tab they live in. */
+  openFileInTab: (tabId: string, path: string, root?: string | null) => void;
 }
 
 // Closing a tab hands focus to its neighbour rather than jumping to the first,
 // which is what every tabbed UI does and what the eye expects.
-function neighbourOf(tabs: PanelTab[], closedId: string): string | null {
+export function neighbourOf(tabs: PanelTab[], closedId: string): string | null {
   const i = tabs.findIndex((t) => t.id === closedId);
   if (i === -1) return tabs[0]?.id ?? null;
   const rest = tabs.filter((t) => t.id !== closedId);
   return (rest[i] ?? rest[i - 1] ?? rest[0])?.id ?? null;
 }
 
-// Reopening keeps catalog order instead of appending, so a view always lands
-// in the same place regardless of the order things were closed and reopened.
-function inCatalogOrder(tabs: PanelTab[]): PanelTab[] {
-  const order = VIEW_CATALOG.map((t) => t.id);
-  return [...tabs].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+// Reopening keeps catalog order instead of appending, so a view always lands in
+// the same place regardless of the order things were closed and reopened.
+// Instances of the same view group together — the sort is by kind, and a stable
+// sort leaves siblings in the order they were opened.
+export function orderTabs(tabs: PanelTab[]): PanelTab[] {
+  const rank = (t: PanelTab) => {
+    const i = VIEW_CATALOG.findIndex((v) => v.type === t.type);
+    return i === -1 ? VIEW_CATALOG.length : i;
+  };
+  return [...tabs].sort((a, b) => rank(a) - rank(b));
+}
+
+/** A fresh id for another instance of `type`, unique across *both* docks —
+ * tabs move between them, and two tabs sharing an id would collapse into one. */
+export function nextInstanceId(type: PanelTab['type'], tabs: PanelTab[]): string {
+  const used = tabs
+    .filter((t) => t.type === type)
+    .map((t) => Number.parseInt(t.id.slice(type.length + 1), 10))
+    .filter((n) => Number.isFinite(n));
+  return `${type}:${Math.max(0, ...used) + 1}`;
+}
+
+/** Build the tab a view opens as. A singleton's id is its type, which is what
+ * makes reopening it find the existing one instead of stacking copies. */
+export function instantiate(view: PanelView, allTabs: PanelTab[]): PanelTab {
+  return {
+    id: view.multi ? nextInstanceId(view.type, allTabs) : view.type,
+    type: view.type,
+    label: view.label,
+    icon: view.icon,
+  };
+}
+
+/** A File tab is named after the file it holds — with several open, "File"
+ * three times over would tell you nothing. */
+export function labelFor(ref: FileRef | undefined, fallback: string): string {
+  const name = ref?.path.split('/').pop();
+  return name || fallback;
 }
 
 // The two docks hold identical shapes, so every action is written once against
@@ -58,44 +115,110 @@ const KEYS = {
   right: { tabs: 'rightTabs', active: 'activeRightTab', open: 'rightPanelOpen' },
 } as const;
 
-export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set) => ({
-  bottomTabs: [],
-  activeBottomTab: null,
-  bottomPanelOpen: false,
+const DOCKS: DockId[] = ['bottom', 'right'];
 
-  rightTabs: [],
-  activeRightTab: null,
-  rightPanelOpen: false,
+export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get) => {
+  const tabsOf = (s: AppState, dock: DockId) => s[KEYS[dock].tabs] as PanelTab[];
 
-  setActiveDockTab: (dock, tabId) => set({ [KEYS[dock].active]: tabId } as Partial<AppState>),
-
-  toggleDock: (dock) => set((s) => ({ [KEYS[dock].open]: !s[KEYS[dock].open] } as Partial<AppState>)),
-
-  // An empty dock is a designed state (it shows the "+"), so closing the last
-  // tab leaves the dock open — dismissing it is the dock's own X.
-  closeDockTab: (dock, tabId) => set((s) => {
-    const k = KEYS[dock];
-    const tabs = s[k.tabs] as PanelTab[];
+  // Stamp a path with the scope it was cited in. One place, so every entry
+  // point — picker, link, and whatever opens files next — agrees.
+  const refFor = (path: string, root?: string | null): FileRef => {
+    const s = get();
     return {
-      [k.tabs]: tabs.filter((t) => t.id !== tabId),
-      [k.active]: s[k.active] === tabId ? neighbourOf(tabs, tabId) : s[k.active],
-    } as Partial<AppState>;
-  }),
+      workspaceId: s.currentWorkspace?.id ?? null,
+      path,
+      root: root !== undefined ? root : s.activeRoot || s.currentWorkspace?.folders?.[0] || null,
+    };
+  };
 
-  openDockTab: (dock, tab) => set((s) => {
-    const k = KEYS[dock];
-    const other = KEYS[dock === 'bottom' ? 'right' : 'bottom'];
-    const tabs = s[k.tabs] as PanelTab[];
-    const otherTabs = s[other.tabs] as PanelTab[];
-    return {
-      [k.tabs]: tabs.some((t) => t.id === tab.id) ? tabs : inCatalogOrder([...tabs, tab]),
-      [k.active]: tab.id,
-      [k.open]: true,
-      // Moving out of the other dock: drop it there and re-point that dock's
-      // selection so it isn't left highlighting a tab it no longer has.
-      [other.tabs]: otherTabs.filter((t) => t.id !== tab.id),
-      [other.active]: s[other.active] === tab.id ? neighbourOf(otherTabs, tab.id) : s[other.active],
-    } as Partial<AppState>;
-  }),
+  const show = (dock: DockId, tabId: string) =>
+    set({ [KEYS[dock].active]: tabId, [KEYS[dock].open]: true } as Partial<AppState>);
 
-});
+  return {
+    bottomTabs: [],
+    activeBottomTab: null,
+    bottomPanelOpen: false,
+
+    rightTabs: [],
+    activeRightTab: null,
+    rightPanelOpen: false,
+
+    setActiveDockTab: (dock, tabId) => set({ [KEYS[dock].active]: tabId } as Partial<AppState>),
+
+    toggleDock: (dock) => set((s) => ({ [KEYS[dock].open]: !s[KEYS[dock].open] } as Partial<AppState>)),
+
+    // An empty dock is a designed state (it shows the "+"), so closing the last
+    // tab leaves the dock open — dismissing it is the dock's own X.
+    closeDockTab: (dock, tabId) => set((s) => {
+      const k = KEYS[dock];
+      const tabs = tabsOf(s, dock);
+      return {
+        [k.tabs]: tabs.filter((t) => t.id !== tabId),
+        [k.active]: s[k.active] === tabId ? neighbourOf(tabs, tabId) : s[k.active],
+      } as Partial<AppState>;
+    }),
+
+    openDockTab: (dock, view) => {
+      const s = get();
+      const tab = instantiate(view, [...s.bottomTabs, ...s.rightTabs]);
+      set((cur) => {
+        const k = KEYS[dock];
+        const other = KEYS[dock === 'bottom' ? 'right' : 'bottom'];
+        const tabs = tabsOf(cur, dock);
+        const otherTabs = tabsOf(cur, dock === 'bottom' ? 'right' : 'bottom');
+        const held = tabs.some((t) => t.id === tab.id);
+        return {
+          [k.tabs]: held ? tabs : orderTabs([...tabs, tab]),
+          [k.active]: tab.id,
+          [k.open]: true,
+          // Only a singleton is taken from the other dock: a new instance
+          // displaces nothing, so its siblings stay where they are.
+          [other.tabs]: view.multi ? otherTabs : otherTabs.filter((t) => t.id !== tab.id),
+          [other.active]:
+            !view.multi && cur[other.active] === tab.id
+              ? neighbourOf(otherTabs, tab.id)
+              : cur[other.active],
+        } as Partial<AppState>;
+      });
+      return tab.id;
+    },
+
+    openFileInTab: (tabId, path, root) => {
+      const ref = refFor(path, root);
+      const dock = DOCKS.find((d) => tabsOf(get(), d).some((t) => t.id === tabId));
+      if (!dock) return;
+      set((s) => ({
+        [KEYS[dock].tabs]: tabsOf(s, dock).map((t) =>
+          t.id === tabId ? { ...t, params: ref, label: labelFor(ref, t.label) } : t,
+        ),
+      } as Partial<AppState>));
+      show(dock, tabId);
+    },
+
+    openFile: (path, root) => {
+      const s = get();
+      const ref = refFor(path, root);
+
+      // Already open somewhere → just show it. Opening the same file twice by
+      // accident is noise; two tabs on one file is something you ask for.
+      for (const d of DOCKS) {
+        const hit = tabsOf(s, d).find(
+          (t) => t.params?.path === ref.path && t.params?.workspaceId === ref.workspaceId,
+        );
+        if (hit) return show(d, hit.id);
+      }
+
+      // Otherwise reuse a File tab, preferring the one on screen, so following
+      // a link navigates where you were looking.
+      const showing = DOCKS.map((d) => tabsOf(s, d).find((t) => t.id === s[KEYS[d].active] && t.type === 'file'))
+        .find(Boolean);
+      const any = DOCKS.map((d) => tabsOf(s, d).find((t) => t.type === 'file')).find(Boolean);
+      const target = showing ?? any;
+      if (target) return get().openFileInTab(target.id, path, root);
+
+      // No File tab at all — open one and point it at the file.
+      const id = get().openDockTab('right', FILE_VIEW);
+      get().openFileInTab(id, path, root);
+    },
+  };
+};

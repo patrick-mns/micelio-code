@@ -362,6 +362,29 @@ export interface FileHit {
   name: string;
 }
 
+/** One file read for the viewer dock (src/commands/workspace.rs). */
+export interface FileContent {
+  /** Relative to `root` — what the viewer displays. */
+  path: string;
+  /** The folder `path` is relative to; sent back on a re-read so the same
+   * relative path can't resolve to another folder's file. */
+  root: string;
+  /** Absolute location, for the asset protocol (images). */
+  abs_path: string;
+  name: string;
+  /** Empty for a binary, or for an image the webview loads from disk. */
+  content: string;
+  /** Prism language id, or "text". */
+  language: string;
+  /** Show it as a picture. SVG is both: it renders and it has source. */
+  image: boolean;
+  /** Longer than the backend's read cap; `content` holds the head of it. */
+  truncated: boolean;
+  binary: boolean;
+  /** True size on disk, which `content` may not reflect once truncated. */
+  size: number;
+}
+
 export interface SkillDetail {
   meta: {
     name: string;
@@ -380,11 +403,46 @@ export interface SkillDetail {
 // ── Dock/tab system (frontend-only; see store/panelSlice.ts) ──────────────
 /** A view a dock can host. Not bound to a dock — the same view can be opened
  * in the bottom or the right one. */
-export type PanelTabType = 'bg-tasks' | 'review';
+export type PanelTabType = 'bg-tasks' | 'review' | 'file';
 
+export type PanelIcon = 'terminal' | 'activity' | 'check' | 'list' | 'file';
+
+/** What a dock offers in its "+": the *kind* of thing, not an open one.
+ * A `multi` view can be opened more than once, each tab being its own
+ * instance — several files at a time, and later several terminals. The rest
+ * are singletons: opening one that's already up just moves it. */
+export interface PanelView {
+  type: PanelTabType;
+  label: string;
+  icon?: PanelIcon;
+  multi?: boolean;
+}
+
+/** A file the viewer is pointed at, carrying the workspace it belongs to.
+ *
+ * The path alone doesn't identify a file: it's workspace-relative, so after a
+ * switch it would resolve against the new root and quietly show the *other*
+ * project's file of the same name. Pairing it with the workspace lets the
+ * viewer derive that the reference went stale, instead of every place that
+ * switches workspace having to remember to clear it — the way `activeRoot` is
+ * reset by hand in four spots today. */
+export interface FileRef {
+  /** null only before a workspace exists, which is the onboarding screen. */
+  workspaceId: string | null;
+  path: string;
+  /** The folder the path was cited against. A multi-folder workspace can hold
+   * the same relative path twice, so without this the file would change under
+   * the viewer when the selected folder does. */
+  root: string | null;
+}
+
+/** An open tab: one instance of a view. `params` is what makes it *this*
+ * instance rather than another of the same kind — which file it holds, and
+ * later which terminal. Singleton views carry none. */
 export interface PanelTab {
   id: string;
   type: PanelTabType;
   label: string;
-  icon?: 'terminal' | 'activity' | 'check' | 'list';
+  icon?: PanelIcon;
+  params?: FileRef;
 }

@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import type {
   AskUser, BgTaskExited, BgTaskInfo, ChatMessage, CompactResult, ContextWindow,
-  EditReviewRequest, FileHit, GitContext, McpServerStatus, McpToolInfo,
+  EditReviewRequest, FileContent, FileHit, GitContext, McpServerStatus, McpToolInfo,
   ModelOption, ModelRole, NodeCode, NodeSummarized, Opener,
   ProviderInfo, ProviderInput, ProviderStatus, SessionInfo, SessionModels, SessionTitle,
   Settings, SkillDetail, SkillSummary, StreamDelta, StreamDone,
@@ -98,6 +98,14 @@ export const ipc = {
   // Fuzzy file search under the active folder — backs the @-mention palette.
   searchWorkspaceFiles: (query: string, limit?: number) =>
     invoke<FileHit[]>('search_workspace_files', { query, limit }),
+
+  /** Read one workspace file for the viewer dock. Accepts a workspace-relative
+   * path (what the palette and tool output cite) or an absolute one; the
+   * backend refuses anything resolving outside the workspace. `root` is the
+   * folder the path was cited against — it settles which folder wins when a
+   * multi-folder workspace repeats the same relative path. */
+  readWorkspaceFile: (path: string, root?: string | null) =>
+    invoke<FileContent>('read_workspace_file', { path, root: root ?? null }),
 
   // Native folder picker → returns the chosen path (or null if cancelled).
   pickFolder: (defaultPath?: string) =>

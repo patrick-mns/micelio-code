@@ -14,11 +14,13 @@ import ScanOverlay from '@/components/ScanOverlay';
 import OpenInButton from '@/components/OpenInButton';
 import { BgTasksPanel } from '@/components/BgTasksChip';
 import { ReviewPanel } from '@/components/ReviewChip';
+import FilePanel from '@/components/FilePanel';
 import AnimatedPanel from '@/components/AnimatedPanel';
 import Toasts from '@/components/Toasts';
 import PanelContainer from '@/components/PanelContainer';
 import { useStore } from '@/store';
-import { VIEW_CATALOG } from '@/store/panelSlice';
+import { VIEW_CATALOG, type DockId } from '@/store/panelSlice';
+import type { PanelTab } from '@/types';
 import { theme } from '@/theme';
 import { useI18n } from '@/i18n';
 import { usePanelResize } from '@/hooks/usePanelResize';
@@ -63,13 +65,16 @@ export default function App() {
     // Dock state (bottom + right tabbed panels)
     bottomTabs, activeBottomTab, bottomPanelOpen,
     rightTabs, activeRightTab, rightPanelOpen,
-    setActiveDockTab, toggleDock, closeDockTab, openDockTab,
+    setActiveDockTab, toggleDock, closeDockTab, openDockTab, openFileInTab,
   } = useStore();
 
-  // A dock offers everything it isn't already showing — including views open
-  // in the other dock, since picking one there moves it.
-  const openableBottom = VIEW_CATALOG.filter((c) => !bottomTabs.some((t) => t.id === c.id));
-  const openableRight = VIEW_CATALOG.filter((c) => !rightTabs.some((t) => t.id === c.id));
+  // A dock offers every singleton it isn't already showing — including ones
+  // open in the other dock, since picking one there moves it. A `multi` view
+  // is always on offer: opening another File is the point.
+  const offered = (tabs: PanelTab[]) =>
+    VIEW_CATALOG.filter((v) => v.multi || !tabs.some((t) => t.type === v.type));
+  const openableBottom = offered(bottomTabs);
+  const openableRight = offered(rightTabs);
   const [sysPromptOpen, setSysPromptOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -203,27 +208,47 @@ const { t } = useI18n();
     (runningCount > 0 && !isViewShowing('bg-tasks')) ||
     (reviewStatus.pending_count > 0 && !isViewShowing('review'));
 
+  // A file reference belongs to the workspace it was opened in: its path is
+  // relative, so carrying it across a switch would silently show the new
+  // project's file of the same name. Out of scope → the viewer's picker.
+  const inScope = (ref: PanelTab['params']) =>
+    ref && ref.workspaceId === (currentWorkspace?.id ?? null) ? ref : null;
+
   // One definition per view, shared by both docks — a view renders the same
-  // wherever it's docked, so this can't drift between the two.
-  const dockContent = {
-    'bg-tasks': (
-      <BgTasksPanel
-        embedded
-        tasks={bgTasks}
-        onClose={() => closeDockTab(bottomTabs.some((t) => t.id === 'bg-tasks') ? 'bottom' : 'right', 'bg-tasks')}
-        onStop={stopBg}
-        onClear={clearBg}
-      />
-    ),
-    review: (
-      <ReviewPanel
-        embedded
-        gitFiles={reviewStatus.changes.git_files}
-        onClose={() => closeDockTab(bottomTabs.some((t) => t.id === 'review') ? 'bottom' : 'right', 'review')}
-        onRevert={gitRevertFile}
-        onRevertAll={gitRevertAll}
-      />
-    ),
+  // wherever it's docked, so this can't drift between the two. It takes the
+  // tab, not just its type: two File tabs are separate instances holding
+  // different files, and the dock so a tab's own close button knows where it
+  // lives.
+  const renderTab = (tab: PanelTab, dock: DockId) => {
+    switch (tab.type) {
+      case 'bg-tasks':
+        return (
+          <BgTasksPanel
+            embedded
+            tasks={bgTasks}
+            onClose={() => closeDockTab(dock, tab.id)}
+            onStop={stopBg}
+            onClear={clearBg}
+          />
+        );
+      case 'review':
+        return (
+          <ReviewPanel
+            embedded
+            gitFiles={reviewStatus.changes.git_files}
+            onClose={() => closeDockTab(dock, tab.id)}
+            onRevert={gitRevertFile}
+            onRevertAll={gitRevertAll}
+          />
+        );
+      case 'file':
+        return (
+          <FilePanel
+            file={inScope(tab.params)}
+            onOpenPath={(path, root) => openFileInTab(tab.id, path, root)}
+          />
+        );
+    }
   };
 
   return (
@@ -358,7 +383,7 @@ const { t } = useI18n();
               openable={openableBottom}
               onOpenTab={(tab) => openDockTab('bottom', tab)}
               onClosePanel={() => toggleDock('bottom')}
-              content={dockContent}
+              renderTab={(tab) => renderTab(tab, 'bottom')}
             />
           </AnimatedPanel>
         </div>
@@ -374,7 +399,7 @@ const { t } = useI18n();
             openable={openableRight}
             onOpenTab={(tab) => openDockTab('right', tab)}
             onClosePanel={() => toggleDock('right')}
-            content={dockContent}
+            renderTab={(tab) => renderTab(tab, 'right')}
           />
         </AnimatedPanel>
       </div>

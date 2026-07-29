@@ -1,5 +1,6 @@
 use crate::backend::hierarchy::{build_treemap, Area};
 use crate::backend::knowledge::NodeKind;
+use crate::commands::lang::lang_from_path;
 use crate::AppState;
 use serde::Serialize;
 use std::sync::atomic::Ordering;
@@ -190,33 +191,6 @@ fn resolve_in_workspace(state: &State<'_, AppState>, path: &str) -> std::path::P
     state.workspace_root.lock().unwrap().join(p)
 }
 
-/// Map a file extension to a Prism language id. Falls back to plain text.
-fn lang_from_path(path: &str) -> String {
-    let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
-    let lang = match ext.as_str() {
-        "rs" => "rust",
-        "py" => "python",
-        "js" | "mjs" | "cjs" => "javascript",
-        "jsx" => "jsx",
-        "ts" => "typescript",
-        "tsx" => "tsx",
-        "go" => "go",
-        "json" => "json",
-        "toml" => "toml",
-        "yaml" | "yml" => "yaml",
-        "md" | "markdown" => "markdown",
-        "html" | "htm" => "markup",
-        "css" => "css",
-        "sh" | "bash" | "zsh" => "bash",
-        "c" | "h" => "c",
-        "cpp" | "cc" | "hpp" => "cpp",
-        "java" => "java",
-        "rb" => "ruby",
-        _ => "text",
-    };
-    lang.to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,32 +203,6 @@ mod tests {
         assert_eq!(kind_str(NodeKind::Concept), "Concept");
         assert_eq!(kind_str(NodeKind::Directory), "Directory");
         assert_eq!(kind_str(NodeKind::Note), "Note");
-    }
-
-    #[test]
-    fn lang_from_path_known_extensions() {
-        assert_eq!(lang_from_path("main.rs"), "rust");
-        assert_eq!(lang_from_path("app.tsx"), "tsx");
-        assert_eq!(lang_from_path("style.css"), "css");
-        assert_eq!(lang_from_path("build.sh"), "bash");
-        assert_eq!(lang_from_path("Cargo.toml"), "toml");
-    }
-
-    #[test]
-    fn lang_from_path_unknown_extension() {
-        assert_eq!(lang_from_path("data.db"), "text");
-        assert_eq!(lang_from_path("Makefile"), "text");
-    }
-
-    #[test]
-    fn lang_from_path_no_extension() {
-        assert_eq!(lang_from_path("README"), "text");
-    }
-
-    #[test]
-    fn lang_from_path_case_insensitive() {
-        assert_eq!(lang_from_path("App.TS"), "typescript");
-        assert_eq!(lang_from_path("Dockerfile.RS"), "rust");
     }
 }
 

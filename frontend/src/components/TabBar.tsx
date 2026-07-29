@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { X, Plus, Terminal, Check, Rows } from '@phosphor-icons/react';
-import type { PanelTab, PanelTabType } from '@/types';
+import { X, Plus, Terminal, Check, Rows, FileText } from '@phosphor-icons/react';
+import type { PanelTab, PanelView } from '@/types';
 import { panelDockStyles as styles } from '@/utils/theme-styles';
 
 export interface TabBarProps {
@@ -8,10 +8,10 @@ export interface TabBarProps {
   activeTabId: string | null;
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
-  /** Views this dock can host that aren't currently open — offered by the
-   * trailing "+". Empty means the "+" is hidden. */
-  openable?: PanelTab[];
-  onOpenTab?: (tab: PanelTab) => void;
+  /** Views this dock can host — offered by the trailing "+". Empty means the
+   * "+" is hidden. */
+  openable?: PanelView[];
+  onOpenTab?: (view: PanelView) => void;
   /** Dismisses the whole dock. Anchored at the strip's far right — a fixed
    * spot that doesn't move as tabs are opened and closed. */
   onClosePanel?: () => void;
@@ -22,6 +22,7 @@ const ICONS: Record<NonNullable<PanelTab['icon']>, React.ElementType> = {
   activity: Rows,
   check: Check,
   list: Rows,
+  file: FileText,
 };
 
 // Always `regular`: swapping to `fill` on the active tab visibly deforms
@@ -150,14 +151,14 @@ export default function TabBar({
                   visibility: pos ? 'visible' : 'hidden',
                 }}
               >
-                {openable.map((tab) => (
+                {openable.map((view) => (
                   <button
-                    key={tab.id}
+                    key={view.type}
                     className="menu-item"
-                    onClick={() => { onOpenTab(tab); close(); }}
+                    onClick={() => { onOpenTab(view); close(); }}
                   >
-                    <TabIcon icon={tab.icon} />
-                    {tab.label}
+                    <TabIcon icon={view.icon} />
+                    {view.label}
                   </button>
                 ))}
               </div>
