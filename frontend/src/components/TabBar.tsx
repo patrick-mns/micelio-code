@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { X, Plus, Terminal, Check, Rows } from '@phosphor-icons/react';
 import type { PanelTab, PanelTabType } from '@/types';
 import { panelDockStyles as styles } from '@/utils/theme-styles';
@@ -40,23 +40,43 @@ export default function TabBar({
   tabs, activeTabId, onSelectTab, onCloseTab, openable = [], onOpenTab, onClosePanel,
 }: TabBarProps) {
   const addRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   // The "+" sits inside the scrolling tab row, which is itself inside the
   // dock's `overflow: hidden` card — an absolutely-positioned menu would be
-  // clipped by both. So the menu is fixed-positioned and anchored to the
-  // button's viewport rect, captured when it opens.
-  const [menuAt, setMenuAt] = useState<{ top: number; right: number } | null>(null);
+  // clipped by both. So the menu is fixed-positioned, anchored to the button's
+  // viewport rect captured when it opens.
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-  const openMenu = () => {
-    const r = addRef.current?.getBoundingClientRect();
-    if (!r) return;
-    setMenuAt({ top: r.bottom + 6, right: window.innerWidth - r.right });
-  };
+  // Keep the menu inside the viewport on both axes. The "+" can sit anywhere
+  // — a bottom dock puts it near the left edge, and it's always low on screen
+  // — so a fixed corner-anchoring rule sends the menu off-screen. Measured
+  // after render (in a layout effect, so the correction lands before paint)
+  // because the menu's size depends on how many views are openable.
+  useLayoutEffect(() => {
+    if (!anchor || !menuRef.current) return;
+    const menu = menuRef.current.getBoundingClientRect();
+    const gap = 6;
+    const edge = 8;
+
+    let left = anchor.left;
+    if (left + menu.width > window.innerWidth - edge) left = window.innerWidth - menu.width - edge;
+    left = Math.max(edge, left);
+
+    // Flip above the button when there's no room below it.
+    let top = anchor.bottom + gap;
+    if (top + menu.height > window.innerHeight - edge) top = anchor.top - menu.height - gap;
+    top = Math.max(edge, top);
+
+    setPos({ top, left });
+  }, [anchor]);
+
+  const close = () => { setAnchor(null); setPos(null); };
 
   // Close on an outside click, Escape, or anything that moves the anchor
   // (scroll/resize) — the menu can't follow it while fixed.
   useEffect(() => {
-    if (!menuAt) return;
-    const close = () => setMenuAt(null);
+    if (!anchor) return;
     const onDown = (e: MouseEvent) => {
       if (!addRef.current?.contains(e.target as Node)) close();
     };
@@ -71,7 +91,7 @@ export default function TabBar({
       window.removeEventListener('resize', close);
       window.removeEventListener('scroll', close, true);
     };
-  }, [menuAt]);
+  }, [anchor]);
 
   // Nothing open and nothing to open — the dock shouldn't be showing at all.
   if (!tabs.length && !openable.length) return null;
@@ -113,17 +133,28 @@ export default function TabBar({
               className="btn btn-icon-sm btn-ghost"
               title="Open a view"
               aria-label="Open a view"
-              onClick={() => (menuAt ? setMenuAt(null) : openMenu())}
+              onClick={(e) => (anchor ? close() : setAnchor(e.currentTarget.getBoundingClientRect()))}
             >
               <Plus size={14} weight="bold" />
             </button>
-            {menuAt && (
-              <div style={{ ...styles.addMenu, top: menuAt.top, right: menuAt.right }}>
+            {anchor && (
+              <div
+                ref={menuRef}
+                style={{
+                  ...styles.addMenu,
+                  // First paint uses the raw anchor; the layout effect above
+                  // replaces it with the clamped position before the browser
+                  // paints, so this never shows off-screen.
+                  top: pos?.top ?? anchor.bottom + 6,
+                  left: pos?.left ?? anchor.left,
+                  visibility: pos ? 'visible' : 'hidden',
+                }}
+              >
                 {openable.map((tab) => (
                   <button
                     key={tab.id}
                     className="menu-item"
-                    onClick={() => { onOpenTab(tab); setMenuAt(null); }}
+                    onClick={() => { onOpenTab(tab); close(); }}
                   >
                     <TabIcon icon={tab.icon} />
                     {tab.label}
