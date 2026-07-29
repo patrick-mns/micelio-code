@@ -182,7 +182,11 @@ export default function TerminalPanel({ id, cwd }: TerminalPanelProps) {
         <div style={styles.error}>{error}</div>
       ) : (
         <>
-          <div ref={hostRef} style={styles.host} />
+          {/* The frame carries the padding and border; the host stays a bare
+              box so the fit addon's measurement of it is exact. */}
+          <div style={styles.frame}>
+            <div ref={hostRef} style={styles.host} />
+          </div>
           {exit !== null && (
             // The tab stays after the shell is gone — whatever it printed on
             // the way out is usually the reason you'd look.
