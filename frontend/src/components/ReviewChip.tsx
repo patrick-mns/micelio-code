@@ -163,6 +163,9 @@ interface ReviewPanelProps {
   onClose: () => void;
   onRevert: (path: string) => void;
   onRevertAll: () => void;
+  /** Hides the internal title/close header — used when a host (like
+   * PanelContainer's TabBar) already provides one. */
+  embedded?: boolean;
 }
 
 export function ReviewPanel({
@@ -170,15 +173,18 @@ export function ReviewPanel({
   onClose,
   onRevert,
   onRevertAll,
+  embedded,
 }: ReviewPanelProps) {
   return (
-    <div style={reviewPanelStyles.panel}>
+    <div style={embedded ? reviewPanelStyles.panelEmbedded : reviewPanelStyles.panel}>
       {/* Header */}
-      <div style={reviewPanelStyles.head}>
-        <span style={{ ...reviewPanelStyles.headTitle, flex: '0 0 auto' }}>Changes</span>
-        <span style={{ flex: 1 }} />
-        <button className="close-btn" onClick={onClose} title="Close"><X size={15} /></button>
-      </div>
+      {!embedded && (
+        <div style={reviewPanelStyles.head}>
+          <span style={{ ...reviewPanelStyles.headTitle, flex: '0 0 auto' }}>Changes</span>
+          <span style={{ flex: 1 }} />
+          <button className="close-btn" onClick={onClose} title="Close"><X size={15} /></button>
+        </div>
+      )}
 
       {/* File list */}
       <div style={reviewPanelStyles.body}>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, type CSSProperties } from 'react';
-import { ChatCircle, SquaresFour, SidebarSimple, FileText, Info, type Icon } from '@phosphor-icons/react';
+import { ChatCircle, SquaresFour, SidebarSimple, Rows, FileText, Info, type Icon } from '@phosphor-icons/react';
 import Chat from '@/views/Chat';
 import TreemapView from '@/views/Treemap';
 import Settings from '@/components/Settings';
@@ -12,11 +12,13 @@ import ConfirmModal from '@/components/ConfirmModal';
 import Onboarding from '@/components/Onboarding';
 import ScanOverlay from '@/components/ScanOverlay';
 import OpenInButton from '@/components/OpenInButton';
-import BgTasksChip, { BgTasksPanel } from '@/components/BgTasksChip';
-import ReviewChip, { ReviewPanel } from '@/components/ReviewChip';
+import { BgTasksPanel } from '@/components/BgTasksChip';
+import { ReviewPanel } from '@/components/ReviewChip';
 import AnimatedPanel from '@/components/AnimatedPanel';
 import Toasts from '@/components/Toasts';
+import PanelContainer from '@/components/PanelContainer';
 import { useStore } from '@/store';
+import { VIEW_CATALOG } from '@/store/panelSlice';
 import { theme } from '@/theme';
 import { useI18n } from '@/i18n';
 import { usePanelResize } from '@/hooks/usePanelResize';
@@ -30,10 +32,17 @@ import { appStyles } from '@/utils/theme-styles';
 import WindowControls from '@/components/WindowControls';
 import ResizeEdgeHandles from '@/components/ResizeEdgeHandles';
 
-// Thin draggable strip rendered in the gap between two side panels. Lives in
+// Thin draggable strip rendered in the gap between two docked panels. Lives in
 // the flex flow (not inside a panel), so it never overlaps a panel's scrollbar.
-function ResizeHandle({ onMouseDown }: { onMouseDown: () => void }) {
-  return <div className="panel-resizer" onMouseDown={onMouseDown} title="Drag to resize" />;
+// `horizontal` is the bottom dock's variant — same strip, rotated.
+function ResizeHandle({ onMouseDown, horizontal }: { onMouseDown: () => void; horizontal?: boolean }) {
+  return (
+    <div
+      className={horizontal ? 'panel-resizer panel-resizer-h' : 'panel-resizer'}
+      onMouseDown={onMouseDown}
+      title="Drag to resize"
+    />
+  );
 }
 
 const TABS: { id: TabId; Icon: Icon }[] = [
@@ -51,12 +60,16 @@ export default function App() {
     activeTab, setActiveTab, showSettings, setShowSettings,
     settings, setSettings, sidebarOpen, setSidebarOpen, scanning,
     update, setUpdateState, checkForUpdates,
+    // Dock state (bottom + right tabbed panels)
+    bottomTabs, activeBottomTab, bottomPanelOpen,
+    rightTabs, activeRightTab, rightPanelOpen,
+    setActiveDockTab, toggleDock, closeDockTab, openDockTab,
   } = useStore();
-  const [rightPanel, setRightPanel] = useState<'bg' | 'review' | null>(null);
-  const [panelContent, setPanelContent] = useState<'bg' | 'review' | null>(null);
-  useEffect(() => {
-    if (rightPanel !== null) setPanelContent(rightPanel);
-  }, [rightPanel]);
+
+  // A dock offers everything it isn't already showing — including views open
+  // in the other dock, since picking one there moves it.
+  const openableBottom = VIEW_CATALOG.filter((c) => !bottomTabs.some((t) => t.id === c.id));
+  const openableRight = VIEW_CATALOG.filter((c) => !rightTabs.some((t) => t.id === c.id));
   const [sysPromptOpen, setSysPromptOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -155,10 +168,11 @@ const { t } = useI18n();
   // resolves — otherwise returning users would flash the onboarding screen.
   const [wsReady, setWsReady] = useState(false);
 
-  // Resizable widths for the two side panels (the wrapper width, including the
-  // 8px float inset). Persisted + clamped by the hook.
-  const sidebarResize = usePanelResize({ storageKey: 'sidebarWidth', defaultWidth: 256, min: 208, side: 'left' });
-  const bgResize = usePanelResize({ storageKey: 'bgPanelWidth', defaultWidth: 328, min: 268, side: 'right' });
+  // Sizes for the three docked panels (the wrapper size, including the 8px
+  // float inset). Persisted + clamped by the hook.
+  const sidebarResize = usePanelResize({ storageKey: 'sidebarWidth', defaultSize: 256, min: 208, side: 'left' });
+  const bgResize = usePanelResize({ storageKey: 'bgPanelWidth', defaultSize: 328, min: 268, side: 'right' });
+  const bottomResize = usePanelResize({ storageKey: 'bottomPanelHeight', defaultSize: 240, min: 120, side: 'bottom' });
 
   useEffect(() => {
     loadCurrentWorkspace().finally(() => setWsReady(true));
@@ -181,12 +195,43 @@ const { t } = useI18n();
     })();
   }, [loadCurrentWorkspace]);
 
+  // A view is "seen" only when it's the showing tab of an open dock — either
+  // dock may be hosting it, so both have to be checked.
+  const isViewShowing = (id: string) =>
+    (bottomPanelOpen && activeBottomTab === id) || (rightPanelOpen && activeRightTab === id);
+  const hasUnseenActivity =
+    (runningCount > 0 && !isViewShowing('bg-tasks')) ||
+    (reviewStatus.pending_count > 0 && !isViewShowing('review'));
+
+  // One definition per view, shared by both docks — a view renders the same
+  // wherever it's docked, so this can't drift between the two.
+  const dockContent = {
+    'bg-tasks': (
+      <BgTasksPanel
+        embedded
+        tasks={bgTasks}
+        onClose={() => closeDockTab(bottomTabs.some((t) => t.id === 'bg-tasks') ? 'bottom' : 'right', 'bg-tasks')}
+        onStop={stopBg}
+        onClear={clearBg}
+      />
+    ),
+    review: (
+      <ReviewPanel
+        embedded
+        gitFiles={reviewStatus.changes.git_files}
+        onClose={() => closeDockTab(bottomTabs.some((t) => t.id === 'review') ? 'bottom' : 'right', 'review')}
+        onRevert={gitRevertFile}
+        onRevertAll={gitRevertAll}
+      />
+    ),
+  };
+
   return (
     <div style={appStyles.root}>
       {/* Full-height layout: sidebar (left, hosts the mac traffic lights at its
           top) + content column with its own header. */}
       <div style={appStyles.body}>
-        <AnimatedPanel open={sidebarOpen} side="left" width={sidebarResize.width} resizing={sidebarResize.isResizing}>
+        <AnimatedPanel open={sidebarOpen} side="left" size={sidebarResize.size} resizing={sidebarResize.isResizing}>
           <Sidebar
             workspaceName={switching ? t('sidebar.scanning') : currentWorkspace?.name || t('sidebar.openFolder')}
             onPickWorkspace={pickWorkspace}
@@ -256,8 +301,28 @@ const { t } = useI18n();
               >
                 <FileText size={16} />
               </button>
-              <BgTasksChip running={runningCount} active={rightPanel === 'bg'} onClick={() => setRightPanel((p) => (p === 'bg' ? null : 'bg'))} />
-              <ReviewChip pendingCount={reviewStatus.pending_count} active={rightPanel === 'review'} onClick={() => setRightPanel((p) => (p === 'review' ? null : 'review'))} />
+              {/* One toggle per dock, not a chip per feature — which views a
+                  dock hosts is chosen inside it, via the tab bar's "+".
+                  Same `.icon-btn` + fill-when-open pattern as the sidebar
+                  toggle on the left, so all three read as one control type. */}
+              <button
+                className="icon-btn"
+                title="Toggle bottom panel"
+                onClick={() => toggleDock('bottom')}
+              >
+                <Rows size={18} weight={bottomPanelOpen ? 'fill' : 'regular'} />
+              </button>
+              <button
+                className="icon-btn has-dot"
+                title="Toggle right panel"
+                onClick={() => toggleDock('right')}
+              >
+                <SidebarSimple size={18} weight={rightPanelOpen ? 'fill' : 'regular'} style={{ transform: 'scaleX(-1)' }} />
+                {/* "There's activity you can't see right now" — a view counts as
+                    seen only if it's the showing tab of an open dock, since
+                    either dock may be hosting it. */}
+                {hasUnseenActivity && <span className="icon-btn-dot" />}
+              </button>
               <OpenInButton />
               {platform.showWindowControls && <WindowControls />}
             </div>
@@ -278,25 +343,39 @@ const { t } = useI18n();
               </>
             )}
           </div>
+
+          {/* Bottom dock — same machinery as the right dock (AnimatedPanel +
+              usePanelResize), just on the vertical axis, so both open with the
+              identical slide instead of one animating and the other snapping. */}
+          {bottomPanelOpen && <ResizeHandle horizontal onMouseDown={bottomResize.startResize} />}
+          <AnimatedPanel open={bottomPanelOpen} side="bottom" size={bottomResize.size} resizing={bottomResize.isResizing}>
+            <PanelContainer
+              dock="bottom"
+              tabs={bottomTabs}
+              activeTabId={activeBottomTab}
+              onSelectTab={(id) => setActiveDockTab('bottom', id)}
+              onCloseTab={(id) => closeDockTab('bottom', id)}
+              openable={openableBottom}
+              onOpenTab={(tab) => openDockTab('bottom', tab)}
+              onClosePanel={() => toggleDock('bottom')}
+              content={dockContent}
+            />
+          </AnimatedPanel>
         </div>
 
-        {rightPanel && <ResizeHandle onMouseDown={bgResize.startResize} />}
-        <AnimatedPanel open={!!rightPanel} side="right" width={bgResize.width} resizing={bgResize.isResizing}>
-          {panelContent === 'review' ? (
-            <ReviewPanel
-              gitFiles={reviewStatus.changes.git_files}
-              onClose={() => setRightPanel(null)}
-              onRevert={gitRevertFile}
-              onRevertAll={gitRevertAll}
-            />
-          ) : (
-            <BgTasksPanel
-              tasks={bgTasks}
-              onClose={() => setRightPanel(null)}
-              onStop={stopBg}
-              onClear={clearBg}
-            />
-          )}
+        {rightPanelOpen && <ResizeHandle onMouseDown={bgResize.startResize} />}
+        <AnimatedPanel open={!!rightPanelOpen} side="right" size={bgResize.size} resizing={bgResize.isResizing}>
+          <PanelContainer
+            dock="right"
+            tabs={rightTabs}
+            activeTabId={activeRightTab}
+            onSelectTab={(id) => setActiveDockTab('right', id)}
+            onCloseTab={(id) => closeDockTab('right', id)}
+            openable={openableRight}
+            onOpenTab={(tab) => openDockTab('right', tab)}
+            onClosePanel={() => toggleDock('right')}
+            content={dockContent}
+          />
         </AnimatedPanel>
       </div>
 

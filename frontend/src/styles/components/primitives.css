@@ -18,6 +18,18 @@
 .panel-resizer:hover::after { background: var(--color-border); }
 .panel-resizer:active::after { background: var(--color-accent); }
 
+/* Horizontal variant — same grab strip rotated for the bottom dock. */
+.panel-resizer-h {
+  width: auto;
+  height: 6px;
+  cursor: ns-resize;
+}
+.panel-resizer-h::after {
+  top: 50%; bottom: auto; left: 12px; right: 12px;
+  width: auto; height: 2px;
+  margin-left: 0; margin-top: -1px;
+}
+
 /* ── Close button ────────────────────────────────────────────────────────── */
 .close-btn {
   display: inline-flex; align-items: center; justify-content: center;
