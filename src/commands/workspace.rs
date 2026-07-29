@@ -651,7 +651,7 @@ mod tests {
         let root = tmp_root("rel");
         fs::write(root.join("README.md"), "# hi").unwrap();
 
-        let (full, matched) = resolve_readable(&[root.clone()], "README.md").unwrap();
+        let (full, matched) = resolve_readable(std::slice::from_ref(&root), "README.md").unwrap();
         assert_eq!(full, root.join("README.md"));
         assert_eq!(matched, root);
         let _ = fs::remove_dir_all(&root);
@@ -704,8 +704,11 @@ mod tests {
             .join("micelio-read-traversal-outside.txt");
         fs::write(&outside, "SENSITIVE").unwrap();
 
-        let err = resolve_readable(&[root.clone()], "../micelio-read-traversal-outside.txt")
-            .expect_err("`..` must not escape the workspace");
+        let err = resolve_readable(
+            std::slice::from_ref(&root),
+            "../micelio-read-traversal-outside.txt",
+        )
+        .expect_err("`..` must not escape the workspace");
         assert!(
             !err.contains("SENSITIVE"),
             "the error must not leak content"
@@ -723,7 +726,7 @@ mod tests {
             .join("micelio-read-absolute-outside.txt");
         fs::write(&outside, "SENSITIVE").unwrap();
 
-        assert!(resolve_readable(&[root.clone()], &outside.to_string_lossy()).is_err());
+        assert!(resolve_readable(std::slice::from_ref(&root), &outside.to_string_lossy()).is_err());
         let _ = fs::remove_file(&outside);
         let _ = fs::remove_dir_all(&root);
     }
@@ -741,7 +744,7 @@ mod tests {
         fs::write(&outside, "SENSITIVE").unwrap();
         std::os::unix::fs::symlink(&outside, root.join("link.txt")).unwrap();
 
-        assert!(resolve_readable(&[root.clone()], "link.txt").is_err());
+        assert!(resolve_readable(std::slice::from_ref(&root), "link.txt").is_err());
         let _ = fs::remove_file(&outside);
         let _ = fs::remove_dir_all(&root);
     }
@@ -751,7 +754,7 @@ mod tests {
         let root = tmp_root("dir");
         fs::create_dir(root.join("src")).unwrap();
 
-        assert!(resolve_readable(&[root.clone()], "src").is_err());
+        assert!(resolve_readable(std::slice::from_ref(&root), "src").is_err());
         let _ = fs::remove_dir_all(&root);
     }
 }
