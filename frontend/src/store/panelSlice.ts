@@ -1,95 +1,101 @@
-// Panel and tab state — which tabs are open, active, sizes, positions.
+// Dock state — which views are open in the bottom/right docks and which one
+// each is showing. Docks are generic: any view in the catalog can be opened in
+// either one, so the same view can be moved from the side to the bottom.
 import type { StateCreator } from 'zustand';
 import type { AppState } from './index';
 import type { PanelTab } from '@/types';
 
+export type DockId = 'bottom' | 'right';
+
+/** Every view a dock can host. Both docks draw from this one list — nothing is
+ * bound to a particular dock. Adding a view to the app means adding it here
+ * and supplying its content in App.tsx. */
+export const VIEW_CATALOG: PanelTab[] = [
+  { id: 'bg-tasks', type: 'bg-tasks', label: 'Background', icon: 'activity' },
+  { id: 'review', type: 'review', label: 'Review', icon: 'check' },
+];
+
 export interface PanelSlice {
-  // Bottom panel
+  // Both docks start empty: opening one shows an empty dock with a "+", and
+  // the user picks what goes in it rather than inheriting a default view.
   bottomTabs: PanelTab[];
   activeBottomTab: string | null;
   bottomPanelOpen: boolean;
-  bottomPanelHeight: number;
 
-  // Right panel
   rightTabs: PanelTab[];
   activeRightTab: string | null;
   rightPanelOpen: boolean;
-  rightPanelWidth: number;
 
-  // Actions
-  setBottomTabs: (tabs: PanelTab[]) => void;
-  setActiveBottomTab: (tabId: string | null) => void;
-  setBottomPanelOpen: (open: boolean) => void;
-  setBottomPanelHeight: (height: number) => void;
-  toggleBottomPanel: () => void;
-
-  setRightTabs: (tabs: PanelTab[]) => void;
-  setActiveRightTab: (tabId: string | null) => void;
-  setRightPanelOpen: (open: boolean) => void;
-  setRightPanelWidth: (width: number) => void;
-  toggleRightPanel: () => void;
-
-  // Add/remove tabs
-  addBottomTab: (tab: PanelTab) => void;
-  removeBottomTab: (tabId: string) => void;
-  addRightTab: (tab: PanelTab) => void;
-  removeRightTab: (tabId: string) => void;
+  setActiveDockTab: (dock: DockId, tabId: string) => void;
+  toggleDock: (dock: DockId) => void;
+  closeDockTab: (dock: DockId, tabId: string) => void;
+  /** Opens a view in `dock`, removing it from the other one — a view lives in
+   * a single place, so picking it from the bottom dock's "+" moves it there
+   * rather than showing two copies. */
+  openDockTab: (dock: DockId, tab: PanelTab) => void;
 }
 
-const DEFAULT_BOTTOM_HEIGHT = 240;
-const DEFAULT_RIGHT_WIDTH = 328;
+// Closing a tab hands focus to its neighbour rather than jumping to the first,
+// which is what every tabbed UI does and what the eye expects.
+function neighbourOf(tabs: PanelTab[], closedId: string): string | null {
+  const i = tabs.findIndex((t) => t.id === closedId);
+  if (i === -1) return tabs[0]?.id ?? null;
+  const rest = tabs.filter((t) => t.id !== closedId);
+  return (rest[i] ?? rest[i - 1] ?? rest[0])?.id ?? null;
+}
+
+// Reopening keeps catalog order instead of appending, so a view always lands
+// in the same place regardless of the order things were closed and reopened.
+function inCatalogOrder(tabs: PanelTab[]): PanelTab[] {
+  const order = VIEW_CATALOG.map((t) => t.id);
+  return [...tabs].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+}
+
+// The two docks hold identical shapes, so every action is written once against
+// whichever set of keys the dock maps to.
+const KEYS = {
+  bottom: { tabs: 'bottomTabs', active: 'activeBottomTab', open: 'bottomPanelOpen' },
+  right: { tabs: 'rightTabs', active: 'activeRightTab', open: 'rightPanelOpen' },
+} as const;
 
 export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set) => ({
-  bottomTabs: [
-    { id: 'terminal', type: 'terminal', label: 'Terminal', icon: 'terminal' },
-  ],
-  activeBottomTab: 'terminal',
+  bottomTabs: [],
+  activeBottomTab: null,
   bottomPanelOpen: false,
-  bottomPanelHeight: DEFAULT_BOTTOM_HEIGHT,
 
-  rightTabs: [
-    { id: 'bg-tasks', type: 'bg-tasks', label: 'Background Tasks', icon: 'activity' },
-    { id: 'review', type: 'review', label: 'Review', icon: 'check' },
-  ],
+  rightTabs: [],
   activeRightTab: null,
   rightPanelOpen: false,
-  rightPanelWidth: DEFAULT_RIGHT_WIDTH,
 
-  setBottomTabs: (tabs) => set({ bottomTabs: tabs }),
-  setActiveBottomTab: (tabId) => set({ activeBottomTab: tabId }),
-  setBottomPanelOpen: (open) => set({ bottomPanelOpen: open }),
-  setBottomPanelHeight: (height) => set({ bottomPanelHeight: height }),
-  toggleBottomPanel: () => set((s) => ({ bottomPanelOpen: !s.bottomPanelOpen })),
+  setActiveDockTab: (dock, tabId) => set({ [KEYS[dock].active]: tabId } as Partial<AppState>),
 
-  setRightTabs: (tabs) => set({ rightTabs: tabs }),
-  setActiveRightTab: (tabId) => set({ activeRightTab: tabId }),
-  setRightPanelOpen: (open) => set({ rightPanelOpen: open }),
-  setRightPanelWidth: (width) => set({ rightPanelWidth: width }),
-  toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
+  toggleDock: (dock) => set((s) => ({ [KEYS[dock].open]: !s[KEYS[dock].open] } as Partial<AppState>)),
 
-  addBottomTab: (tab) => set((s) => ({
-    bottomTabs: [...s.bottomTabs, tab],
-    activeBottomTab: tab.id,
-    bottomPanelOpen: true,
-  })),
-  removeBottomTab: (tabId) => set((s) => {
-    const newTabs = s.bottomTabs.filter((t) => t.id !== tabId);
+  // An empty dock is a designed state (it shows the "+"), so closing the last
+  // tab leaves the dock open — dismissing it is the dock's own X.
+  closeDockTab: (dock, tabId) => set((s) => {
+    const k = KEYS[dock];
+    const tabs = s[k.tabs] as PanelTab[];
     return {
-      bottomTabs: newTabs,
-      activeBottomTab: s.activeBottomTab === tabId ? (newTabs[0]?.id ?? null) : s.activeBottomTab,
-    };
+      [k.tabs]: tabs.filter((t) => t.id !== tabId),
+      [k.active]: s[k.active] === tabId ? neighbourOf(tabs, tabId) : s[k.active],
+    } as Partial<AppState>;
   }),
 
-  addRightTab: (tab) => set((s) => ({
-    rightTabs: [...s.rightTabs, tab],
-    activeRightTab: tab.id,
-    rightPanelOpen: true,
-  })),
-  removeRightTab: (tabId) => set((s) => {
-    const newTabs = s.rightTabs.filter((t) => t.id !== tabId);
+  openDockTab: (dock, tab) => set((s) => {
+    const k = KEYS[dock];
+    const other = KEYS[dock === 'bottom' ? 'right' : 'bottom'];
+    const tabs = s[k.tabs] as PanelTab[];
+    const otherTabs = s[other.tabs] as PanelTab[];
     return {
-      rightTabs: newTabs,
-      activeRightTab: s.activeRightTab === tabId ? (newTabs[0]?.id ?? null) : s.activeRightTab,
-    };
+      [k.tabs]: tabs.some((t) => t.id === tab.id) ? tabs : inCatalogOrder([...tabs, tab]),
+      [k.active]: tab.id,
+      [k.open]: true,
+      // Moving out of the other dock: drop it there and re-point that dock's
+      // selection so it isn't left highlighting a tab it no longer has.
+      [other.tabs]: otherTabs.filter((t) => t.id !== tab.id),
+      [other.active]: s[other.active] === tab.id ? neighbourOf(otherTabs, tab.id) : s[other.active],
+    } as Partial<AppState>;
   }),
+
 });

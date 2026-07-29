@@ -179,6 +179,46 @@ export const toolEntryStyles: Record<string, CSSProperties> = {
   groupBody: { marginLeft: 8, display: 'flex', flexDirection: 'column', marginTop: 1 },
 };
 
+// ── PanelContainer.tsx / TabBar.tsx ──────────────────────────────────────
+// The dock shell that hosts tabbed views (bottom + right). It carries the
+// same floating-card chrome the standalone panels used to carry themselves
+// (margin, border, radius) — an embedded panel drops its own so the tab bar
+// reads as part of the card instead of a strip hanging outside it.
+export const panelDockStyles: Record<string, CSSProperties> = {
+  shell: {
+    background: theme.card, border: `1px solid ${theme.border}`,
+    borderRadius: 'var(--radius-lg)',
+    display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  },
+  // Right dock: floats away from the window edge on three sides.
+  shellRight: { width: 'calc(100% - 8px)', height: 'calc(100% - 16px)', margin: '8px 8px 8px 0' },
+  // Bottom dock: the resize separator above already provides the top gap.
+  shellBottom: { flex: 1, minHeight: 0, margin: '0 8px 8px' },
+  head: {
+    display: 'flex', alignItems: 'center', gap: 4,
+    padding: 6, flexShrink: 0,
+    borderBottom: `1px solid ${theme.border}`,
+  },
+  // Tab visuals live in CSS (.dock-tab in buttons.css) so hover/active states
+  // can be expressed properly; this is just the scrolling row that holds them.
+  tabs: {
+    flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 2,
+    overflowX: 'auto', scrollbarWidth: 'none',
+  },
+  addWrap: { flexShrink: 0, display: 'flex', alignItems: 'center' },
+  // Fixed, not absolute: the "+" lives inside the scrolling tab row and the
+  // dock's `overflow: hidden` card, either of which would clip a positioned
+  // child. TabBar supplies `top`/`right` from the button's viewport rect.
+  addMenu: {
+    position: 'fixed', minWidth: 168, zIndex: 60,
+    background: theme.card, border: `1px solid ${theme.border}`,
+    borderRadius: 'var(--radius-md)', padding: 4,
+    boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
+  },
+  body: { flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  placeholder: { padding: '24px 12px', color: theme.faint, fontSize: 12.5, textAlign: 'center' },
+};
+
 // ── BgTasksChip.tsx ──────────────────────────────────────────────────────
 export const bgTasksChipStyles: Record<string, CSSProperties> = {
   chip: {
@@ -199,6 +239,12 @@ export const bgTasksChipStyles: Record<string, CSSProperties> = {
     margin: '8px 8px 8px 0',
     height: 'calc(100% - 16px)',
     background: theme.card, border: `1px solid ${theme.border}`, borderRadius: "var(--radius-lg)",
+    display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  },
+  // Inside a PanelContainer dock the shell already draws the card, so the
+  // panel is just a column that fills it.
+  panelEmbedded: {
+    width: '100%', height: '100%',
     display: 'flex', flexDirection: 'column', overflow: 'hidden',
   },
   head: {
@@ -252,6 +298,12 @@ export const reviewPanelStyles: Record<string, CSSProperties> = {
     margin: '8px 8px 8px 0',
     height: 'calc(100% - 16px)',
     background: theme.card, border: `1px solid ${theme.border}`, borderRadius: "var(--radius-lg)",
+    display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  },
+  // Inside a PanelContainer dock the shell already draws the card, so the
+  // panel is just a column that fills it.
+  panelEmbedded: {
+    width: '100%', height: '100%',
     display: 'flex', flexDirection: 'column', overflow: 'hidden',
   },
   head: {

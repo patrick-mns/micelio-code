@@ -1,98 +1,145 @@
-import React from 'react';
-import { X, Terminal, Check, List } from '@phosphor-icons/react';
-import type { PanelTab } from '@/types';
-import { theme } from '@/theme';
+import React, { useEffect, useRef, useState } from 'react';
+import { X, Plus, Terminal, Check, Rows } from '@phosphor-icons/react';
+import type { PanelTab, PanelTabType } from '@/types';
+import { panelDockStyles as styles } from '@/utils/theme-styles';
 
-interface TabBarProps {
+export interface TabBarProps {
   tabs: PanelTab[];
   activeTabId: string | null;
   onSelectTab: (tabId: string) => void;
-  onCloseTab?: (tabId: string) => void;
-  orientation?: 'horizontal' | 'vertical';
+  onCloseTab: (tabId: string) => void;
+  /** Views this dock can host that aren't currently open — offered by the
+   * trailing "+". Empty means the "+" is hidden. */
+  openable?: PanelTab[];
+  onOpenTab?: (tab: PanelTab) => void;
+  /** Dismisses the whole dock. Anchored at the strip's far right — a fixed
+   * spot that doesn't move as tabs are opened and closed. */
+  onClosePanel?: () => void;
 }
 
-const ICONS = {
+const ICONS: Record<NonNullable<PanelTab['icon']>, React.ElementType> = {
   terminal: Terminal,
-  activity: List,
+  activity: Rows,
   check: Check,
-  list: List,
+  list: Rows,
 };
 
-export default function TabBar({
-  tabs, activeTabId, onSelectTab, onCloseTab, orientation = 'horizontal',
-}: TabBarProps) {
-  if (!tabs.length) return null;
+// Always `regular`: swapping to `fill` on the active tab visibly deforms
+// outline glyphs like Check, and the tab's own background already carries
+// the selected state.
+function TabIcon({ icon }: { icon?: PanelTab['icon'] }) {
+  if (!icon) return null;
+  const Icon = ICONS[icon];
+  return <Icon size={14} weight="regular" />;
+}
 
-  const isVertical = orientation === 'vertical';
+// The dock's tab strip: closable tabs plus a "+" that reopens whatever this
+// dock can host but isn't showing. Ghost-button grammar (see `.dock-tab`), so
+// tabs sit in the same visual family as the rest of the toolbar.
+export default function TabBar({
+  tabs, activeTabId, onSelectTab, onCloseTab, openable = [], onOpenTab, onClosePanel,
+}: TabBarProps) {
+  const addRef = useRef<HTMLDivElement>(null);
+  // The "+" sits inside the scrolling tab row, which is itself inside the
+  // dock's `overflow: hidden` card — an absolutely-positioned menu would be
+  // clipped by both. So the menu is fixed-positioned and anchored to the
+  // button's viewport rect, captured when it opens.
+  const [menuAt, setMenuAt] = useState<{ top: number; right: number } | null>(null);
+
+  const openMenu = () => {
+    const r = addRef.current?.getBoundingClientRect();
+    if (!r) return;
+    setMenuAt({ top: r.bottom + 6, right: window.innerWidth - r.right });
+  };
+
+  // Close on an outside click, Escape, or anything that moves the anchor
+  // (scroll/resize) — the menu can't follow it while fixed.
+  useEffect(() => {
+    if (!menuAt) return;
+    const close = () => setMenuAt(null);
+    const onDown = (e: MouseEvent) => {
+      if (!addRef.current?.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [menuAt]);
+
+  // Nothing open and nothing to open — the dock shouldn't be showing at all.
+  if (!tabs.length && !openable.length) return null;
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: isVertical ? 'column' : 'row',
-        borderBottom: isVertical ? 'none' : `1px solid ${theme.border}`,
-        borderRight: isVertical ? `1px solid ${theme.border}` : 'none',
-        gap: 0,
-        overflow: isVertical ? 'auto' : 'auto',
-        backgroundColor: theme.bg,
-      }}
-    >
-      {tabs.map((tab) => {
-        const Icon = tab.icon ? ICONS[tab.icon] : null;
-        const isActive = tab.id === activeTabId;
-
-        return (
-          <button
-            key={tab.id}
-            onClick={() => onSelectTab(tab.id)}
-            title={tab.label}
-            style={{
-              flex: isVertical ? undefined : '0 1 auto',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: isVertical ? '8px 12px' : '10px 12px',
-              minWidth: isVertical ? 0 : 120,
-              height: isVertical ? 'auto' : 40,
-              background: isActive ? theme.card : 'transparent',
-              border: 'none',
-              borderBottom: !isVertical && isActive ? `2px solid ${theme.text}` : 'none',
-              borderRight: isVertical && isActive ? `2px solid ${theme.text}` : 'none',
-              color: isActive ? theme.text : theme.dim,
-              cursor: 'pointer',
-              fontSize: 13,
-              fontFamily: 'inherit',
-              transition: 'background-color 0.1s, color 0.1s',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {Icon && <Icon size={14} weight="regular" />}
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {tab.label}
-            </span>
-            {onCloseTab && tabs.length > 1 && (
+    <div style={styles.head}>
+      <div style={styles.tabs}>
+        {tabs.map((tab) => {
+          const active = tab.id === activeTabId;
+          return (
+            <div
+              key={tab.id}
+              className={active ? 'dock-tab is-active' : 'dock-tab'}
+              onClick={() => onSelectTab(tab.id)}
+              onAuxClick={(e) => { if (e.button === 1) onCloseTab(tab.id); }}
+              role="tab"
+              aria-selected={active}
+              title={tab.label}
+            >
+              <TabIcon icon={tab.icon} />
+              <span>{tab.label}</span>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onCloseTab(tab.id);
-                }}
-                style={{
-                  marginLeft: 'auto',
-                  background: 'transparent',
-                  border: 'none',
-                  padding: '2px 4px',
-                  cursor: 'pointer',
-                  color: theme.dim,
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
+                className="dock-tab-close"
+                title={`Close ${tab.label}`}
+                aria-label={`Close ${tab.label}`}
+                onClick={(e) => { e.stopPropagation(); onCloseTab(tab.id); }}
               >
-                <X size={12} weight="bold" />
+                <X size={11} weight="bold" />
               </button>
+            </div>
+          );
+        })}
+
+        {/* "+" rides directly after the last tab, the way a browser's new-tab
+            button does — it belongs to the tab row, not to the strip's edge. */}
+        {onOpenTab && openable.length > 0 && (
+          <div ref={addRef} style={styles.addWrap}>
+            <button
+              className="btn btn-icon-sm btn-ghost"
+              title="Open a view"
+              aria-label="Open a view"
+              onClick={() => (menuAt ? setMenuAt(null) : openMenu())}
+            >
+              <Plus size={14} weight="bold" />
+            </button>
+            {menuAt && (
+              <div style={{ ...styles.addMenu, top: menuAt.top, right: menuAt.right }}>
+                {openable.map((tab) => (
+                  <button
+                    key={tab.id}
+                    className="menu-item"
+                    onClick={() => { onOpenTab(tab); setMenuAt(null); }}
+                  >
+                    <TabIcon icon={tab.icon} />
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             )}
-          </button>
-        );
-      })}
+          </div>
+        )}
+      </div>
+
+      {onClosePanel && (
+        <button className="close-btn" onClick={onClosePanel} title="Close panel" aria-label="Close panel">
+          <X size={15} />
+        </button>
+      )}
     </div>
   );
 }

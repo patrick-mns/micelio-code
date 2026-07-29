@@ -113,27 +113,33 @@ interface BgTasksPanelProps {
   onClose: () => void;
   onStop: (pid: number) => void;
   onClear: () => void;
+  /** Hides the internal title/close header — used when a host (like
+   * PanelContainer's TabBar) already provides one. */
+  embedded?: boolean;
 }
 
-export function BgTasksPanel({ tasks, onClose, onStop, onClear }: BgTasksPanelProps) {
+export function BgTasksPanel({ tasks, onClose, onStop, onClear, embedded }: BgTasksPanelProps) {
   const [expanded, setExpanded] = useState<number | null>(null); // pid whose log is open
 
   useEffect(() => {
+    if (embedded) return; // host owns Escape-to-close when embedded
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, embedded]);
 
   const running = tasks.filter((t) => t.status === 'running');
   const finished = tasks.filter((t) => t.status !== 'running');
   const toggle = (pid: number) => setExpanded((cur) => (cur === pid ? null : pid));
 
   return (
-    <div style={bgTasksChipStyles.panel}>
-      <div style={bgTasksChipStyles.head}>
-        <span style={bgTasksChipStyles.headTitle}>Background tasks</span>
-        <button className="close-btn" onClick={onClose} title="Close"><X size={15} /></button>
-      </div>
+    <div style={embedded ? bgTasksChipStyles.panelEmbedded : bgTasksChipStyles.panel}>
+      {!embedded && (
+        <div style={bgTasksChipStyles.head}>
+          <span style={bgTasksChipStyles.headTitle}>Background tasks</span>
+          <button className="close-btn" onClick={onClose} title="Close"><X size={15} /></button>
+        </div>
+      )}
 
       <div style={bgTasksChipStyles.body}>
         {running.length === 0 && finished.length === 0 && (
