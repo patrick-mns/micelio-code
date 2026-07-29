@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.18.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.17.0...micelio-v0.18.0) (2026-07-29)
+
+
+### Features
+
+* **ui:** add tabbed dock panels ([ed87dab](https://github.com/patrick-mns/micelio-code/commit/ed87dabbbbf939148e34b101224386026f8fcc53))
+* **ui:** foundation for tabbed panel system (bottom + right) ([9c17f6b](https://github.com/patrick-mns/micelio-code/commit/9c17f6bddf2fb64431b6477c9a7c9764c85e502c))
+* **ui:** make docks generic, tabbed, and openable ([f01e9eb](https://github.com/patrick-mns/micelio-code/commit/f01e9eb2685cfa46a777daf62ab3d8d9ba9bda13))
+* **ui:** offer the views themselves in an empty dock ([906a45c](https://github.com/patrick-mns/micelio-code/commit/906a45c5ee1de0bfa096c099468630e652d6cb76))
+
+
+### Bug Fixes
+
+* **ui:** keep the dock's + menu inside the viewport ([9e38e5e](https://github.com/patrick-mns/micelio-code/commit/9e38e5e0fe34bdde2deffae87f514715ef7a2869))
+
 ## [0.17.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.16.0...micelio-v0.17.0) (2026-07-23)
 
 
