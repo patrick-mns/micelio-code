@@ -197,7 +197,6 @@ export const panelDockStyles: Record<string, CSSProperties> = {
   head: {
     display: 'flex', alignItems: 'center', gap: 4,
     padding: 6, flexShrink: 0,
-    borderBottom: `1px solid ${theme.border}`,
   },
   // Tab visuals live in CSS (.dock-tab in buttons.css) so hover/active states
   // can be expressed properly; this is just the scrolling row that holds them.
