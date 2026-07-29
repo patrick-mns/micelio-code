@@ -192,8 +192,10 @@ export const panelDockStyles: Record<string, CSSProperties> = {
   },
   // Right dock: floats away from the window edge on three sides.
   shellRight: { width: 'calc(100% - 8px)', height: 'calc(100% - 16px)', margin: '8px 8px 8px 0' },
-  // Bottom dock: the resize separator above already provides the top gap.
-  shellBottom: { flex: 1, minHeight: 0, margin: '0 8px 8px' },
+  // Bottom dock: the resize handle above already provides the top gap. Sized
+  // explicitly (not `flex: 1`) because AnimatedPanel's inner wrapper is an
+  // absolutely-positioned block, not a flex container.
+  shellBottom: { width: 'calc(100% - 16px)', height: 'calc(100% - 8px)', margin: '0 8px 8px' },
   head: {
     display: 'flex', alignItems: 'center', gap: 4,
     padding: 6, flexShrink: 0,

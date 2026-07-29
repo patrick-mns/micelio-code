@@ -1,6 +1,5 @@
 import React, { useEffect, useState, type CSSProperties } from 'react';
 import { ChatCircle, SquaresFour, SidebarSimple, Rows, FileText, Info, type Icon } from '@phosphor-icons/react';
-import { Group, Panel, Separator } from 'react-resizable-panels';
 import Chat from '@/views/Chat';
 import TreemapView from '@/views/Treemap';
 import Settings from '@/components/Settings';
@@ -33,10 +32,17 @@ import { appStyles } from '@/utils/theme-styles';
 import WindowControls from '@/components/WindowControls';
 import ResizeEdgeHandles from '@/components/ResizeEdgeHandles';
 
-// Thin draggable strip rendered in the gap between two side panels. Lives in
+// Thin draggable strip rendered in the gap between two docked panels. Lives in
 // the flex flow (not inside a panel), so it never overlaps a panel's scrollbar.
-function ResizeHandle({ onMouseDown }: { onMouseDown: () => void }) {
-  return <div className="panel-resizer" onMouseDown={onMouseDown} title="Drag to resize" />;
+// `horizontal` is the bottom dock's variant — same strip, rotated.
+function ResizeHandle({ onMouseDown, horizontal }: { onMouseDown: () => void; horizontal?: boolean }) {
+  return (
+    <div
+      className={horizontal ? 'panel-resizer panel-resizer-h' : 'panel-resizer'}
+      onMouseDown={onMouseDown}
+      title="Drag to resize"
+    />
+  );
 }
 
 const TABS: { id: TabId; Icon: Icon }[] = [
@@ -162,10 +168,11 @@ const { t } = useI18n();
   // resolves — otherwise returning users would flash the onboarding screen.
   const [wsReady, setWsReady] = useState(false);
 
-  // Resizable widths for the two side panels (the wrapper width, including the
-  // 8px float inset). Persisted + clamped by the hook.
-  const sidebarResize = usePanelResize({ storageKey: 'sidebarWidth', defaultWidth: 256, min: 208, side: 'left' });
-  const bgResize = usePanelResize({ storageKey: 'bgPanelWidth', defaultWidth: 328, min: 268, side: 'right' });
+  // Sizes for the three docked panels (the wrapper size, including the 8px
+  // float inset). Persisted + clamped by the hook.
+  const sidebarResize = usePanelResize({ storageKey: 'sidebarWidth', defaultSize: 256, min: 208, side: 'left' });
+  const bgResize = usePanelResize({ storageKey: 'bgPanelWidth', defaultSize: 328, min: 268, side: 'right' });
+  const bottomResize = usePanelResize({ storageKey: 'bottomPanelHeight', defaultSize: 240, min: 120, side: 'bottom' });
 
   useEffect(() => {
     loadCurrentWorkspace().finally(() => setWsReady(true));
@@ -224,7 +231,7 @@ const { t } = useI18n();
       {/* Full-height layout: sidebar (left, hosts the mac traffic lights at its
           top) + content column with its own header. */}
       <div style={appStyles.body}>
-        <AnimatedPanel open={sidebarOpen} side="left" width={sidebarResize.width} resizing={sidebarResize.isResizing}>
+        <AnimatedPanel open={sidebarOpen} side="left" size={sidebarResize.size} resizing={sidebarResize.isResizing}>
           <Sidebar
             workspaceName={switching ? t('sidebar.scanning') : currentWorkspace?.name || t('sidebar.openFolder')}
             onPickWorkspace={pickWorkspace}
@@ -320,67 +327,44 @@ const { t } = useI18n();
               {platform.showWindowControls && <WindowControls />}
             </div>
           </div>
-          <Group orientation="vertical" style={{ flex: 1, minHeight: 0 }}>
-            {/* Main content area: chat + treemap. The Panel has to be the flex
-                column itself — `appStyles.view` sizes with `flex: 1`, which is
-                inert unless its parent is a flex container, and the view would
-                collapse to content height (shoving the composer to the top). */}
-            {/* Sizes are strings on purpose: react-resizable-panels reads a
-                bare number as pixels and a unitless string as a percentage. */}
-            <Panel
-              minSize="30"
-              style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}
-            >
-              <div style={appStyles.view}>
-                {/* No workspace yet → onboarding. Wait for the initial load so
-                    returning users don't flash it. */}
-                {!wsReady ? null : !currentWorkspace ? (
-                  <Onboarding />
-                ) : (
-                  <>
-                    {/* Chat stays mounted across tab switches so an in-flight stream
-                        keeps rendering when you leave to the treemap and come back. */}
-                    <div style={{ display: activeTab === 'chat' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
-                      <Chat />
-                    </div>
-                    {activeTab === 'treemap' && <TreemapView />}
-                  </>
-                )}
-              </div>
-            </Panel>
-
-            {/* Bottom panel with tabs */}
-            {bottomPanelOpen && (
+          <div style={appStyles.view}>
+            {/* No workspace yet → onboarding. Wait for the initial load so
+                returning users don't flash it. */}
+            {!wsReady ? null : !currentWorkspace ? (
+              <Onboarding />
+            ) : (
               <>
-                {/* Matches the side panels' .panel-resizer: an invisible grab
-                    strip, not a painted divider — the dock's card edge is
-                    what you actually see. */}
-                <Separator className="panel-resizer panel-resizer-h" />
-                <Panel
-                  defaultSize="28"
-                  minSize="12"
-                  maxSize="70"
-                  style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}
-                >
-                  <PanelContainer
-                    dock="bottom"
-                    tabs={bottomTabs}
-                    activeTabId={activeBottomTab}
-                    onSelectTab={(id) => setActiveDockTab('bottom', id)}
-                    onCloseTab={(id) => closeDockTab('bottom', id)}
-                    openable={openableBottom}
-                    onOpenTab={(tab) => openDockTab('bottom', tab)}
-                    onClosePanel={() => toggleDock('bottom')}
-                    content={dockContent}
-                  />
-                </Panel>
+                {/* Chat stays mounted across tab switches so an in-flight stream
+                    keeps rendering when you leave to the treemap and come back. */}
+                <div style={{ display: activeTab === 'chat' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+                  <Chat />
+                </div>
+                {activeTab === 'treemap' && <TreemapView />}
               </>
             )}
-          </Group>
+          </div>
+
+          {/* Bottom dock — same machinery as the right dock (AnimatedPanel +
+              usePanelResize), just on the vertical axis, so both open with the
+              identical slide instead of one animating and the other snapping. */}
+          {bottomPanelOpen && <ResizeHandle horizontal onMouseDown={bottomResize.startResize} />}
+          <AnimatedPanel open={bottomPanelOpen} side="bottom" size={bottomResize.size} resizing={bottomResize.isResizing}>
+            <PanelContainer
+              dock="bottom"
+              tabs={bottomTabs}
+              activeTabId={activeBottomTab}
+              onSelectTab={(id) => setActiveDockTab('bottom', id)}
+              onCloseTab={(id) => closeDockTab('bottom', id)}
+              openable={openableBottom}
+              onOpenTab={(tab) => openDockTab('bottom', tab)}
+              onClosePanel={() => toggleDock('bottom')}
+              content={dockContent}
+            />
+          </AnimatedPanel>
         </div>
 
         {rightPanelOpen && <ResizeHandle onMouseDown={bgResize.startResize} />}
-        <AnimatedPanel open={!!rightPanelOpen} side="right" width={bgResize.width} resizing={bgResize.isResizing}>
+        <AnimatedPanel open={!!rightPanelOpen} side="right" size={bgResize.size} resizing={bgResize.isResizing}>
           <PanelContainer
             dock="right"
             tabs={rightTabs}
