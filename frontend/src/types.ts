@@ -362,6 +362,29 @@ export interface FileHit {
   name: string;
 }
 
+/** One file read for the viewer dock (src/commands/workspace.rs). */
+export interface FileContent {
+  /** Relative to `root` — what the viewer displays. */
+  path: string;
+  /** The folder `path` is relative to; sent back on a re-read so the same
+   * relative path can't resolve to another folder's file. */
+  root: string;
+  /** Absolute location, for the asset protocol (images). */
+  abs_path: string;
+  name: string;
+  /** Empty for a binary, or for an image the webview loads from disk. */
+  content: string;
+  /** Prism language id, or "text". */
+  language: string;
+  /** Show it as a picture. SVG is both: it renders and it has source. */
+  image: boolean;
+  /** Longer than the backend's read cap; `content` holds the head of it. */
+  truncated: boolean;
+  binary: boolean;
+  /** True size on disk, which `content` may not reflect once truncated. */
+  size: number;
+}
+
 export interface SkillDetail {
   meta: {
     name: string;
@@ -380,11 +403,11 @@ export interface SkillDetail {
 // ── Dock/tab system (frontend-only; see store/panelSlice.ts) ──────────────
 /** A view a dock can host. Not bound to a dock — the same view can be opened
  * in the bottom or the right one. */
-export type PanelTabType = 'bg-tasks' | 'review';
+export type PanelTabType = 'bg-tasks' | 'review' | 'file';
 
 export interface PanelTab {
   id: string;
   type: PanelTabType;
   label: string;
-  icon?: 'terminal' | 'activity' | 'check' | 'list';
+  icon?: 'terminal' | 'activity' | 'check' | 'list' | 'file';
 }
