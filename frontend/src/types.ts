@@ -405,9 +405,44 @@ export interface SkillDetail {
  * in the bottom or the right one. */
 export type PanelTabType = 'bg-tasks' | 'review' | 'file';
 
+export type PanelIcon = 'terminal' | 'activity' | 'check' | 'list' | 'file';
+
+/** What a dock offers in its "+": the *kind* of thing, not an open one.
+ * A `multi` view can be opened more than once, each tab being its own
+ * instance — several files at a time, and later several terminals. The rest
+ * are singletons: opening one that's already up just moves it. */
+export interface PanelView {
+  type: PanelTabType;
+  label: string;
+  icon?: PanelIcon;
+  multi?: boolean;
+}
+
+/** A file the viewer is pointed at, carrying the workspace it belongs to.
+ *
+ * The path alone doesn't identify a file: it's workspace-relative, so after a
+ * switch it would resolve against the new root and quietly show the *other*
+ * project's file of the same name. Pairing it with the workspace lets the
+ * viewer derive that the reference went stale, instead of every place that
+ * switches workspace having to remember to clear it — the way `activeRoot` is
+ * reset by hand in four spots today. */
+export interface FileRef {
+  /** null only before a workspace exists, which is the onboarding screen. */
+  workspaceId: string | null;
+  path: string;
+  /** The folder the path was cited against. A multi-folder workspace can hold
+   * the same relative path twice, so without this the file would change under
+   * the viewer when the selected folder does. */
+  root: string | null;
+}
+
+/** An open tab: one instance of a view. `params` is what makes it *this*
+ * instance rather than another of the same kind — which file it holds, and
+ * later which terminal. Singleton views carry none. */
 export interface PanelTab {
   id: string;
   type: PanelTabType;
   label: string;
-  icon?: 'terminal' | 'activity' | 'check' | 'list' | 'file';
+  icon?: PanelIcon;
+  params?: FileRef;
 }

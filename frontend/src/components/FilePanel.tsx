@@ -10,8 +10,7 @@ import { fieldStyles, filePanelStyles as styles } from '@/utils/theme-styles';
 import { theme } from '@/theme';
 import CodeViewer from '@/components/CodeViewer';
 import { mdComponents } from '@/components/MdComponents';
-import type { FileRef } from '@/store/panelSlice';
-import type { FileContent, FileHit } from '@/types';
+import type { FileContent, FileHit, FileRef } from '@/types';
 
 // Quick open: the same fuzzy search that backs the composer's @-mention, used
 // here to pick what the viewer shows. It's the whole body when no file is open,
