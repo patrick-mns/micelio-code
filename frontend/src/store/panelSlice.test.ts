@@ -4,7 +4,10 @@
 import { describe, expect, it } from 'vitest';
 import { create } from 'zustand';
 import type { StoreApi, UseBoundStore } from 'zustand';
-import { dockOf, panelSlice, ptyKey, terminalLabel, VIEW_CATALOG, type PanelSlice } from './panelSlice';
+import {
+  dockOf, panelSlice, parseDock, ptyKey, serializeDock, terminalLabel, VIEW_CATALOG,
+  type DockState, type PanelSlice,
+} from './panelSlice';
 import type { PanelTab, PanelView } from '@/types';
 
 type TestState = PanelSlice & {
@@ -276,9 +279,11 @@ describe('terminals', () => {
 });
 
 describe('the strip belongs to a session', () => {
+  // What the app does on a session change: point at it, then install whatever
+  // strip was stored for it (nothing, here — persistence is the hook's job).
   const switchTo = (s: UseBoundStore<StoreApi<TestState>>, sessionId: string) => {
     s.setState({ currentSession: sessionId } as Partial<TestState>);
-    s.getState().ensureDock(sessionId);
+    s.getState().hydrateDock(sessionId, null);
   };
 
   it('gives each session its own tabs', () => {
@@ -352,6 +357,70 @@ describe('the strip belongs to a session', () => {
     expect(second).toBe(first);
     // What reaches the backend does not.
     expect(ptyKey('sess-2', second)).not.toBe(ptyKey('sess-1', first));
+  });
+});
+
+describe('storing a strip', () => {
+  const strip = (over: Partial<DockState> = {}): DockState => ({
+    bottomTabs: [],
+    activeBottomTab: null,
+    bottomPanelOpen: false,
+    rightTabs: [],
+    activeRightTab: null,
+    rightPanelOpen: false,
+    ...over,
+  });
+
+  it('round-trips the layout, including what each tab holds', () => {
+    const before = strip({
+      rightTabs: [
+        { id: 'file:1', type: 'file', label: 'a.ts', icon: 'file', params: { workspaceId: 'ws-1', path: 'src/a.ts', root: '/w' }, cwd: null },
+        { id: 'terminal:1', type: 'terminal', label: 'w', icon: 'terminal', cwd: '/w' },
+      ],
+      activeRightTab: 'terminal:1',
+      rightPanelOpen: true,
+    });
+
+    expect(parseDock(serializeDock(before))).toEqual(before);
+  });
+
+  it('reads a session that never had a strip as none at all', () => {
+    expect(parseDock('')).toBeNull();
+  });
+
+  it('refuses a row it cannot make sense of, rather than half-reading it', () => {
+    expect(parseDock('not json')).toBeNull();
+    expect(parseDock('{"dock":{}}')).toBeNull();
+    // A future format is unreadable by this build, which is the point of `v`.
+    expect(parseDock(JSON.stringify({ v: 99, dock: strip() }))).toBeNull();
+  });
+
+  it('drops a tab of a view this build no longer has', () => {
+    const json = JSON.stringify({
+      v: 1,
+      dock: { ...strip(), rightTabs: [{ id: 'ghost:1', type: 'ghost', label: 'Ghost' }] },
+    });
+
+    expect(parseDock(json)?.rightTabs).toEqual([]);
+  });
+
+  it('re-points an active id that names a tab which did not survive', () => {
+    const json = JSON.stringify({
+      v: 1,
+      dock: {
+        ...strip(),
+        rightTabs: [{ id: 'file:1', type: 'file', label: 'a.ts' }],
+        activeRightTab: 'ghost:1',
+      },
+    });
+
+    expect(parseDock(json)?.activeRightTab).toBe('file:1');
+  });
+
+  it('will not restore an empty dock as open, which would show a launcher nobody asked for', () => {
+    const json = JSON.stringify({ v: 1, dock: strip({ rightPanelOpen: true }) });
+
+    expect(parseDock(json)?.rightPanelOpen).toBe(false);
   });
 });
 

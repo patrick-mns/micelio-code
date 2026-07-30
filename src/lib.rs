@@ -375,6 +375,8 @@ pub fn run() {
             commands::sessions::get_usage_raw,
             commands::sessions::get_session_models,
             commands::sessions::set_session_model,
+            commands::sessions::get_session_dock,
+            commands::sessions::set_session_dock,
             commands::bg::list_bg_tasks,
             commands::bg::stop_bg_task,
             commands::bg::clear_bg_tasks,

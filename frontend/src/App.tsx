@@ -25,6 +25,7 @@ import type { PanelTab } from '@/types';
 import { theme } from '@/theme';
 import { useI18n } from '@/i18n';
 import { usePanelResize } from '@/hooks/usePanelResize';
+import { useDockPersistence } from '@/hooks/useDockPersistence';
 import { useBgTasks } from '@/hooks/useBgTasks';
 import { useReview } from '@/hooks/useReview';
 import { useWorkspace } from '@/hooks/useWorkspace';
@@ -64,7 +65,7 @@ export default function App() {
     settings, setSettings, sidebarOpen, setSidebarOpen, scanning,
     update, setUpdateState, checkForUpdates,
     setActiveDockTab, toggleDock, closeDockTab, openDockTab, openFileInTab,
-    ensureDock, dropDock,
+    dropDock,
   } = useStore();
 
   // The tab strip belongs to the showing chat session, so it comes from there
@@ -76,10 +77,8 @@ export default function App() {
     rightTabs, activeRightTab, rightPanelOpen,
   } = useStore(dockOf);
 
-  // First visit to a conversation this run rebuilds the strip it left behind.
-  useEffect(() => {
-    if (currentSession) ensureDock(currentSession);
-  }, [currentSession, ensureDock]);
+  // Loads the showing conversation's strip and stores it back as it changes.
+  useDockPersistence();
 
   // A dock offers every singleton it isn't already showing — including ones
   // open in the other dock, since picking one there moves it. A `multi` view

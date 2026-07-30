@@ -19,7 +19,6 @@
 // keying by session scopes the strip to the workspace for free.
 import type { StateCreator } from 'zustand';
 import type { AppState } from './index';
-import { loadPrefs, savePrefs, type StoredTerminal } from './_persist';
 import type { FileRef, PanelTab, PanelView } from '@/types';
 
 export type DockId = 'bottom' | 'right';
@@ -66,9 +65,10 @@ export interface PanelSlice {
    * visited; the showing one is what the UI renders. */
   docks: Record<string, DockState>;
 
-  /** Build the strip for `sessionId` if this run hasn't seen it yet, restoring
-   * the terminal tabs it had. Called when the showing session changes. */
-  ensureDock: (sessionId: string) => void;
+  /** Install the strip `sessionId` was last left with. Ignored if this run has
+   * already loaded that session, so a slow read can't clobber live tabs. The
+   * caller does the reading — this slice stays free of IPC. */
+  hydrateDock: (sessionId: string, dock: DockState | null) => void;
   /** Forget a session's strip — for a deleted conversation. Killing its shells
    * is the caller's job, since that's IPC and this slice is pure state. */
   dropDock: (sessionId: string) => void;
@@ -171,50 +171,73 @@ const KEYS = {
 
 const DOCKS: DockId[] = ['bottom', 'right'];
 
-// Terminal tabs are the one kind worth remembering across restarts: a file tab
-// is one click from the palette, but a terminal is a place you set up. Only the
-// tab comes back — the shell itself died with the app, and the restored tab
-// starts a fresh one in the same folder.
-const storedTerminals = (docks: Record<string, DockState>): StoredTerminal[] => {
-  const rows: StoredTerminal[] = [];
-  for (const [sessionId, d] of Object.entries(docks)) {
-    for (const dock of DOCKS) {
-      for (const t of d[KEYS[dock].tabs]) {
-        if (t.type === 'terminal') {
-          rows.push({ sessionId, id: t.id, dock, label: t.label, cwd: t.cwd ?? null });
-        }
-      }
-    }
-  }
-  return rows;
-};
+// ── Persistence ───────────────────────────────────────────────────────────
+// The strip is stored beside its conversation, in the session's own row. What
+// comes back is only the layout: a File tab remembers which file it pointed at,
+// a Terminal which folder its shell ran in. The shell itself died with the app,
+// so a restored terminal starts a fresh one in the same place.
 
-/** The strip `sessionId` left behind, or an empty one. */
-export function restoredDock(sessionId: string): DockState {
-  const rows = (loadPrefs().terminals ?? []).filter((t) => t.sessionId === sessionId);
-  const tabsFor = (dock: DockId): PanelTab[] =>
-    rows
-      .filter((t) => t.dock === dock)
-      .map((t) => ({
-        id: t.id,
-        type: 'terminal' as const,
-        label: t.label,
-        icon: 'terminal' as const,
-        cwd: t.cwd,
-      }));
-  const bottomTabs = tabsFor('bottom');
-  const rightTabs = tabsFor('right');
+/** Serialized shape. Versioned so a later change is recognized, not guessed. */
+const DOCK_FORMAT = 1;
+
+const TYPES = new Set(VIEW_CATALOG.map((v) => v.type));
+
+// A row can be older than the code reading it, or hold a view this build no
+// longer has. Anything unrecognized is dropped rather than failing the whole
+// strip — losing one tab beats losing the layout.
+function parseTabs(value: unknown): PanelTab[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw): PanelTab[] => {
+    if (!raw || typeof raw !== 'object') return [];
+    const t = raw as Partial<PanelTab>;
+    if (typeof t.id !== 'string' || typeof t.type !== 'string' || !TYPES.has(t.type)) return [];
+    return [{
+      id: t.id,
+      type: t.type,
+      label: typeof t.label === 'string' ? t.label : t.type,
+      icon: t.icon,
+      params: t.params,
+      cwd: t.cwd ?? null,
+    }];
+  });
+}
+
+/** Read a stored strip. `null` for a session that never had one, or a row this
+ * build can't make sense of. */
+export function parseDock(json: string): DockState | null {
+  if (!json) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== 'object') return null;
+  const blob = raw as { v?: unknown; dock?: unknown };
+  if (blob.v !== DOCK_FORMAT || !blob.dock || typeof blob.dock !== 'object') return null;
+
+  const d = blob.dock as Record<string, unknown>;
+  const bottomTabs = parseTabs(d.bottomTabs);
+  const rightTabs = parseTabs(d.rightTabs);
+  // An active id naming a tab that didn't survive would leave the dock showing
+  // nothing, so it's confirmed against the tabs rather than trusted.
+  const held = (tabs: PanelTab[], id: unknown) =>
+    typeof id === 'string' && tabs.some((t) => t.id === id) ? id : tabs[0]?.id ?? null;
   return {
     bottomTabs,
-    activeBottomTab: bottomTabs[0]?.id ?? null,
-    // Restoring tabs doesn't reopen the dock: coming back to a conversation
-    // shouldn't take over the window, and the toggle still shows what's there.
-    bottomPanelOpen: false,
+    activeBottomTab: held(bottomTabs, d.activeBottomTab),
+    // Whether a dock was up is part of the layout: returning to a conversation
+    // mid-restart should look like returning to it mid-run. An empty strip
+    // can't be shown open, though — that's the launcher, unasked for.
+    bottomPanelOpen: d.bottomPanelOpen === true && bottomTabs.length > 0,
     rightTabs,
-    activeRightTab: rightTabs[0]?.id ?? null,
-    rightPanelOpen: false,
+    activeRightTab: held(rightTabs, d.activeRightTab),
+    rightPanelOpen: d.rightPanelOpen === true && rightTabs.length > 0,
   };
 }
+
+export const serializeDock = (dock: DockState): string =>
+  JSON.stringify({ v: DOCK_FORMAT, dock });
 
 export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get) => {
   const dockFor = (s: AppState, sessionId: string) => s.docks[sessionId] ?? EMPTY_DOCK;
@@ -245,30 +268,18 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
   const show = (dock: DockId, tabId: string) =>
     patch(() => ({ [KEYS[dock].active]: tabId, [KEYS[dock].open]: true }) as Partial<DockState>);
 
-  // Rewrite the stored terminal list from the strips this run has loaded, and
-  // keep the rows of every session it hasn't — otherwise visiting one
-  // conversation would erase the remembered terminals of all the others.
-  const persistTerminals = () => {
-    const prefs = loadPrefs();
-    const loaded = new Set(Object.keys(get().docks));
-    const untouched = (prefs.terminals ?? []).filter((t) => !loaded.has(t.sessionId));
-    savePrefs({ ...prefs, terminals: [...untouched, ...storedTerminals(get().docks)] });
-  };
-
   return {
     docks: {},
 
-    ensureDock: (sessionId) =>
-      set((s) => (s.docks[sessionId] ? {} : { docks: { ...s.docks, [sessionId]: restoredDock(sessionId) } })),
+    hydrateDock: (sessionId, dock) =>
+      set((s) => (s.docks[sessionId] ? {} : { docks: { ...s.docks, [sessionId]: dock ?? EMPTY_DOCK } })),
 
-    dropDock: (sessionId) => {
+    dropDock: (sessionId) =>
       set((s) => {
         if (!s.docks[sessionId]) return {};
         const { [sessionId]: _gone, ...rest } = s.docks;
         return { docks: rest };
-      });
-      persistTerminals();
-    },
+      }),
 
     setActiveDockTab: (dock, tabId) => patch(() => ({ [KEYS[dock].active]: tabId }) as Partial<DockState>),
 
@@ -276,7 +287,7 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
 
     // An empty dock is a designed state (it shows the "+"), so closing the last
     // tab leaves the dock open — dismissing it is the dock's own X.
-    closeDockTab: (dock, tabId) => {
+    closeDockTab: (dock, tabId) =>
       patch((d) => {
         const k = KEYS[dock];
         const tabs = tabsOf(d, dock);
@@ -284,9 +295,7 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
           [k.tabs]: tabs.filter((t) => t.id !== tabId),
           [k.active]: d[k.active] === tabId ? neighbourOf(tabs, tabId) : d[k.active],
         } as Partial<DockState>;
-      });
-      persistTerminals();
-    },
+      }),
 
     openDockTab: (dock, view) => {
       const s = get();
@@ -325,7 +334,6 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
               : d[other.active],
         } as Partial<DockState>;
       });
-      if (view.type === 'terminal') persistTerminals();
       return tab.id;
     },
 

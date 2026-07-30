@@ -93,6 +93,13 @@ export const ipc = {
   setSessionModel: (sessionId: string, role: string, model: string) =>
     invoke<void>('set_session_model', { sessionId, role, model }),
 
+  /** The session's dock strip as it was last left, or '' if it never had one.
+   * Opaque JSON both ways — the layout is the frontend's shape, the backend
+   * just keeps it next to the conversation. */
+  getSessionDock: (sessionId: string) => invoke<string>('get_session_dock', { sessionId }),
+  setSessionDock: (sessionId: string, dockJson: string) =>
+    invoke<void>('set_session_dock', { sessionId, dockJson }),
+
   // Workspace root management (switch active folder in multi-root workspace)
   setWorkspaceRoot: (path: string) => invoke<void>('set_active_root', { path }),
 
