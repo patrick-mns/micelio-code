@@ -162,7 +162,7 @@ describe('Files and File are different views', () => {
     expect(ids(dock(s).rightTabs)).toEqual(['files']);
   });
 
-  it('opens a viewer beside the tree rather than taking it over', () => {
+  it('does not mistake the tree for a viewer', () => {
     const s = makeStore();
     s.getState().openDockTab('right', FILES);
 
@@ -170,8 +170,49 @@ describe('Files and File are different views', () => {
     // would break quietly: `openFile` reusing the tree as if it were a viewer.
     s.getState().openFile('README.md');
 
-    expect(ids(dock(s).rightTabs)).toEqual(['files', 'file:1']);
-    expect(dock(s).rightTabs[1].params?.path).toBe('README.md');
+    expect(ids(dock(s).rightTabs)).toEqual(['files']);
+  });
+
+  it('puts a new viewer in the other dock, so the tree stays visible', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', FILES);
+
+    s.getState().openFile('README.md');
+
+    // A dock shows one tab at a time: landing beside the tree would hide the
+    // thing that was just clicked in.
+    expect(ids(dock(s).bottomTabs)).toEqual(['file:1']);
+    expect(dock(s).bottomTabs[0].params?.path).toBe('README.md');
+  });
+
+  it('goes the other way round when the tree is at the bottom', () => {
+    const s = makeStore();
+    s.getState().openDockTab('bottom', FILES);
+
+    s.getState().openFile('README.md');
+
+    expect(ids(dock(s).rightTabs)).toEqual(['file:1']);
+  });
+
+  it('still reuses a File tab the user put alongside the tree', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', FILES);
+    const held = s.getState().openDockTab('right', FILE);
+
+    s.getState().openFile('README.md');
+
+    // Steering only applies to creating a tab. An arrangement that already
+    // exists is the user's, and following a link navigates it in place.
+    expect(ids(dock(s).rightTabs)).toEqual(['files', held]);
+    expect(dock(s).bottomTabs).toEqual([]);
+  });
+
+  it('keeps the right dock as the default when no tree is open', () => {
+    const s = makeStore();
+
+    s.getState().openFile('README.md');
+
+    expect(ids(dock(s).rightTabs)).toEqual(['file:1']);
   });
 });
 

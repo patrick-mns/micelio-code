@@ -389,8 +389,16 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
       const target = showing ?? any;
       if (target) return get().openFileInTab(target.id, path, root);
 
-      // No File tab at all — open one and point it at the file.
-      const id = get().openDockTab('right', FILE_VIEW);
+      // No File tab anywhere, so one has to be created. It must not land in the
+      // dock holding the tree: a dock shows one tab at a time, so the new
+      // viewer would take the tree's place and clicking a file would hide the
+      // thing you were clicking in. Browsing is a sequence — click, read, click
+      // again — and that only works if both stay visible.
+      //
+      // Only this last case is steered. The three above respect where a File tab
+      // already is, including one the user deliberately put alongside the tree.
+      const treeDock = DOCKS.find((d) => tabsOf(live, d).some((t) => t.type === 'files'));
+      const id = get().openDockTab(treeDock === 'right' ? 'bottom' : 'right', FILE_VIEW);
       get().openFileInTab(id, path, root);
     },
   };
