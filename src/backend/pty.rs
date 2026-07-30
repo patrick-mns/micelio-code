@@ -34,6 +34,12 @@ const READ_CHUNK: usize = 8 * 1024;
 /// would drown the webview. At ~60fps the user can't tell the difference.
 const FLUSH_INTERVAL: Duration = Duration::from_millis(16);
 
+/// Shown once above restored output, so a prompt from the last run isn't
+/// mistaken for a live one. Dim, and phrased to say what did *not* survive: the
+/// text is back, the shell behind it is new.
+const RESTORED_NOTICE: &str =
+    "\r\n\x1b[2m── output above is from your last session · this shell is new ──\x1b[0m\r\n";
+
 /// What the reader thread fills and the pump drains. `scrollback` is the whole
 /// (capped) history for replay; `pending` is only what hasn't been emitted yet.
 #[derive(Default)]
@@ -73,11 +79,48 @@ struct Session {
     /// Cleared once the shell is gone, so a closed session still replays its
     /// last words instead of the tab going blank the moment the shell exits.
     alive: Arc<AtomicBool>,
+    /// Where this terminal's output is mirrored, so the text survives the app
+    /// closing. Deleted when the *tab* is closed — the transcript is the tab's,
+    /// not the shell's, and a tab the user dismissed has no history to keep.
+    history_path: Option<PathBuf>,
 }
 
 fn registry() -> &'static Mutex<HashMap<String, Session>> {
     static REGISTRY: OnceLock<Mutex<HashMap<String, Session>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// The tail of a terminal's mirrored output, capped the same way the in-memory
+/// scrollback is. Missing or unreadable reads as empty: a terminal with no
+/// history is the normal case, not a failure.
+fn read_history(path: &std::path::Path) -> Vec<u8> {
+    let mut bytes = std::fs::read(path).unwrap_or_default();
+    if bytes.len() > SCROLLBACK_LIMIT {
+        bytes = bytes.split_off(bytes.len() - SCROLLBACK_LIMIT);
+    }
+    bytes
+}
+
+/// Mirror a chunk to disk. Appends, and only rewrites the file once it has grown
+/// to twice the cap — trimming on every chunk would mean rewriting a quarter of
+/// a megabyte sixty times a second for a talkative command.
+fn append_history(path: &std::path::Path, chunk: &[u8]) {
+    use std::io::Write as _;
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let appended = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .and_then(|mut f| f.write_all(chunk));
+    if appended.is_err() {
+        return;
+    }
+    if std::fs::metadata(path).map(|m| m.len()).unwrap_or(0) > (SCROLLBACK_LIMIT * 2) as u64 {
+        let tail = read_history(path);
+        let _ = std::fs::write(path, tail);
+    }
 }
 
 /// The user's own login shell, so the terminal has the PATH and aliases they
@@ -113,13 +156,20 @@ fn shell_command(cwd: Option<PathBuf>) -> CommandBuilder {
 ///
 /// Reopening is the normal path, not an error: the component remounts on every
 /// tab switch and calls this each time. The base64 it returns is the replay —
-/// empty for a session that's just been created.
+/// for a brand new session that's the output mirrored to `history_path` by a
+/// previous run of the app, if any.
+///
+/// What comes back from disk is the *text*, not the shell. A shell is a child of
+/// this process and dies with it: whatever was running is gone, and a `cd` the
+/// user made isn't reproduced. The restored transcript is therefore prefixed
+/// with a notice, so a prompt from the last run isn't read as a live one.
 pub fn open(
     app: tauri::AppHandle,
     id: String,
     cwd: Option<PathBuf>,
     cols: u16,
     rows: u16,
+    history_path: Option<PathBuf>,
 ) -> Result<String, String> {
     if let Some(existing) = attach(&id) {
         // Size follows the pane that's showing it, which may have been resized
@@ -154,7 +204,23 @@ pub fn open(
         .take_writer()
         .map_err(|e| format!("failed to write to the pty: {e}"))?;
 
-    let out = Arc::new(Mutex::new(Output::default()));
+    // Seed the scrollback with what the last run left on screen. Only the
+    // in-memory copy carries the notice: the file holds pty bytes and nothing
+    // else, so restoring twice can't stack two notices.
+    let mut seeded = Output {
+        scrollback: history_path
+            .as_deref()
+            .map(read_history)
+            .unwrap_or_default(),
+        ..Default::default()
+    };
+    if !seeded.scrollback.is_empty() {
+        seeded
+            .scrollback
+            .extend_from_slice(RESTORED_NOTICE.as_bytes());
+    }
+
+    let out = Arc::new(Mutex::new(seeded));
     let alive = Arc::new(AtomicBool::new(true));
     let killer = child.clone_killer();
 
@@ -166,6 +232,7 @@ pub fn open(
             killer,
             out: Arc::clone(&out),
             alive: Arc::clone(&alive),
+            history_path: history_path.clone(),
         },
     );
 
@@ -195,6 +262,13 @@ pub fn open(
             let done = !reading.load(Ordering::SeqCst);
             let chunk = std::mem::take(&mut out.lock().unwrap().pending);
             if !chunk.is_empty() {
+                // Mirrored here rather than in the reader: this already runs on
+                // a 16ms beat, so a chatty command costs one append per frame
+                // instead of one per read. It also means the transcript on disk
+                // survives a crash, not only a clean quit.
+                if let Some(path) = history_path.as_deref() {
+                    append_history(path, &chunk);
+                }
                 let _ = app.emit(
                     "pty_output",
                     serde_json::json!({
@@ -276,14 +350,23 @@ pub fn is_alive(id: &str) -> bool {
 
 /// Kill the shell and forget the session. Called when the *tab* closes, not
 /// when the component unmounts — unmounting is just a tab switch.
+///
+/// The mirrored transcript goes too: it belongs to the tab, and a tab the user
+/// dismissed has no history worth restoring.
 pub fn close(id: &str) {
     if let Some(mut session) = registry().lock().unwrap().remove(id) {
         let _ = session.killer.kill();
+        if let Some(path) = session.history_path.as_deref() {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 
 /// Kill every shell — for app shutdown, so closing the window doesn't leave
 /// orphaned logins behind.
+///
+/// Transcripts are deliberately left on disk: these tabs weren't closed, the app
+/// was, and reopening it should find them where they were.
 pub fn close_all() {
     for (_, mut session) in registry().lock().unwrap().drain() {
         let _ = session.killer.kill();
@@ -293,6 +376,59 @@ pub fn close_all() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("micelio-pty-{name}.log"));
+        let _ = std::fs::remove_file(&path);
+        path
+    }
+
+    #[test]
+    fn history_survives_in_the_order_it_was_written() {
+        let path = scratch("order");
+        append_history(&path, b"first ");
+        append_history(&path, b"second");
+
+        assert_eq!(read_history(&path), b"first second");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn history_reads_back_the_newest_bytes_once_over_the_cap() {
+        let path = scratch("cap");
+        append_history(&path, &vec![b'a'; SCROLLBACK_LIMIT * 2 + 16]);
+        // Written past twice the cap, so the file itself was rewritten.
+        append_history(&path, b"tail");
+
+        let back = read_history(&path);
+        assert_eq!(back.len(), SCROLLBACK_LIMIT);
+        assert!(back.ends_with(b"tail"), "newest output survives the trim");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_terminal_with_no_history_reads_as_empty_rather_than_failing() {
+        assert!(read_history(&scratch("absent")).is_empty());
+    }
+
+    #[test]
+    fn the_restored_notice_is_not_written_to_disk() {
+        // The file holds pty bytes only, so restoring twice can't stack notices.
+        let path = scratch("notice");
+        append_history(&path, b"output");
+
+        let mut seeded = Output {
+            scrollback: read_history(&path),
+            ..Default::default()
+        };
+        seeded
+            .scrollback
+            .extend_from_slice(RESTORED_NOTICE.as_bytes());
+
+        assert!(!read_history(&path).ends_with(RESTORED_NOTICE.as_bytes()));
+        assert!(seeded.scrollback.ends_with(RESTORED_NOTICE.as_bytes()));
+        let _ = std::fs::remove_file(&path);
+    }
 
     #[test]
     fn scrollback_is_capped_and_drops_the_oldest_bytes() {

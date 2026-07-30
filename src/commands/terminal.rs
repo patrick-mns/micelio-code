@@ -10,6 +10,23 @@ use crate::AppState;
 use std::path::PathBuf;
 use tauri::{AppHandle, State};
 
+/// Where a terminal's output is mirrored so the text survives the app closing.
+///
+/// Under the *workspace's* own directory, next to its `sessions.db`, rather than
+/// under the selected folder: the folder can change while the terminal stays
+/// put, and the transcript would then be looked for somewhere it never was.
+/// `None` before a workspace exists, which means that terminal simply isn't
+/// remembered — there's nowhere yet to remember it.
+fn history_path(state: &AppState, id: &str) -> Option<PathBuf> {
+    let dir = state.current_workspace.lock().unwrap().as_ref()?.dir();
+    // Ids carry ':' separators, which are legal here but not on Windows.
+    let safe: String = id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    Some(dir.join("terminals").join(format!("{safe}.log")))
+}
+
 /// Start (or re-attach to) the shell for `id`, returning its scrollback as
 /// base64 so the caller can replay it into a fresh terminal.
 ///
@@ -29,7 +46,8 @@ pub async fn pty_open(
         Some(path) => Some(PathBuf::from(path)),
         None => Some(state.workspace_root.lock().unwrap().clone()),
     };
-    pty::open(app, id, dir, cols.max(1), rows.max(1))
+    let history = history_path(&state, &id);
+    pty::open(app, id, dir, cols.max(1), rows.max(1), history)
 }
 
 /// Keystrokes, straight through. xterm.js hands over the bytes a terminal
