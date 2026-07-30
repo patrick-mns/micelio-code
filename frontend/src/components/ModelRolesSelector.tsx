@@ -71,26 +71,41 @@ export default function ModelRolesSelector() {
 
   // Load models for the current session (or globals if no session / no pin).
   const loadRoles = useCallback(async () => {
+    // Always fetch a fresh catalog alongside the roles: a provider toggle
+    // between two opens would otherwise leave the selector showing stale
+    // entries (models from the now-disabled provider still visible, or the
+    // wrong provider label shown for a surviving model).
     const [globalRoles, fetchedModels] = await Promise.all([
       ipc.getModelRoles(),
-      models.length === 0 ? ipc.listModels() : Promise.resolve(null),
+      ipc.listModels(),
     ]);
-    const allModels = fetchedModels ?? models;
-    if (fetchedModels) setModels(fetchedModels);
+    setModels(fetchedModels);
 
     if (!currentSession) { setRoles(globalRoles); return; }
 
     // Use per-session values when available, otherwise keep global default.
-    const pinned = sessionModels[currentSession];
+    // If the per-session record hasn't been loaded into the store yet (e.g.
+    // the user opens the picker faster than the startup async loop finishes),
+    // fetch it lazily now so we always show the correct pin.
+    let pinned = sessionModels[currentSession];
+    if (pinned === undefined) {
+      try {
+        pinned = await ipc.getSessionModels(currentSession);
+        setSessionModels(currentSession, pinned);
+      } catch {
+        pinned = undefined;
+      }
+    }
+
     setRoles(
       globalRoles.map((r) => {
         const sessionVal = pinned?.[r.role as keyof typeof pinned];
         if (!sessionVal) return r;
-        const provider = allModels.find((m) => m.name === sessionVal)?.provider || '';
+        const provider = fetchedModels.find((m) => m.name === sessionVal)?.provider || '';
         return { ...r, model: sessionVal, provider };
       }),
     );
-  }, [currentSession, sessionModels, models, setModels]);
+  }, [currentSession, sessionModels, setModels, setSessionModels]);
 
   // Load roles on mount and whenever the session changes.
   useEffect(() => { loadRoles(); }, [loadRoles]);
@@ -153,8 +168,13 @@ export default function ModelRolesSelector() {
           {roles.map((r) => (
             <span
               key={r.role}
-              style={{ ...modelRolesSelectorStyles.dot, background: r.model ? dotColor(providerIdx[r.provider] ?? 0) : theme.faint }}
-              title={`${r.role}${r.provider ? ` · ${r.provider}` : ''}`}
+              style={{
+                ...modelRolesSelectorStyles.dot,
+                // Dot is faint when no model assigned OR when the model's
+                // provider is no longer active (disabled / removed).
+                background: (r.model && r.provider) ? dotColor(providerIdx[r.provider] ?? 0) : theme.faint,
+              }}
+              title={r.model && !r.provider ? `${r.role} · provider unavailable` : `${r.role}${r.provider ? ` · ${r.provider}` : ''}`}
             >
             </span>
           ))}
@@ -188,10 +208,17 @@ export default function ModelRolesSelector() {
                     {r.model ? (
                       <>
                         <span
-                          style={{ ...modelRolesSelectorStyles.providerDot, background: dotColor(providerIdx[r.provider] ?? 0) }}
-                          title={r.provider}
+                          style={{
+                            ...modelRolesSelectorStyles.providerDot,
+                            // Grey dot when the provider is no longer active.
+                            background: r.provider ? dotColor(providerIdx[r.provider] ?? 0) : theme.faint,
+                          }}
+                          title={r.provider || 'Provider unavailable'}
                         />
                         <span style={modelRolesSelectorStyles.roleModel}>{short(r.model)}</span>
+                        {!r.provider && (
+                          <span style={modelRolesSelectorStyles.unavailableTag}>unavailable</span>
+                        )}
                       </>
                     ) : (
                       <span style={modelRolesSelectorStyles.unassigned}>Assign model</span>

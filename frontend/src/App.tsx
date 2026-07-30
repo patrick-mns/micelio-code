@@ -201,7 +201,16 @@ const { t } = useI18n();
 
   useEffect(() => {
     loadCurrentWorkspace().finally(() => setWsReady(true));
-    ipc.getSettings().then(setSettings).catch(console.error);
+    ipc.getSettings().then((s) => {
+      setSettings(s);
+      // The backend is the source of truth for global model assignments.
+      // Reconcile the Zustand store (which boots from localStorage) so that
+      // any divergence — cleared cache, manual file edit, workspace switch —
+      // is corrected on every startup rather than silently kept stale.
+      const { setChatModel, setSummarizeModel } = useStore.getState();
+      if (s.model) setChatModel(s.model);
+      if (s.summarize_model) setSummarizeModel(s.summarize_model);
+    }).catch(console.error);
     // Backend resets agent mode to its default on restart — push the persisted
     // choice so the two stay in sync.
     useStore.getState().syncAgentMode();
