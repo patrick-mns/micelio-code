@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.20.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.19.0...micelio-v0.20.0) (2026-07-30)
+
+
+### Features
+
+* **bg:** scope background tasks to the conversation that started them ([568d05f](https://github.com/patrick-mns/micelio-code/commit/568d05f8fbcee211d172867f323c1559907ffcdb))
+* **ui:** a Files tree, and File as a pure viewer ([5b54049](https://github.com/patrick-mns/micelio-code/commit/5b5404914a85e86e640f44463680a11560dc72d3))
+* **ui:** a real terminal in the dock, and tabs scoped to a session ([ba10c15](https://github.com/patrick-mns/micelio-code/commit/ba10c159821326da95a2eab55f121a54d2799185))
+* **ui:** add a Files tree and make File a pure viewer ([397acc8](https://github.com/patrick-mns/micelio-code/commit/397acc8f2ab1d758b828b76823bb7ed0edf4be4c))
+* **ui:** keep a terminal's output across restarts ([9f6fb6d](https://github.com/patrick-mns/micelio-code/commit/9f6fb6d2dbf8ac702af6c71300e97d045271c291))
+* **ui:** keep each conversation's dock strip in its session row ([7bc03ac](https://github.com/patrick-mns/micelio-code/commit/7bc03ac7df8842a98e20c201a9c09269aff3453f))
+* **ui:** open a real shell in a dock tab ([905bf66](https://github.com/patrick-mns/micelio-code/commit/905bf6666d2bb91a70a9bc27d0b95cb2e3aeabec))
+* **ui:** terminal in the dock, file tree, and session-scoped tabs ([e6fb777](https://github.com/patrick-mns/micelio-code/commit/e6fb7773fe12d6b24ec813e96e51c8fb8ae87720))
+
+
+### Bug Fixes
+
+* **ui:** never reuse a viewer that shares the tree's dock ([a339ae0](https://github.com/patrick-mns/micelio-code/commit/a339ae0f158ff6ce8c58eb9ab5fc0a4d81c8e0cb))
+* **ui:** open a file away from the dock holding the tree ([3ddec50](https://github.com/patrick-mns/micelio-code/commit/3ddec50755af3712e82eba132bd1e8f239008e07))
+* **ui:** open a new dock tab at the end of the strip ([ece5af7](https://github.com/patrick-mns/micelio-code/commit/ece5af7ef545fdcf064ac113d2978dc7aec9e1cb))
+* **ui:** size the terminal to the pane it is actually in ([2d84dcc](https://github.com/patrick-mns/micelio-code/commit/2d84dcc056645185f79c10d20ee21f461060b33f))
+* **ui:** stop a File tab from keeping the old workspace's filename ([bb2884d](https://github.com/patrick-mns/micelio-code/commit/bb2884dea30c5095a8d0ba9899fa1f2e0dea615e))
+* **ui:** stop the "+" from offering an empty File tab ([a459e79](https://github.com/patrick-mns/micelio-code/commit/a459e79f3d38aaf19c1e31d6c4f3a51cd45ad174))
+* **ui:** stop the file viewer and chat list from shaking ([36ede05](https://github.com/patrick-mns/micelio-code/commit/36ede050bca3e9b6839ad709c086a959895010fa))
+
 ## [0.19.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.18.0...micelio-v0.19.0) (2026-07-29)
 
 
