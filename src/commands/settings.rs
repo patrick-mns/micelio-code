@@ -148,7 +148,10 @@ fn role_provider(model: &str) -> String {
     if model.is_empty() {
         String::new()
     } else {
-        llm::provider_for_model(model).label()
+        // Use provider_label_for_model so we return "" when no active provider
+        // serves this model (e.g. the provider was disabled). Falling back to
+        // provider_for_model() would silently report Ollama as the provider.
+        llm::provider_label_for_model(model).unwrap_or_default()
     }
 }
 

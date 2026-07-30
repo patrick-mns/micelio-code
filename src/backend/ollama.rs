@@ -29,6 +29,21 @@ fn request_num_ctx(model: &str) -> usize {
     model_context_length(model).min(NUM_CTX_CAP)
 }
 
+/// Reserved output budget, in tokens. Reasoning models (DeepSeek, etc.) spend
+/// tokens on a `<think>` pass before the final answer; leaving `num_predict`
+/// unset defaults to "keep going until num_ctx is exhausted", which after a
+/// large tool result can burn the whole window on reasoning and end the turn
+/// with empty `content`. Reserving a fixed slice of the context window for the
+/// completion guarantees the model always has room left to answer.
+pub const NUM_PREDICT_CAP: usize = 4_096;
+
+/// `num_predict` to send: a quarter of the request's `num_ctx`, capped by
+/// [`NUM_PREDICT_CAP`] and floored so tiny-context models still get a usable
+/// reply budget.
+fn request_num_predict(num_ctx: usize) -> usize {
+    (num_ctx / 4).clamp(512, NUM_PREDICT_CAP)
+}
+
 static MODEL_CONTEXT_CACHE: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
 
 /// Stateless handle implementing [`crate::backend::llm::Provider`] over
@@ -117,13 +132,15 @@ impl ChatStream {
         } else {
             tools_json
         };
+        let num_predict = request_num_predict(num_ctx);
         let body = format!(
-            "{{\"model\":{},\"messages\":[{}],\"tools\":{},\"stream\":true,\"think\":{},\"options\":{{\"temperature\":0,\"num_ctx\":{}}}}}",
+            "{{\"model\":{},\"messages\":[{}],\"tools\":{},\"stream\":true,\"think\":{},\"options\":{{\"temperature\":0,\"num_ctx\":{},\"num_predict\":{}}}}}",
             json_string(model),
             messages_json,
             tools_json,
             think,
             num_ctx,
+            num_predict,
         );
 
         let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 11434);
@@ -420,14 +437,16 @@ pub fn chat_with_tools(
 ) -> BackendResult<AssistantResponse> {
     let messages_json = messages_to_json(history);
     let num_ctx = request_num_ctx(model);
+    let num_predict = request_num_predict(num_ctx);
     let think = model_supports_thinking(model);
     let body = format!(
-        "{{\"model\":{},\"messages\":[{}],\"tools\":{},\"stream\":false,\"think\":{},\"options\":{{\"temperature\":0,\"num_ctx\":{}}}}}",
+        "{{\"model\":{},\"messages\":[{}],\"tools\":{},\"stream\":false,\"think\":{},\"options\":{{\"temperature\":0,\"num_ctx\":{},\"num_predict\":{}}}}}",
         json_string(model),
         messages_json,
         crate::backend::tools::tools_json(),
         think,
         num_ctx,
+        num_predict,
     );
     if debug {
         println!("[debug] request body:");
@@ -465,12 +484,14 @@ pub fn chat_with_tools(
 
 pub fn chat_raw(model: &str, system: &str, user: &str, debug: bool) -> BackendResult<String> {
     let num_ctx = request_num_ctx(model);
+    let num_predict = request_num_predict(num_ctx);
     let body = format!(
-        "{{\"model\":{},\"messages\":[{{\"role\":\"system\",\"content\":{}}},{{\"role\":\"user\",\"content\":{}}}],\"stream\":false,\"options\":{{\"temperature\":0.3,\"num_ctx\":{}}}}}",
+        "{{\"model\":{},\"messages\":[{{\"role\":\"system\",\"content\":{}}},{{\"role\":\"user\",\"content\":{}}}],\"stream\":false,\"options\":{{\"temperature\":0.3,\"num_ctx\":{},\"num_predict\":{}}}}}",
         json_string(model),
         json_string(system),
         json_string(user),
         num_ctx,
+        num_predict,
     );
     if debug {
         println!("[debug] chat_raw body:");
@@ -494,12 +515,14 @@ pub fn describe_image_raw(
     debug: bool,
 ) -> BackendResult<String> {
     let num_ctx = request_num_ctx(model);
+    let num_predict = request_num_predict(num_ctx);
     let body = format!(
-        "{{\"model\":{},\"messages\":[{{\"role\":\"user\",\"content\":{},\"images\":[{}]}}],\"stream\":false,\"options\":{{\"temperature\":0.3,\"num_ctx\":{}}}}}",
+        "{{\"model\":{},\"messages\":[{{\"role\":\"user\",\"content\":{},\"images\":[{}]}}],\"stream\":false,\"options\":{{\"temperature\":0.3,\"num_ctx\":{},\"num_predict\":{}}}}}",
         json_string(model),
         json_string(prompt),
         json_string(image_base64),
         num_ctx,
+        num_predict,
     );
     if debug {
         println!("[debug] describe_image_raw model={model}");

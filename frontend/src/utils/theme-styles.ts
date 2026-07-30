@@ -665,6 +665,11 @@ export const modelRolesSelectorStyles: Record<string, CSSProperties> = {
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
   unassigned: { fontSize: 11.5, color: theme.faint },
+  // Shown beside a model name when its provider is no longer active.
+  unavailableTag: {
+    fontSize: 9, fontWeight: 600, color: theme.warn, background: `${theme.warn}22`,
+    borderRadius: 4, padding: '1px 5px', textTransform: 'uppercase' as const, letterSpacing: '0.04em', flexShrink: 0,
+  },
   tag: { fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 4, letterSpacing: '0.02em', flexShrink: 0 },
   providerDot: { width: 8, height: 8, borderRadius: '50%', flexShrink: 0 },
   picker: { borderTop: `1px solid ${theme.border}`, padding: 6 },
