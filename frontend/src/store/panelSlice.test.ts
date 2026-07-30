@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { create } from 'zustand';
 import type { StoreApi, UseBoundStore } from 'zustand';
 import {
-  dockOf, panelSlice, parseDock, ptyKey, serializeDock, terminalLabel, VIEW_CATALOG,
+  dockOf, offeredViews, panelSlice, parseDock, ptyKey, serializeDock, terminalLabel, VIEW_CATALOG,
   type DockState, type PanelSlice,
 } from './panelSlice';
 import type { PanelTab, PanelView } from '@/types';
@@ -126,6 +126,120 @@ describe('tab order', () => {
     s.getState().openDockTab('right', BG);
 
     expect(dock(s).rightTabs.map((t) => t.id)).toEqual(['file:1', 'bg-tasks']);
+  });
+});
+
+describe('what the "+" offers', () => {
+  it('never offers File, since an empty viewer has nothing to read', () => {
+    expect(offeredViews([]).map((v) => v.type)).not.toContain('file');
+  });
+
+  it('offers Files, which is how a viewer gets filled', () => {
+    expect(offeredViews([]).map((v) => v.type)).toContain('files');
+  });
+
+  it('drops a singleton the dock already holds', () => {
+    const held: PanelTab[] = [{ id: 'review', type: 'review', label: 'Review' }];
+
+    expect(offeredViews(held).map((v) => v.type)).not.toContain('review');
+  });
+
+  it('keeps offering Terminal, since another one is the point', () => {
+    const held: PanelTab[] = [{ id: 'terminal:1', type: 'terminal', label: 'w' }];
+
+    expect(offeredViews(held).map((v) => v.type)).toContain('terminal');
+  });
+});
+
+describe('Files and File are different views', () => {
+  const FILES = view('files');
+
+  it('keeps one tree, however many times it is opened', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', FILES);
+    s.getState().openDockTab('right', FILES);
+
+    expect(ids(dock(s).rightTabs)).toEqual(['files']);
+  });
+
+  it('does not mistake the tree for a viewer', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', FILES);
+
+    // The two type names differ by one character, so this pins the thing that
+    // would break quietly: `openFile` reusing the tree as if it were a viewer.
+    s.getState().openFile('README.md');
+
+    expect(ids(dock(s).rightTabs)).toEqual(['files']);
+  });
+
+  it('puts a new viewer in the other dock, so the tree stays visible', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', FILES);
+
+    s.getState().openFile('README.md');
+
+    // A dock shows one tab at a time: landing beside the tree would hide the
+    // thing that was just clicked in.
+    expect(ids(dock(s).bottomTabs)).toEqual(['file:1']);
+    expect(dock(s).bottomTabs[0].params?.path).toBe('README.md');
+  });
+
+  it('goes the other way round when the tree is at the bottom', () => {
+    const s = makeStore();
+    s.getState().openDockTab('bottom', FILES);
+
+    s.getState().openFile('README.md');
+
+    expect(ids(dock(s).rightTabs)).toEqual(['file:1']);
+  });
+
+  it('will not reuse a viewer that shares the tree\'s dock', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', FILES);
+    const held = s.getState().openDockTab('right', FILE);
+
+    s.getState().openFile('README.md');
+
+    // Navigating `held` would have hidden the tree just as surely as creating a
+    // tab beside it. One extra viewer is the smaller cost.
+    expect(dock(s).rightTabs.find((t) => t.id === held)?.params).toBeUndefined();
+    expect(ids(dock(s).bottomTabs)).toEqual(['file:2']);
+  });
+
+  it('reuses the viewer away from the tree after the tree moves in on one', () => {
+    const s = makeStore();
+    // A viewer at the bottom, from before the tree existed.
+    s.getState().openFile('a.md');
+    expect(ids(dock(s).rightTabs)).toEqual(['file:1']);
+    // Now the tree opens on the right, where that viewer is.
+    s.getState().openDockTab('right', FILES);
+
+    s.getState().openFile('b.md');
+
+    // The share wasn't arranged by anyone — it happened because the tree moved
+    // in. Clicking must still leave the tree on screen.
+    expect(ids(dock(s).bottomTabs)).toEqual(['file:2']);
+    expect(dock(s).bottomTabs[0].params?.path).toBe('b.md');
+  });
+
+  it('shows a file already open outside the tree rather than opening it twice', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', FILES);
+    s.getState().openFile('README.md');
+
+    s.getState().openFile('README.md');
+
+    expect(ids(dock(s).bottomTabs)).toEqual(['file:1']);
+    expect(dock(s).activeBottomTab).toBe('file:1');
+  });
+
+  it('keeps the right dock as the default when no tree is open', () => {
+    const s = makeStore();
+
+    s.getState().openFile('README.md');
+
+    expect(ids(dock(s).rightTabs)).toEqual(['file:1']);
   });
 });
 

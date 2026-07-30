@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import type {
-  AskUser, BgTaskExited, BgTaskInfo, ChatMessage, CompactResult, ContextWindow,
+  AskUser, BgTaskExited, BgTaskInfo, ChatMessage, CompactResult, ContextWindow, DirEntry,
   EditReviewRequest, FileContent, FileHit, GitContext, McpServerStatus, McpToolInfo,
   ModelOption, ModelRole, NodeCode, NodeSummarized, Opener,
   ProviderInfo, ProviderInput, ProviderStatus, PtyExit, PtyOutput,
@@ -114,6 +114,12 @@ export const ipc = {
    * multi-folder workspace repeats the same relative path. */
   readWorkspaceFile: (path: string, root?: string | null) =>
     invoke<FileContent>('read_workspace_file', { path, root: root ?? null }),
+
+  /** One directory's immediate children for the Files tree. Omit `path` for the
+   * root. Lists everything on disk except `.git` — unlike the fuzzy search,
+   * which is scoped by `.gitignore`. */
+  listWorkspaceDir: (path?: string | null, root?: string | null) =>
+    invoke<DirEntry[]>('list_workspace_dir', { path: path ?? null, root: root ?? null }),
 
   // Native folder picker → returns the chosen path (or null if cancelled).
   pickFolder: (defaultPath?: string) =>

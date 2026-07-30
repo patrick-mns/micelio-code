@@ -15,12 +15,13 @@ import OpenInButton from '@/components/OpenInButton';
 import { BgTasksPanel } from '@/components/BgTasksChip';
 import { ReviewPanel } from '@/components/ReviewChip';
 import FilePanel from '@/components/FilePanel';
+import FilesPanel from '@/components/FilesPanel';
 import TerminalPanel from '@/components/TerminalPanel';
 import AnimatedPanel from '@/components/AnimatedPanel';
 import Toasts from '@/components/Toasts';
 import PanelContainer from '@/components/PanelContainer';
 import { useStore } from '@/store';
-import { dockOf, ptyKey, TERMINAL_VIEW, VIEW_CATALOG, type DockId } from '@/store/panelSlice';
+import { dockOf, offeredViews, ptyKey, TERMINAL_VIEW, type DockId } from '@/store/panelSlice';
 import type { PanelTab } from '@/types';
 import { theme } from '@/theme';
 import { useI18n } from '@/i18n';
@@ -64,7 +65,7 @@ export default function App() {
     activeTab, setActiveTab, showSettings, setShowSettings,
     settings, setSettings, sidebarOpen, setSidebarOpen, scanning,
     update, setUpdateState, checkForUpdates,
-    setActiveDockTab, toggleDock, closeDockTab, openDockTab, openFileInTab,
+    setActiveDockTab, toggleDock, closeDockTab, openDockTab, openFileInTab, openFile,
     dropDock,
   } = useStore();
 
@@ -80,13 +81,8 @@ export default function App() {
   // Loads the showing conversation's strip and stores it back as it changes.
   useDockPersistence();
 
-  // A dock offers every singleton it isn't already showing — including ones
-  // open in the other dock, since picking one there moves it. A `multi` view
-  // is always on offer: opening another File is the point.
-  const offered = (tabs: PanelTab[]) =>
-    VIEW_CATALOG.filter((v) => v.multi || !tabs.some((t) => t.type === v.type));
-  const openableBottom = offered(bottomTabs);
-  const openableRight = offered(rightTabs);
+  const openableBottom = offeredViews(bottomTabs);
+  const openableRight = offeredViews(rightTabs);
   const [sysPromptOpen, setSysPromptOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -267,6 +263,11 @@ const { t } = useI18n();
             onRevertAll={gitRevertAll}
           />
         );
+      case 'files':
+        // The tree opens through `openFile`, not `openFileInTab`: it isn't
+        // pointing *this* tab anywhere, it's asking for a File tab to hold what
+        // was clicked — reusing the one already showing a file if there is one.
+        return <FilesPanel onOpenPath={(path) => openFile(path)} />;
       case 'file':
         return (
           <FilePanel

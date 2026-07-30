@@ -29,7 +29,11 @@ export type DockId = 'bottom' | 'right';
 export const VIEW_CATALOG: PanelView[] = [
   { type: 'bg-tasks', label: 'Background', icon: 'activity' },
   { type: 'review', label: 'Review', icon: 'check' },
-  { type: 'file', label: 'File', icon: 'file', multi: true },
+  // Browsing and reading are separate views: Files is the tree, and clicking a
+  // row in it opens a File. One of each is enough for the tree — it shows the
+  // whole workspace — where File is per-file and stacks.
+  { type: 'files', label: 'Files', icon: 'folder' },
+  { type: 'file', label: 'File', icon: 'file', multi: true, offered: false },
   { type: 'terminal', label: 'Terminal', icon: 'terminal', multi: true },
 ];
 
@@ -96,6 +100,20 @@ export interface PanelSlice {
   /** Points one specific File tab at a file — what the viewer's own picker and
    * in-document links use, since those act on the tab they live in. */
   openFileInTab: (tabId: string, path: string, root?: string | null) => void;
+}
+
+/** What a dock's "+" offers, given what it already holds.
+ *
+ * A singleton it's already showing is left out — there's nothing to add. A
+ * `multi` view is always on offer, since opening another File is the point. And
+ * a view marked `offered: false` never appears: a File tab exists because a file
+ * was opened into it, so an empty one would be a tab with nothing to read and no
+ * way to fill it now that browsing belongs to Files.
+ */
+export function offeredViews(tabs: PanelTab[]): PanelView[] {
+  return VIEW_CATALOG.filter(
+    (v) => v.offered !== false && (v.multi || !tabs.some((t) => t.type === v.type)),
+  );
 }
 
 /** The strip of the showing session — what every consumer renders from. */
@@ -354,25 +372,41 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
       const live = dockOf(get());
       const ref = refFor(path, root);
 
-      // Already open somewhere → just show it. Opening the same file twice by
-      // accident is noise; two tabs on one file is something you ask for.
-      for (const d of DOCKS) {
+      // A dock shows one tab at a time, so a viewer in the tree's dock takes the
+      // tree's place the moment it's used — and clicking a file would hide the
+      // thing you clicked in. Browsing is a sequence (click, read, click again),
+      // so every choice below looks away from the dock holding the tree.
+      //
+      // There's no arrangement where landing on the tree is wanted, so this
+      // isn't only about *creating* a tab: reusing one that sits beside the tree
+      // hides it just the same. That happens without anyone arranging it — move
+      // the tree into the dock a viewer already lives in and they're now
+      // sharing.
+      const treeDock = DOCKS.find((d) => tabsOf(live, d).some((t) => t.type === 'files'));
+      const away = DOCKS.filter((d) => d !== treeDock);
+
+      // Already open → just show it. Opening the same file twice by accident is
+      // noise; two tabs on one file is something you ask for. The tree's dock
+      // comes last, so a copy outside it wins when the file is open in both.
+      for (const d of [...away, ...(treeDock ? [treeDock] : [])]) {
         const hit = tabsOf(live, d).find(
           (t) => t.params?.path === ref.path && t.params?.workspaceId === ref.workspaceId,
         );
         if (hit) return show(d, hit.id);
       }
 
-      // Otherwise reuse a File tab, preferring the one on screen, so following
-      // a link navigates where you were looking.
-      const showing = DOCKS.map((d) => tabsOf(live, d).find((t) => t.id === live[KEYS[d].active] && t.type === 'file'))
+      // Otherwise reuse a File tab, preferring the one on screen, so following a
+      // link navigates where you were looking. Only outside the tree's dock: one
+      // extra viewer is a smaller cost than the tree disappearing.
+      const showing = away.map((d) => tabsOf(live, d).find((t) => t.id === live[KEYS[d].active] && t.type === 'file'))
         .find(Boolean);
-      const any = DOCKS.map((d) => tabsOf(live, d).find((t) => t.type === 'file')).find(Boolean);
+      const any = away.map((d) => tabsOf(live, d).find((t) => t.type === 'file')).find(Boolean);
       const target = showing ?? any;
       if (target) return get().openFileInTab(target.id, path, root);
 
-      // No File tab at all — open one and point it at the file.
-      const id = get().openDockTab('right', FILE_VIEW);
+      // Nothing to reuse, so create one — still away from the tree. With no tree
+      // open, `away` is both docks and the right one stays the default.
+      const id = get().openDockTab(treeDock === 'right' ? 'bottom' : 'right', FILE_VIEW);
       get().openFileInTab(id, path, root);
     },
   };

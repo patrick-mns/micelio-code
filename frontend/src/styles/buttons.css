@@ -273,3 +273,28 @@
 }
 .chip.is-active { background: var(--color-card); color: var(--color-text); border-color: var(--color-dim); }
 .chip:disabled { opacity: 0.4; cursor: default; }
+
+/* One row of the Files tree. A button, not a div, so keyboard focus and Enter
+   work without reimplementing either — the whole row is the hit target, which
+   matters most for the shallow rows where the name is short. */
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 0 6px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  transition: background-color 0.12s;
+}
+.tree-row:hover {
+  background: rgba(var(--overlay), 0.07);
+}

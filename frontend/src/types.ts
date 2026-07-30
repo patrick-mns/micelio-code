@@ -403,9 +403,19 @@ export interface SkillDetail {
 // ── Dock/tab system (frontend-only; see store/panelSlice.ts) ──────────────
 /** A view a dock can host. Not bound to a dock — the same view can be opened
  * in the bottom or the right one. */
-export type PanelTabType = 'bg-tasks' | 'review' | 'file' | 'terminal';
+export type PanelTabType = 'bg-tasks' | 'review' | 'file' | 'files' | 'terminal';
 
-export type PanelIcon = 'terminal' | 'activity' | 'check' | 'list' | 'file';
+export type PanelIcon = 'terminal' | 'activity' | 'check' | 'list' | 'file' | 'folder';
+
+/** One row of a directory listing, for the Files tree. One level at a time —
+ * the tree expands lazily, so a folder nobody opened is never read. */
+export interface DirEntry {
+  name: string;
+  /** Workspace-relative, forward slashes — what `openFile` and the next expand
+   * both take. */
+  path: string;
+  is_dir: boolean;
+}
 
 /** What a dock offers in its "+": the *kind* of thing, not an open one.
  * A `multi` view can be opened more than once, each tab being its own
@@ -416,6 +426,11 @@ export interface PanelView {
   label: string;
   icon?: PanelIcon;
   multi?: boolean;
+  /** `false` when a tab of this kind only ever comes into existence by opening
+   * something in it, so the "+" must not offer it. A File tab is created by
+   * opening a file — asking for an empty one gets you a tab with nothing to
+   * read and no way to fill it, now that browsing lives in Files. */
+  offered?: boolean;
 }
 
 /** A file the viewer is pointed at, carrying the workspace it belongs to.
