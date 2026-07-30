@@ -4,26 +4,33 @@
 import { describe, expect, it } from 'vitest';
 import { create } from 'zustand';
 import type { StoreApi, UseBoundStore } from 'zustand';
-import { labelledFor, panelSlice, terminalLabel, VIEW_CATALOG, type PanelSlice } from './panelSlice';
+import { dockOf, panelSlice, ptyKey, terminalLabel, VIEW_CATALOG, type PanelSlice } from './panelSlice';
 import type { PanelTab, PanelView } from '@/types';
 
 type TestState = PanelSlice & {
   currentWorkspace: { id: string; folders: string[] } | null;
   activeRoot: string | null;
+  currentSession: string | null;
 };
 
 function makeStore(
   workspace: TestState['currentWorkspace'] = { id: 'ws-1', folders: ['/w/first'] },
   activeRoot: string | null = null,
+  currentSession: string | null = 'sess-1',
 ): UseBoundStore<StoreApi<TestState>> {
   return create<TestState>()((...a) => ({
     // The slice is typed against the whole AppState; here it only ever reads
-    // `currentWorkspace` and `activeRoot`, which the two fields below supply.
+    // the three fields below.
     ...(panelSlice as unknown as (...args: typeof a) => PanelSlice)(...a),
     currentWorkspace: workspace,
     activeRoot,
+    currentSession,
   }));
 }
+
+// The strip of whichever session the store is showing — what the UI renders.
+const dock = (s: UseBoundStore<StoreApi<TestState>>) => dockOf(s.getState() as never);
+const ids = (tabs: PanelTab[]) => tabs.map((t) => t.id);
 
 const view = (type: PanelView['type']) => VIEW_CATALOG.find((v) => v.type === type)!;
 const REVIEW = view('review');
@@ -37,7 +44,7 @@ describe('singleton views', () => {
     s.getState().openDockTab('right', REVIEW);
     s.getState().openDockTab('right', REVIEW);
 
-    expect(s.getState().rightTabs.map((t) => t.id)).toEqual(['review']);
+    expect(dock(s).rightTabs.map((t) => t.id)).toEqual(['review']);
   });
 
   it('opening one that lives in the other dock moves it', () => {
@@ -45,11 +52,11 @@ describe('singleton views', () => {
     s.getState().openDockTab('right', REVIEW);
     s.getState().openDockTab('bottom', REVIEW);
 
-    expect(s.getState().rightTabs).toEqual([]);
-    expect(s.getState().bottomTabs.map((t) => t.id)).toEqual(['review']);
+    expect(dock(s).rightTabs).toEqual([]);
+    expect(dock(s).bottomTabs.map((t) => t.id)).toEqual(['review']);
     // The dock it left must not keep pointing at a tab it no longer has.
-    expect(s.getState().activeRightTab).toBeNull();
-    expect(s.getState().activeBottomTab).toBe('review');
+    expect(dock(s).activeRightTab).toBeNull();
+    expect(dock(s).activeBottomTab).toBe('review');
   });
 });
 
@@ -59,7 +66,7 @@ describe('multi views', () => {
     s.getState().openDockTab('right', FILE);
     s.getState().openDockTab('right', FILE);
 
-    const ids = s.getState().rightTabs.map((t) => t.id);
+    const ids = dock(s).rightTabs.map((t) => t.id);
     expect(ids).toHaveLength(2);
     expect(new Set(ids).size).toBe(2);
   });
@@ -70,8 +77,8 @@ describe('multi views', () => {
     s.getState().openDockTab('bottom', FILE);
 
     // A singleton would have moved; instances coexist.
-    expect(s.getState().rightTabs).toHaveLength(1);
-    expect(s.getState().bottomTabs).toHaveLength(1);
+    expect(dock(s).rightTabs).toHaveLength(1);
+    expect(dock(s).bottomTabs).toHaveLength(1);
   });
 
   it('gives instances ids that are unique across both docks', () => {
@@ -94,18 +101,18 @@ describe('tab order', () => {
     // send a new tab to the front of the strip.
     s.getState().openDockTab('right', BG);
 
-    expect(s.getState().rightTabs.map((t) => t.id)).toEqual(['file:1', 'terminal:1', 'bg-tasks']);
+    expect(dock(s).rightTabs.map((t) => t.id)).toEqual(['file:1', 'terminal:1', 'bg-tasks']);
   });
 
   it('keeps the positions of the tabs already open', () => {
     const s = makeStore();
     s.getState().openDockTab('right', BG);
     s.getState().openDockTab('right', FILE);
-    const before = s.getState().rightTabs.map((t) => t.id);
+    const before = dock(s).rightTabs.map((t) => t.id);
 
     s.getState().openDockTab('right', REVIEW);
 
-    expect(s.getState().rightTabs.map((t) => t.id)).toEqual([...before, 'review']);
+    expect(dock(s).rightTabs.map((t) => t.id)).toEqual([...before, 'review']);
   });
 
   it('reopening a closed singleton puts it back at the end, not its old spot', () => {
@@ -115,7 +122,7 @@ describe('tab order', () => {
     s.getState().closeDockTab('right', 'bg-tasks');
     s.getState().openDockTab('right', BG);
 
-    expect(s.getState().rightTabs.map((t) => t.id)).toEqual(['file:1', 'bg-tasks']);
+    expect(dock(s).rightTabs.map((t) => t.id)).toEqual(['file:1', 'bg-tasks']);
   });
 });
 
@@ -124,10 +131,10 @@ describe('openFile', () => {
     const s = makeStore();
     s.getState().openFile('README.md');
 
-    const [tab] = s.getState().rightTabs;
+    const [tab] = dock(s).rightTabs;
     expect(tab.type).toBe('file');
     expect(tab.params?.path).toBe('README.md');
-    expect(s.getState().rightPanelOpen).toBe(true);
+    expect(dock(s).rightPanelOpen).toBe(true);
   });
 
   it('navigates the showing File tab instead of opening another', () => {
@@ -135,29 +142,29 @@ describe('openFile', () => {
     s.getState().openFile('README.md');
     s.getState().openFile('docs/guide.md');
 
-    expect(s.getState().rightTabs).toHaveLength(1);
-    expect(s.getState().rightTabs[0].params?.path).toBe('docs/guide.md');
+    expect(dock(s).rightTabs).toHaveLength(1);
+    expect(dock(s).rightTabs[0].params?.path).toBe('docs/guide.md');
   });
 
   it('focuses the tab already holding the file rather than duplicating it', () => {
     const s = makeStore();
     s.getState().openFile('README.md');
-    const first = s.getState().rightTabs[0].id;
+    const first = dock(s).rightTabs[0].id;
     // A second tab, showing something else, is the one on screen.
     const second = s.getState().openDockTab('right', FILE);
     s.getState().openFileInTab(second, 'docs/guide.md');
 
     s.getState().openFile('README.md');
 
-    expect(s.getState().rightTabs).toHaveLength(2);
-    expect(s.getState().activeRightTab).toBe(first);
+    expect(dock(s).rightTabs).toHaveLength(2);
+    expect(dock(s).activeRightTab).toBe(first);
   });
 
   it('names the tab after the file, since several would all read "File"', () => {
     const s = makeStore();
     s.getState().openFile('docs/architecture.md');
 
-    expect(s.getState().rightTabs[0].label).toBe('architecture.md');
+    expect(dock(s).rightTabs[0].label).toBe('architecture.md');
   });
 
   it('leaves an untouched sibling alone when one tab navigates', () => {
@@ -169,7 +176,7 @@ describe('openFile', () => {
 
     s.getState().openFileInTab(b, 'c.md');
 
-    const byId = Object.fromEntries(s.getState().rightTabs.map((t) => [t.id, t]));
+    const byId = Object.fromEntries(dock(s).rightTabs.map((t) => [t.id, t]));
     expect(byId[a].params?.path).toBe('a.md');
     expect(byId[b].params?.path).toBe('c.md');
   });
@@ -180,7 +187,7 @@ describe('file references carry their scope', () => {
     const s = makeStore({ id: 'ws-42', folders: ['/w/first'] }, '/w/second');
     s.getState().openFile('README.md');
 
-    expect(s.getState().rightTabs[0].params).toEqual({
+    expect(dock(s).rightTabs[0].params).toEqual({
       workspaceId: 'ws-42',
       path: 'README.md',
       root: '/w/second',
@@ -191,7 +198,7 @@ describe('file references carry their scope', () => {
     const s = makeStore({ id: 'ws-42', folders: ['/w/first'] }, null);
     s.getState().openFile('README.md');
 
-    expect(s.getState().rightTabs[0].params?.root).toBe('/w/first');
+    expect(dock(s).rightTabs[0].params?.root).toBe('/w/first');
   });
 
   it('keeps an explicitly cited folder, which is what a link in a document is', () => {
@@ -200,21 +207,21 @@ describe('file references carry their scope', () => {
     // are relative to *it*, not to whatever happens to be selected.
     s.getState().openFile('docs/guide.md', '/w/third');
 
-    expect(s.getState().rightTabs[0].params?.root).toBe('/w/third');
+    expect(dock(s).rightTabs[0].params?.root).toBe('/w/third');
   });
 
   it('treats the same path in another workspace as a different file', () => {
     const s = makeStore({ id: 'ws-1', folders: ['/w/first'] });
     s.getState().openFile('README.md');
-    const first = s.getState().rightTabs[0].id;
+    const first = dock(s).rightTabs[0].id;
 
     s.setState({ currentWorkspace: { id: 'ws-2', folders: ['/w/other'] } });
     s.getState().openFile('README.md');
 
     // Same path, different project: it must not be mistaken for the open one.
-    expect(s.getState().rightTabs).toHaveLength(1);
-    expect(s.getState().rightTabs[0].id).toBe(first);
-    expect(s.getState().rightTabs[0].params?.workspaceId).toBe('ws-2');
+    expect(dock(s).rightTabs).toHaveLength(1);
+    expect(dock(s).rightTabs[0].id).toBe(first);
+    expect(dock(s).rightTabs[0].params?.workspaceId).toBe('ws-2');
   });
 });
 
@@ -227,14 +234,14 @@ describe('terminals', () => {
     // that is still sitting where it was started.
     s.setState({ activeRoot: '/w/third' });
 
-    expect(s.getState().bottomTabs.find((t) => t.id === id)?.cwd).toBe('/w/second');
+    expect(dock(s).bottomTabs.find((t) => t.id === id)?.cwd).toBe('/w/second');
   });
 
   it('falls back to the first folder when none is selected', () => {
     const s = makeStore({ id: 'ws-1', folders: ['/w/first'] }, null);
     s.getState().openDockTab('bottom', TERMINAL);
 
-    expect(s.getState().bottomTabs[0].cwd).toBe('/w/first');
+    expect(dock(s).bottomTabs[0].cwd).toBe('/w/first');
   });
 
   it('names a tab after its folder, numbering repeats in the same one', () => {
@@ -242,7 +249,7 @@ describe('terminals', () => {
     s.getState().openDockTab('bottom', TERMINAL);
     s.getState().openDockTab('bottom', TERMINAL);
 
-    expect(s.getState().bottomTabs.map((t) => t.label)).toEqual(['api', 'api 2']);
+    expect(dock(s).bottomTabs.map((t) => t.label)).toEqual(['api', 'api 2']);
   });
 
   it('numbers across both docks, since a tab can be in either', () => {
@@ -250,8 +257,8 @@ describe('terminals', () => {
     s.getState().openDockTab('bottom', TERMINAL);
     s.getState().openDockTab('right', TERMINAL);
 
-    expect(s.getState().bottomTabs[0].label).toBe('api');
-    expect(s.getState().rightTabs[0].label).toBe('api 2');
+    expect(dock(s).bottomTabs[0].label).toBe('api');
+    expect(dock(s).rightTabs[0].label).toBe('api 2');
   });
 
   it('leaves terminals in other folders out of the count', () => {
@@ -268,43 +275,83 @@ describe('terminals', () => {
   });
 });
 
-describe('tab labels across a workspace switch', () => {
-  const fileTab = (id: string, label: string, workspaceId: string | null): PanelTab => ({
-    id,
-    type: 'file',
-    label,
-    params: { workspaceId, path: 'src/a.ts', root: '/w/first' },
+describe('the strip belongs to a session', () => {
+  const switchTo = (s: UseBoundStore<StoreApi<TestState>>, sessionId: string) => {
+    s.setState({ currentSession: sessionId } as Partial<TestState>);
+    s.getState().ensureDock(sessionId);
+  };
+
+  it('gives each session its own tabs', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', FILE);
+
+    switchTo(s, 'sess-2');
+
+    expect(dock(s).rightTabs).toEqual([]);
   });
 
-  it('drops the filename from a tab whose file belongs to another workspace', () => {
-    const tabs = [fileTab('file:1', 'a.ts', 'ws-1')];
+  it('gives them back on return, untouched', () => {
+    const s = makeStore();
+    s.getState().openFile('README.md');
+    switchTo(s, 'sess-2');
+    s.getState().openDockTab('right', REVIEW);
 
-    expect(labelledFor(tabs, 'ws-2').map((t) => t.label)).toEqual(['File']);
+    switchTo(s, 'sess-1');
+
+    expect(ids(dock(s).rightTabs)).toEqual(['file:1']);
+    expect(dock(s).rightTabs[0].params?.path).toBe('README.md');
   });
 
-  it('leaves tabs of the current workspace named after their file', () => {
-    const tabs = [fileTab('file:1', 'a.ts', 'ws-1')];
+  it('opens a tab in the showing session only', () => {
+    const s = makeStore();
+    switchTo(s, 'sess-2');
+    s.getState().openDockTab('bottom', TERMINAL);
 
-    expect(labelledFor(tabs, 'ws-1')).toBe(tabs);
+    expect(ids(dock(s).bottomTabs)).toEqual(['terminal:1']);
+    expect(s.getState().docks['sess-1']).toBeUndefined();
   });
 
-  it('renames only the stale ones, and keeps other kinds alone', () => {
-    const tabs: PanelTab[] = [
-      fileTab('file:1', 'a.ts', 'ws-1'),
-      fileTab('file:2', 'b.ts', 'ws-2'),
-      // Named after its folder, which a workspace switch doesn't invalidate —
-      // the shell is still running there.
-      { id: 'terminal:1', type: 'terminal', label: 'first', cwd: '/w/first' },
-      { id: 'review', type: 'review', label: 'Review' },
-    ];
+  it('keeps whether each dock was open per session', () => {
+    const s = makeStore();
+    s.getState().openDockTab('bottom', TERMINAL);
+    expect(dock(s).bottomPanelOpen).toBe(true);
 
-    expect(labelledFor(tabs, 'ws-2').map((t) => t.label)).toEqual(['File', 'b.ts', 'first', 'Review']);
+    switchTo(s, 'sess-2');
+
+    expect(dock(s).bottomPanelOpen).toBe(false);
   });
 
-  it('leaves a File tab that never held a file alone', () => {
-    const tabs: PanelTab[] = [{ id: 'file:1', type: 'file', label: 'File' }];
+  it('does nothing when there is no session to own the tab', () => {
+    const s = makeStore({ id: 'ws-1', folders: ['/w/first'] }, null, null);
 
-    expect(labelledFor(tabs, 'ws-9')).toBe(tabs);
+    s.getState().openDockTab('right', FILE);
+
+    expect(dock(s).rightTabs).toEqual([]);
+    expect(s.getState().docks).toEqual({});
+  });
+
+  it('forgets a deleted session\'s strip and leaves the others alone', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', FILE);
+    switchTo(s, 'sess-2');
+    s.getState().openDockTab('right', FILE);
+
+    s.getState().dropDock('sess-1');
+
+    expect(s.getState().docks['sess-1']).toBeUndefined();
+    expect(ids(dock(s).rightTabs)).toEqual(['file:1']);
+  });
+
+  it('re-mints instance ids per session, so ptyKey is what keeps shells apart', () => {
+    const s = makeStore();
+    const first = s.getState().openDockTab('bottom', TERMINAL);
+    switchTo(s, 'sess-2');
+    const second = s.getState().openDockTab('bottom', TERMINAL);
+
+    // The tab ids collide by design — they're only unique within a strip.
+    expect(second).toBe(first);
+    // What reaches the backend does not.
+    expect(ptyKey('sess-2', second)).not.toBe(ptyKey('sess-1', first));
   });
 });
 
@@ -318,8 +365,8 @@ describe('closing', () => {
 
     s.getState().closeDockTab('right', b);
 
-    expect(s.getState().rightTabs.map((t) => t.id)).toEqual([a, 'review']);
-    expect(s.getState().activeRightTab).toBe('review');
+    expect(dock(s).rightTabs.map((t) => t.id)).toEqual([a, 'review']);
+    expect(dock(s).activeRightTab).toBe('review');
   });
 
   it('falls back to the tab on the left when the closed one was last', () => {
@@ -330,7 +377,7 @@ describe('closing', () => {
 
     s.getState().closeDockTab('right', b);
 
-    expect(s.getState().activeRightTab).toBe(a);
+    expect(dock(s).activeRightTab).toBe(a);
   });
 
   it('leaves the dock open on the last tab, since empty is a designed state', () => {
@@ -338,8 +385,8 @@ describe('closing', () => {
     s.getState().openDockTab('right', BG);
     s.getState().closeDockTab('right', 'bg-tasks');
 
-    expect(s.getState().rightTabs).toEqual([]);
-    expect(s.getState().rightPanelOpen).toBe(true);
-    expect(s.getState().activeRightTab).toBeNull();
+    expect(dock(s).rightTabs).toEqual([]);
+    expect(dock(s).rightPanelOpen).toBe(true);
+    expect(dock(s).activeRightTab).toBeNull();
   });
 });

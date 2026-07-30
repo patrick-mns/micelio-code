@@ -6,6 +6,17 @@
 // id, and `params`/`cwd` carry what makes it that instance (which file, which
 // folder). That's what lets one dock hold several files — or several terminals
 // — at once, instead of a single slot per kind.
+//
+// The whole strip belongs to a *chat session*. `docks` is keyed by session id
+// and the showing session's entry is the live one, so switching conversation
+// swaps the strip instead of every view having to notice the change itself. It
+// follows the grain the rest of the app already uses — `session_histories`,
+// `session_cancels`, `pending_confirm` and `session_tool_allow` are all keyed
+// this way — and it gives tabs a lifecycle they didn't have: deleting a session
+// takes its tabs, and its shells, with it.
+//
+// A session lives inside one workspace (`sessions.db` is per workspace), so
+// keying by session scopes the strip to the workspace for free.
 import type { StateCreator } from 'zustand';
 import type { AppState } from './index';
 import { loadPrefs, savePrefs, type StoredTerminal } from './_persist';
@@ -26,10 +37,10 @@ export const VIEW_CATALOG: PanelView[] = [
 const FILE_VIEW = VIEW_CATALOG.find((v) => v.type === 'file')!;
 export const TERMINAL_VIEW = VIEW_CATALOG.find((v) => v.type === 'terminal')!;
 
-export interface PanelSlice {
-  // Both docks start empty apart from restored terminals: opening one shows an
-  // empty dock with a "+", and the user picks what goes in it rather than
-  // inheriting a default view.
+/** One session's strip: both docks, what each is showing, and whether each is
+ * up. Opening a dock is part of the layout too — coming back to a conversation
+ * should find it as you left it. */
+export interface DockState {
   bottomTabs: PanelTab[];
   activeBottomTab: string | null;
   bottomPanelOpen: boolean;
@@ -37,6 +48,30 @@ export interface PanelSlice {
   rightTabs: PanelTab[];
   activeRightTab: string | null;
   rightPanelOpen: boolean;
+}
+
+// Shared, frozen, and returned by reference for any session without a strip
+// yet, so a selector reading it doesn't hand React a new object every render.
+export const EMPTY_DOCK: DockState = Object.freeze({
+  bottomTabs: Object.freeze([]) as unknown as PanelTab[],
+  activeBottomTab: null,
+  bottomPanelOpen: false,
+  rightTabs: Object.freeze([]) as unknown as PanelTab[],
+  activeRightTab: null,
+  rightPanelOpen: false,
+});
+
+export interface PanelSlice {
+  /** Every session's strip, by session id. Sessions appear here as they're
+   * visited; the showing one is what the UI renders. */
+  docks: Record<string, DockState>;
+
+  /** Build the strip for `sessionId` if this run hasn't seen it yet, restoring
+   * the terminal tabs it had. Called when the showing session changes. */
+  ensureDock: (sessionId: string) => void;
+  /** Forget a session's strip — for a deleted conversation. Killing its shells
+   * is the caller's job, since that's IPC and this slice is pure state. */
+  dropDock: (sessionId: string) => void;
 
   setActiveDockTab: (dock: DockId, tabId: string) => void;
   toggleDock: (dock: DockId) => void;
@@ -63,6 +98,18 @@ export interface PanelSlice {
   openFileInTab: (tabId: string, path: string, root?: string | null) => void;
 }
 
+/** The strip of the showing session — what every consumer renders from. */
+export const dockOf = (s: Pick<AppState, 'docks' | 'currentSession'>): DockState =>
+  (s.currentSession ? s.docks[s.currentSession] : undefined) ?? EMPTY_DOCK;
+
+/** The pty registry's key for a terminal tab.
+ *
+ * Tab ids are only unique inside one session's strip, and the registry in Rust
+ * is a single global map — so `terminal:1` opened in two conversations would
+ * attach both tabs to the same shell. The session makes it unique, and session
+ * ids are hex nanoseconds, so they don't collide across workspaces either. */
+export const ptyKey = (sessionId: string, tabId: string): string => `${sessionId}:${tabId}`;
+
 // Closing a tab hands focus to its neighbour rather than jumping to the first,
 // which is what every tabbed UI does and what the eye expects.
 export function neighbourOf(tabs: PanelTab[], closedId: string): string | null {
@@ -72,8 +119,9 @@ export function neighbourOf(tabs: PanelTab[], closedId: string): string | null {
   return (rest[i] ?? rest[i - 1] ?? rest[0])?.id ?? null;
 }
 
-/** A fresh id for another instance of `type`, unique across *both* docks —
- * tabs move between them, and two tabs sharing an id would collapse into one. */
+/** A fresh id for another instance of `type`, unique across *both* docks of the
+ * session — tabs move between them, and two tabs sharing an id would collapse
+ * into one. Ids restart per session; `ptyKey` is what keeps the backend apart. */
 export function nextInstanceId(type: PanelTab['type'], tabs: PanelTab[]): string {
   const used = tabs
     .filter((t) => t.type === type)
@@ -100,29 +148,6 @@ export function labelFor(ref: FileRef | undefined, fallback: string): string {
   return name || fallback;
 }
 
-/** The tabs as the strip should show them for `workspaceId`.
- *
- * A File tab is named after the file it holds, and that file belongs to the
- * workspace it was opened in. After a switch the viewer already falls back to
- * its picker, so a tab still carrying the other project's filename would be the
- * only thing left claiming that file is open — the name said one thing and the
- * panel below it showed another.
- *
- * Derived here rather than cleared when the workspace changes, for the same
- * reason the reference carries its workspace instead of being reset: nothing
- * that switches workspace has to remember to do it. Returns the original array
- * when nothing is stale, so the common case costs no new identities.
- */
-export function labelledFor(tabs: PanelTab[], workspaceId: string | null): PanelTab[] {
-  let stale = false;
-  const next = tabs.map((t) => {
-    if (t.type !== 'file' || !t.params || t.params.workspaceId === workspaceId) return t;
-    stale = true;
-    return { ...t, label: FILE_VIEW.label };
-  });
-  return stale ? next : tabs;
-}
-
 const basename = (p: string | null | undefined): string =>
   p?.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || '';
 
@@ -137,28 +162,6 @@ export function terminalLabel(cwd: string | null | undefined, tabs: PanelTab[], 
   return siblings ? `${name} ${siblings + 1}` : name;
 }
 
-// Terminal tabs are the one kind worth remembering across restarts: a file tab
-// is one click from the palette, but a terminal is a place you set up. Only the
-// tab comes back — the shell itself died with the app, and the restored tab
-// starts a fresh one in the same folder.
-const storedTerminals = (tabs: PanelTab[], dock: DockId): StoredTerminal[] =>
-  tabs
-    .filter((t) => t.type === 'terminal')
-    .map((t) => ({ id: t.id, dock, label: t.label, cwd: t.cwd ?? null }));
-
-/** Rebuild the terminal tabs of one dock from the last session. */
-export function restoreTerminals(dock: DockId): PanelTab[] {
-  return (loadPrefs().terminals ?? [])
-    .filter((t) => t.dock === dock)
-    .map((t) => ({
-      id: t.id,
-      type: 'terminal' as const,
-      label: t.label,
-      icon: 'terminal' as const,
-      cwd: t.cwd,
-    }));
-}
-
 // The two docks hold identical shapes, so every action is written once against
 // whichever set of keys the dock maps to.
 const KEYS = {
@@ -168,8 +171,65 @@ const KEYS = {
 
 const DOCKS: DockId[] = ['bottom', 'right'];
 
+// Terminal tabs are the one kind worth remembering across restarts: a file tab
+// is one click from the palette, but a terminal is a place you set up. Only the
+// tab comes back — the shell itself died with the app, and the restored tab
+// starts a fresh one in the same folder.
+const storedTerminals = (docks: Record<string, DockState>): StoredTerminal[] => {
+  const rows: StoredTerminal[] = [];
+  for (const [sessionId, d] of Object.entries(docks)) {
+    for (const dock of DOCKS) {
+      for (const t of d[KEYS[dock].tabs]) {
+        if (t.type === 'terminal') {
+          rows.push({ sessionId, id: t.id, dock, label: t.label, cwd: t.cwd ?? null });
+        }
+      }
+    }
+  }
+  return rows;
+};
+
+/** The strip `sessionId` left behind, or an empty one. */
+export function restoredDock(sessionId: string): DockState {
+  const rows = (loadPrefs().terminals ?? []).filter((t) => t.sessionId === sessionId);
+  const tabsFor = (dock: DockId): PanelTab[] =>
+    rows
+      .filter((t) => t.dock === dock)
+      .map((t) => ({
+        id: t.id,
+        type: 'terminal' as const,
+        label: t.label,
+        icon: 'terminal' as const,
+        cwd: t.cwd,
+      }));
+  const bottomTabs = tabsFor('bottom');
+  const rightTabs = tabsFor('right');
+  return {
+    bottomTabs,
+    activeBottomTab: bottomTabs[0]?.id ?? null,
+    // Restoring tabs doesn't reopen the dock: coming back to a conversation
+    // shouldn't take over the window, and the toggle still shows what's there.
+    bottomPanelOpen: false,
+    rightTabs,
+    activeRightTab: rightTabs[0]?.id ?? null,
+    rightPanelOpen: false,
+  };
+}
+
 export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get) => {
-  const tabsOf = (s: AppState, dock: DockId) => s[KEYS[dock].tabs] as PanelTab[];
+  const dockFor = (s: AppState, sessionId: string) => s.docks[sessionId] ?? EMPTY_DOCK;
+  const tabsOf = (d: DockState, dock: DockId) => d[KEYS[dock].tabs];
+
+  // Every mutation runs through here, so "which session owns this" is answered
+  // once. No session (the last conversation was just deleted, or onboarding
+  // hasn't finished) means there's no strip to write to.
+  const patch = (fn: (d: DockState, s: AppState) => Partial<DockState>) =>
+    set((s) => {
+      const sid = s.currentSession;
+      if (!sid) return {};
+      const current = dockFor(s, sid);
+      return { docks: { ...s.docks, [sid]: { ...current, ...fn(current, s) } } };
+    });
 
   // Stamp a path with the scope it was cited in. One place, so every entry
   // point — picker, link, and whatever opens files next — agrees.
@@ -183,53 +243,56 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
   };
 
   const show = (dock: DockId, tabId: string) =>
-    set({ [KEYS[dock].active]: tabId, [KEYS[dock].open]: true } as Partial<AppState>);
+    patch(() => ({ [KEYS[dock].active]: tabId, [KEYS[dock].open]: true }) as Partial<DockState>);
 
-  // Write the terminal tabs of both docks back to prefs. Called after anything
-  // that adds or removes one, so the stored list is always the live one.
+  // Rewrite the stored terminal list from the strips this run has loaded, and
+  // keep the rows of every session it hasn't — otherwise visiting one
+  // conversation would erase the remembered terminals of all the others.
   const persistTerminals = () => {
-    const s = get();
-    savePrefs({
-      ...loadPrefs(),
-      terminals: [
-        ...storedTerminals(s.bottomTabs, 'bottom'),
-        ...storedTerminals(s.rightTabs, 'right'),
-      ],
-    });
+    const prefs = loadPrefs();
+    const loaded = new Set(Object.keys(get().docks));
+    const untouched = (prefs.terminals ?? []).filter((t) => !loaded.has(t.sessionId));
+    savePrefs({ ...prefs, terminals: [...untouched, ...storedTerminals(get().docks)] });
   };
 
   return {
-    // Both docks start empty apart from the terminals the last session left
-    // open — see `restoreTerminals`.
-    bottomTabs: restoreTerminals('bottom'),
-    activeBottomTab: null,
-    bottomPanelOpen: false,
+    docks: {},
 
-    rightTabs: restoreTerminals('right'),
-    activeRightTab: null,
-    rightPanelOpen: false,
+    ensureDock: (sessionId) =>
+      set((s) => (s.docks[sessionId] ? {} : { docks: { ...s.docks, [sessionId]: restoredDock(sessionId) } })),
 
-    setActiveDockTab: (dock, tabId) => set({ [KEYS[dock].active]: tabId } as Partial<AppState>),
+    dropDock: (sessionId) => {
+      set((s) => {
+        if (!s.docks[sessionId]) return {};
+        const { [sessionId]: _gone, ...rest } = s.docks;
+        return { docks: rest };
+      });
+      persistTerminals();
+    },
 
-    toggleDock: (dock) => set((s) => ({ [KEYS[dock].open]: !s[KEYS[dock].open] } as Partial<AppState>)),
+    setActiveDockTab: (dock, tabId) => patch(() => ({ [KEYS[dock].active]: tabId }) as Partial<DockState>),
+
+    toggleDock: (dock) => patch((d) => ({ [KEYS[dock].open]: !d[KEYS[dock].open] }) as Partial<DockState>),
 
     // An empty dock is a designed state (it shows the "+"), so closing the last
     // tab leaves the dock open — dismissing it is the dock's own X.
     closeDockTab: (dock, tabId) => {
-      set((s) => {
+      patch((d) => {
         const k = KEYS[dock];
-        const tabs = tabsOf(s, dock);
+        const tabs = tabsOf(d, dock);
         return {
           [k.tabs]: tabs.filter((t) => t.id !== tabId),
-          [k.active]: s[k.active] === tabId ? neighbourOf(tabs, tabId) : s[k.active],
-        } as Partial<AppState>;
+          [k.active]: d[k.active] === tabId ? neighbourOf(tabs, tabId) : d[k.active],
+        } as Partial<DockState>;
       });
       persistTerminals();
     },
 
     openDockTab: (dock, view) => {
       const s = get();
-      const all = [...s.bottomTabs, ...s.rightTabs];
+      const sid = s.currentSession;
+      const live = sid ? dockFor(s, sid) : EMPTY_DOCK;
+      const all = [...live.bottomTabs, ...live.rightTabs];
       const tab = instantiate(view, all);
       // A terminal is pinned to the folder selected when it opened. Reading it
       // live would make every open shell appear to follow the folder picker,
@@ -238,11 +301,11 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
         tab.cwd = s.activeRoot || s.currentWorkspace?.folders?.[0] || null;
         tab.label = terminalLabel(tab.cwd, all, view.label);
       }
-      set((cur) => {
+      patch((d) => {
         const k = KEYS[dock];
         const other = KEYS[dock === 'bottom' ? 'right' : 'bottom'];
-        const tabs = tabsOf(cur, dock);
-        const otherTabs = tabsOf(cur, dock === 'bottom' ? 'right' : 'bottom');
+        const tabs = tabsOf(d, dock);
+        const otherTabs = tabsOf(d, dock === 'bottom' ? 'right' : 'bottom');
         const held = tabs.some((t) => t.id === tab.id);
         return {
           // Appended, never sorted. Tabs used to be kept in catalog order, which
@@ -257,10 +320,10 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
           // displaces nothing, so its siblings stay where they are.
           [other.tabs]: view.multi ? otherTabs : otherTabs.filter((t) => t.id !== tab.id),
           [other.active]:
-            !view.multi && cur[other.active] === tab.id
+            !view.multi && d[other.active] === tab.id
               ? neighbourOf(otherTabs, tab.id)
-              : cur[other.active],
-        } as Partial<AppState>;
+              : d[other.active],
+        } as Partial<DockState>;
       });
       if (view.type === 'terminal') persistTerminals();
       return tab.id;
@@ -268,24 +331,25 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
 
     openFileInTab: (tabId, path, root) => {
       const ref = refFor(path, root);
-      const dock = DOCKS.find((d) => tabsOf(get(), d).some((t) => t.id === tabId));
+      const live = dockOf(get());
+      const dock = DOCKS.find((d) => tabsOf(live, d).some((t) => t.id === tabId));
       if (!dock) return;
-      set((s) => ({
-        [KEYS[dock].tabs]: tabsOf(s, dock).map((t) =>
+      patch((d) => ({
+        [KEYS[dock].tabs]: tabsOf(d, dock).map((t) =>
           t.id === tabId ? { ...t, params: ref, label: labelFor(ref, t.label) } : t,
         ),
-      } as Partial<AppState>));
+      }) as Partial<DockState>);
       show(dock, tabId);
     },
 
     openFile: (path, root) => {
-      const s = get();
+      const live = dockOf(get());
       const ref = refFor(path, root);
 
       // Already open somewhere → just show it. Opening the same file twice by
       // accident is noise; two tabs on one file is something you ask for.
       for (const d of DOCKS) {
-        const hit = tabsOf(s, d).find(
+        const hit = tabsOf(live, d).find(
           (t) => t.params?.path === ref.path && t.params?.workspaceId === ref.workspaceId,
         );
         if (hit) return show(d, hit.id);
@@ -293,9 +357,9 @@ export const panelSlice: StateCreator<AppState, [], [], PanelSlice> = (set, get)
 
       // Otherwise reuse a File tab, preferring the one on screen, so following
       // a link navigates where you were looking.
-      const showing = DOCKS.map((d) => tabsOf(s, d).find((t) => t.id === s[KEYS[d].active] && t.type === 'file'))
+      const showing = DOCKS.map((d) => tabsOf(live, d).find((t) => t.id === live[KEYS[d].active] && t.type === 'file'))
         .find(Boolean);
-      const any = DOCKS.map((d) => tabsOf(s, d).find((t) => t.type === 'file')).find(Boolean);
+      const any = DOCKS.map((d) => tabsOf(live, d).find((t) => t.type === 'file')).find(Boolean);
       const target = showing ?? any;
       if (target) return get().openFileInTab(target.id, path, root);
 

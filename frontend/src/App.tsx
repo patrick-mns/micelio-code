@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import React, { useEffect, useState, type CSSProperties } from 'react';
 import { ChatCircle, SquaresFour, SidebarSimple, Rows, FileText, Info, type Icon } from '@phosphor-icons/react';
 import Chat from '@/views/Chat';
 import TreemapView from '@/views/Treemap';
@@ -20,7 +20,7 @@ import AnimatedPanel from '@/components/AnimatedPanel';
 import Toasts from '@/components/Toasts';
 import PanelContainer from '@/components/PanelContainer';
 import { useStore } from '@/store';
-import { labelledFor, TERMINAL_VIEW, VIEW_CATALOG, type DockId } from '@/store/panelSlice';
+import { dockOf, ptyKey, TERMINAL_VIEW, VIEW_CATALOG, type DockId } from '@/store/panelSlice';
 import type { PanelTab } from '@/types';
 import { theme } from '@/theme';
 import { useI18n } from '@/i18n';
@@ -63,11 +63,23 @@ export default function App() {
     activeTab, setActiveTab, showSettings, setShowSettings,
     settings, setSettings, sidebarOpen, setSidebarOpen, scanning,
     update, setUpdateState, checkForUpdates,
-    // Dock state (bottom + right tabbed panels)
+    setActiveDockTab, toggleDock, closeDockTab, openDockTab, openFileInTab,
+    ensureDock, dropDock,
+  } = useStore();
+
+  // The tab strip belongs to the showing chat session, so it comes from there
+  // rather than from six fields of its own. `dockOf` returns a stored object
+  // (or one shared empty one), so this doesn't churn identities per render.
+  const currentSession = useStore((s) => s.currentSession);
+  const {
     bottomTabs, activeBottomTab, bottomPanelOpen,
     rightTabs, activeRightTab, rightPanelOpen,
-    setActiveDockTab, toggleDock, closeDockTab, openDockTab, openFileInTab,
-  } = useStore();
+  } = useStore(dockOf);
+
+  // First visit to a conversation this run rebuilds the strip it left behind.
+  useEffect(() => {
+    if (currentSession) ensureDock(currentSession);
+  }, [currentSession, ensureDock]);
 
   // A dock offers every singleton it isn't already showing — including ones
   // open in the other dock, since picking one there moves it. A `multi` view
@@ -154,6 +166,18 @@ const { t } = useI18n();
     if (!id) return;
     setConfirmDeleteSession(null);
     const { setSessions, setCurrentSession, setMessages, loadSessions, loadWorkspacesWithSessions } = useStore.getState();
+
+    // A deleted conversation takes its strip with it — and its shells. This is
+    // the collector the tabs never had: while they were global, nothing owned a
+    // terminal's lifetime and shells could only pile up until the app quit.
+    const doomed = useStore.getState().docks[id];
+    if (doomed) {
+      for (const tab of [...doomed.bottomTabs, ...doomed.rightTabs]) {
+        if (tab.type === 'terminal') ipc.ptyClose(ptyKey(id, tab.id)).catch(() => {});
+      }
+    }
+    dropDock(id);
+
     const nextId = await ipc.deleteSession(id).catch(() => null);
     if (nextId) {
       const msgs = await ipc.getHistory().catch(() => []);
@@ -210,16 +234,12 @@ const { t } = useI18n();
     (reviewStatus.pending_count > 0 && !isViewShowing('review'));
 
   // A file reference belongs to the workspace it was opened in: its path is
-  // relative, so carrying it across a switch would silently show the new
-  // project's file of the same name. Out of scope → the viewer's picker.
+  // relative, so a reference from elsewhere would silently show this project's
+  // file of the same name. A session can't outlive its workspace, so the strip
+  // no longer carries foreign tabs — this stays as the guard for a folder
+  // dropped from the workspace under an open tab. Out of scope → the picker.
   const inScope = (ref: PanelTab['params']) =>
     ref && ref.workspaceId === (currentWorkspace?.id ?? null) ? ref : null;
-
-  // …and the same goes for the name on the tab, which would otherwise keep
-  // announcing a file the panel below it is no longer showing.
-  const workspaceId = currentWorkspace?.id ?? null;
-  const shownBottomTabs = useMemo(() => labelledFor(bottomTabs, workspaceId), [bottomTabs, workspaceId]);
-  const shownRightTabs = useMemo(() => labelledFor(rightTabs, workspaceId), [rightTabs, workspaceId]);
 
   // One definition per view, shared by both docks — a view renders the same
   // wherever it's docked, so this can't drift between the two. It takes the
@@ -256,9 +276,9 @@ const { t } = useI18n();
           />
         );
       case 'terminal':
-        // The tab's id is the shell's: one tab, one session, and nothing else
-        // to keep in sync between them.
-        return <TerminalPanel id={tab.id} cwd={tab.cwd} />;
+        // Session + tab id: the tab alone repeats across conversations, and the
+        // registry behind it is one global map.
+        return <TerminalPanel id={ptyKey(currentSession ?? '', tab.id)} cwd={tab.cwd} />;
     }
   };
 
@@ -268,7 +288,7 @@ const { t } = useI18n();
   const closeTab = (dock: DockId, tabId: string) => {
     const tabs = dock === 'bottom' ? bottomTabs : rightTabs;
     if (tabs.find((t) => t.id === tabId)?.type === 'terminal') {
-      ipc.ptyClose(tabId).catch(() => {});
+      ipc.ptyClose(ptyKey(currentSession ?? '', tabId)).catch(() => {});
     }
     closeDockTab(dock, tabId);
   };
@@ -411,7 +431,7 @@ const { t } = useI18n();
           <AnimatedPanel open={bottomPanelOpen} side="bottom" size={bottomResize.size} resizing={bottomResize.isResizing}>
             <PanelContainer
               dock="bottom"
-              tabs={shownBottomTabs}
+              tabs={bottomTabs}
               activeTabId={activeBottomTab}
               onSelectTab={(id) => setActiveDockTab('bottom', id)}
               onCloseTab={(id) => closeTab('bottom', id)}
@@ -427,7 +447,7 @@ const { t } = useI18n();
         <AnimatedPanel open={!!rightPanelOpen} side="right" size={bgResize.size} resizing={bgResize.isResizing}>
           <PanelContainer
             dock="right"
-            tabs={shownRightTabs}
+            tabs={rightTabs}
             activeTabId={activeRightTab}
             onSelectTab={(id) => setActiveDockTab('right', id)}
             onCloseTab={(id) => closeTab('right', id)}

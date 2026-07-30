@@ -7,6 +7,9 @@ import type { Locale } from '@/i18n';
  * time this is read — what's kept is where it was and what it was called, so
  * reopening the app puts the same terminals back in the same folders. */
 export interface StoredTerminal {
+  /** The chat session the tab belongs to. Tab ids repeat across sessions, so
+   * this is the half of the key that makes a row identifiable. */
+  sessionId: string;
   id: string;
   dock: 'bottom' | 'right';
   label: string;
