@@ -24,6 +24,20 @@ fn ctx_cache() -> &'static Mutex<HashMap<String, usize>> {
     C.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Reserved output budget, in tokens. Left unset, `max_tokens` defaults to
+/// whatever the gateway (LiteLLM, vLLM, …) picks — often small enough that a
+/// reasoning model's `reasoning_content` pass eats the whole budget and
+/// leaves nothing for the actual `content`, ending the turn empty. Sending an
+/// explicit, generous cap gives the model room to think AND answer.
+const MAX_COMPLETION_TOKENS_CAP: usize = 8_192;
+
+/// `max_tokens` to send: a quarter of the model's known context window,
+/// capped by [`MAX_COMPLETION_TOKENS_CAP`] and floored so tiny-context models
+/// still get a usable reply budget.
+fn request_max_tokens(context_length: usize) -> usize {
+    (context_length / 4).clamp(1_024, MAX_COMPLETION_TOKENS_CAP)
+}
+
 pub struct OpenAiCompatProvider {
     /// Stable id of the configured endpoint (matches `ProviderConfig::id`).
     id: String,
@@ -133,6 +147,7 @@ impl Provider for OpenAiCompatProvider {
             "model": model,
             "messages": to_openai_messages(history),
             "stream": false,
+            "max_tokens": request_max_tokens(self.context_length(model)),
         });
         let tools_json = crate::backend::tools::tools_json();
         if !tools_json.trim().is_empty() && tools_json != "[]" {
@@ -233,6 +248,7 @@ impl Provider for OpenAiCompatProvider {
             "model": model,
             "messages": to_openai_messages(history),
             "stream": true,
+            "max_tokens": request_max_tokens(self.context_length(model)),
         });
 
         // OpenRouter-specific extensions: reasoning streaming + usage in the

@@ -486,6 +486,7 @@ pub fn run_agent_loop(
             continue;
         }
 
+        let assistant_msg_idx = history.len();
         history.push(Message::assistant(content_acc.clone()));
 
         // No tool call this turn → the model considers itself done. We trust
@@ -507,7 +508,15 @@ pub fn run_agent_loop(
             } else {
                 String::new()
             };
-            ensure_reply(&app, &session_id_ref, summary)
+            let reply = ensure_reply(&app, &session_id_ref, summary);
+            // The turn's own assistant message above was pushed empty (that's
+            // literally what the model said); patch it to whatever we end up
+            // showing so the persisted transcript matches the live stream
+            // instead of leaving a blank turn behind for the next round.
+            if let Some(msg) = history.get_mut(assistant_msg_idx) {
+                msg.content = reply.clone();
+            }
+            reply
         } else {
             content
         };
