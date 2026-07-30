@@ -794,6 +794,7 @@ fn execute_tool_call(
     let ctx = tools::ToolContext {
         workspace_root: workspace_root.to_path_buf(),
         workspace_roots,
+        session_id: session_id.to_string(),
         model_name: model.to_string(),
         vision_model: app.state::<AppState>().session_vision_model(session_id),
         history_len: history.len(),

@@ -17,9 +17,15 @@ pub struct BgTaskInfo {
     pub workspace_path: String,
 }
 
+/// The showing conversation's background tasks. The registry is global (a PID
+/// is), but the panel is a tab of one session, so it lists what that session
+/// started — not every process every conversation ever spawned.
 #[tauri::command]
-pub async fn list_bg_tasks() -> Vec<BgTaskInfo> {
-    bg::snapshot()
+pub async fn list_bg_tasks(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<Vec<BgTaskInfo>, String> {
+    let session_id = state.current_session.lock().unwrap().clone();
+    Ok(bg::snapshot(Some(&session_id))
         .into_iter()
         .map(|t| BgTaskInfo {
             pid: t.pid,
@@ -31,7 +37,7 @@ pub async fn list_bg_tasks() -> Vec<BgTaskInfo> {
             uptime_secs: t.uptime_secs,
             workspace_path: t.workspace_path,
         })
-        .collect()
+        .collect())
 }
 
 #[tauri::command]
@@ -39,9 +45,14 @@ pub async fn stop_bg_task(pid: u32) -> bool {
     bg::stop_task(pid)
 }
 
+/// Drop the showing conversation's finished tasks. Scoped for the same reason
+/// the listing is: the button lives in one session's panel and can only clear
+/// what that panel shows.
 #[tauri::command]
-pub async fn clear_bg_tasks() {
-    bg::clear_finished();
+pub async fn clear_bg_tasks(state: tauri::State<'_, crate::AppState>) -> Result<(), String> {
+    let session_id = state.current_session.lock().unwrap().clone();
+    bg::clear_finished(Some(&session_id));
+    Ok(())
 }
 
 /// Full log output of one background task, for the panel's inline log viewer.

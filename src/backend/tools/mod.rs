@@ -19,6 +19,11 @@ use crate::backend::mcp::McpManager;
 pub struct ToolContext {
     pub workspace_root: PathBuf,
     pub workspace_roots: Vec<PathBuf>,
+    /// Conversation this call belongs to. Anything a tool leaves behind that
+    /// outlives the call — a backgrounded process, so far — is tagged with it,
+    /// so the UI can show a session what it started rather than everything
+    /// every session ever started.
+    pub session_id: String,
     pub model_name: String,
     /// Vision-role model for this session (empty = unassigned). Used by the
     /// `vision` tool so each session can target its own image model.
@@ -528,6 +533,7 @@ mod tests {
         let root = PathBuf::from("/tmp");
         ToolContext {
             workspace_root: root.clone(),
+            session_id: "test-session".into(),
             workspace_roots: vec![root],
             model_name: String::new(),
             vision_model: String::new(),
