@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { create } from 'zustand';
 import type { StoreApi, UseBoundStore } from 'zustand';
 import {
-  dockOf, panelSlice, parseDock, ptyKey, serializeDock, terminalLabel, VIEW_CATALOG,
+  dockOf, offeredViews, panelSlice, parseDock, ptyKey, serializeDock, terminalLabel, VIEW_CATALOG,
   type DockState, type PanelSlice,
 } from './panelSlice';
 import type { PanelTab, PanelView } from '@/types';
@@ -126,6 +126,28 @@ describe('tab order', () => {
     s.getState().openDockTab('right', BG);
 
     expect(dock(s).rightTabs.map((t) => t.id)).toEqual(['file:1', 'bg-tasks']);
+  });
+});
+
+describe('what the "+" offers', () => {
+  it('never offers File, since an empty viewer has nothing to read', () => {
+    expect(offeredViews([]).map((v) => v.type)).not.toContain('file');
+  });
+
+  it('offers Files, which is how a viewer gets filled', () => {
+    expect(offeredViews([]).map((v) => v.type)).toContain('files');
+  });
+
+  it('drops a singleton the dock already holds', () => {
+    const held: PanelTab[] = [{ id: 'review', type: 'review', label: 'Review' }];
+
+    expect(offeredViews(held).map((v) => v.type)).not.toContain('review');
+  });
+
+  it('keeps offering Terminal, since another one is the point', () => {
+    const held: PanelTab[] = [{ id: 'terminal:1', type: 'terminal', label: 'w' }];
+
+    expect(offeredViews(held).map((v) => v.type)).toContain('terminal');
   });
 });
 

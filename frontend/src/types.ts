@@ -426,6 +426,11 @@ export interface PanelView {
   label: string;
   icon?: PanelIcon;
   multi?: boolean;
+  /** `false` when a tab of this kind only ever comes into existence by opening
+   * something in it, so the "+" must not offer it. A File tab is created by
+   * opening a file — asking for an empty one gets you a tab with nothing to
+   * read and no way to fill it, now that browsing lives in Files. */
+  offered?: boolean;
 }
 
 /** A file the viewer is pointed at, carrying the workspace it belongs to.

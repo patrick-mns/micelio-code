@@ -33,7 +33,7 @@ export const VIEW_CATALOG: PanelView[] = [
   // row in it opens a File. One of each is enough for the tree — it shows the
   // whole workspace — where File is per-file and stacks.
   { type: 'files', label: 'Files', icon: 'folder' },
-  { type: 'file', label: 'File', icon: 'file', multi: true },
+  { type: 'file', label: 'File', icon: 'file', multi: true, offered: false },
   { type: 'terminal', label: 'Terminal', icon: 'terminal', multi: true },
 ];
 
@@ -100,6 +100,20 @@ export interface PanelSlice {
   /** Points one specific File tab at a file — what the viewer's own picker and
    * in-document links use, since those act on the tab they live in. */
   openFileInTab: (tabId: string, path: string, root?: string | null) => void;
+}
+
+/** What a dock's "+" offers, given what it already holds.
+ *
+ * A singleton it's already showing is left out — there's nothing to add. A
+ * `multi` view is always on offer, since opening another File is the point. And
+ * a view marked `offered: false` never appears: a File tab exists because a file
+ * was opened into it, so an empty one would be a tab with nothing to read and no
+ * way to fill it now that browsing belongs to Files.
+ */
+export function offeredViews(tabs: PanelTab[]): PanelView[] {
+  return VIEW_CATALOG.filter(
+    (v) => v.offered !== false && (v.multi || !tabs.some((t) => t.type === v.type)),
+  );
 }
 
 /** The strip of the showing session — what every consumer renders from. */
