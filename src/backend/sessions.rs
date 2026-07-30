@@ -144,6 +144,12 @@ impl SessionStore {
             // Per-session agent mode (chat/auto/review). Empty = unset, so the
             // caller falls back to the global default.
             "ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT ''",
+            // The dock's tab strip, serialized by the frontend. Opaque here on
+            // purpose: which views exist and what each tab carries is UI shape,
+            // and the backend has no reason to have an opinion about it. Empty
+            // = this session never had a strip, which is not the same as one
+            // that was emptied.
+            "ALTER TABLE sessions ADD COLUMN dock_json TEXT NOT NULL DEFAULT ''",
         ] {
             let _ = conn.execute(stmt, []);
         }
@@ -389,6 +395,28 @@ impl SessionStore {
                 |row| row.get(0),
             )
             .map_err(BackendError::from)
+    }
+
+    /// The session's serialized dock strip, or empty if it never had one.
+    ///
+    /// Deliberately not touching `updated_at`: opening a tab isn't activity in
+    /// the conversation, and the sidebar orders by it.
+    pub fn load_dock(&self, session_id: &str) -> BackendResult<String> {
+        self.conn
+            .query_row(
+                "SELECT dock_json FROM sessions WHERE id = ?1",
+                [session_id],
+                |row| row.get(0),
+            )
+            .map_err(BackendError::from)
+    }
+
+    pub fn save_dock(&self, session_id: &str, dock_json: &str) -> BackendResult<()> {
+        self.conn.execute(
+            "UPDATE sessions SET dock_json = ?2 WHERE id = ?1",
+            rusqlite::params![session_id, dock_json],
+        )?;
+        Ok(())
     }
 
     /// Wipe a session's transcript + stored model history but keep the row.

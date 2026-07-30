@@ -230,6 +230,38 @@ export const panelDockStyles: Record<string, CSSProperties> = {
   },
 };
 
+// ── TerminalPanel.tsx ────────────────────────────────────────────────────
+// Same shape as the file viewer: the dock draws the card, this is just the
+// terminal's own surface inside it.
+export const terminalPanelStyles: Record<string, CSSProperties> = {
+  panel: { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  // All the chrome lives here and none of it on `host`, which is deliberate.
+  // xterm's fit addon sizes the terminal from `getComputedStyle(host).height`
+  // and treats that as the *content* height — but the app sets `box-sizing:
+  // border-box` globally, which makes that property report the border box. Any
+  // padding or border on the measured element is therefore counted as room the
+  // terminal doesn't have: here it was 18px, about one row, so the last row was
+  // laid out past the bottom of the pane. Unreachable, too — a row of the
+  // active screen isn't in the scrollback, so scrolling can't bring it back.
+  // Keeping `host` free of padding and borders makes its border box and content
+  // box the same, and the measurement exact.
+  frame: {
+    flex: 1, minHeight: 0, overflow: 'hidden',
+    display: 'flex', flexDirection: 'column',
+    background: theme.bgDeep, border: `1px solid ${theme.border}`,
+    borderRadius: 'var(--radius-lg)', padding: '8px 4px 8px 10px',
+    margin: '0 8px 8px',
+  },
+  host: { flex: 1, minHeight: 0, overflow: 'hidden' },
+  // The shell is gone but the tab isn't — a quiet footer, not an error.
+  exited: {
+    flexShrink: 0, padding: '0 12px 8px',
+    color: theme.dim, fontSize: 11.5,
+    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+  },
+  error: { color: theme.error, fontSize: 12.5, padding: 12 },
+};
+
 // ── FilePanel.tsx ────────────────────────────────────────────────────────
 // The dock already draws the card and the tab strip, so this is only the
 // file's own header + body.

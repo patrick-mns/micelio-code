@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { memo, type CSSProperties } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import {
   PrismLight as SyntaxHighlighter,
@@ -96,7 +96,15 @@ interface CodeViewerProps {
   startLine: number;
 }
 
-export default function CodeViewer({ code, language, startLine }: CodeViewerProps) {
+// Memoized because highlighting is not cheap and nothing above here is quiet.
+// Prism re-tokenizes the *whole* file on every render — there's no caching in
+// react-syntax-highlighter — and App subscribes to the entire store, so a
+// streaming reply re-renders this viewer on every token. That rebuilt the rows
+// array continuously, which handed Virtuoso a new `itemContent` each time and
+// made it re-render and re-measure every visible row: the scroll visibly shook
+// while the agent was answering. The props are three primitives, so a shallow
+// compare is exactly right.
+function CodeViewer({ code, language, startLine }: CodeViewerProps) {
   return (
     <SyntaxHighlighter
       language={language}
@@ -116,3 +124,5 @@ export default function CodeViewer({ code, language, startLine }: CodeViewerProp
     </SyntaxHighlighter>
   );
 }
+
+export default memo(CodeViewer);

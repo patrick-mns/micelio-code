@@ -182,6 +182,19 @@ export default function FilePanel({ file: ref, onOpenPath }: FilePanelProps) {
     },
   }), [file?.path, file?.root, path, root, onOpenPath]);
 
+  // Same reason CodeViewer is memoized: parsing the document is expensive, and
+  // this panel re-renders on every token of a streaming reply because App
+  // subscribes to the whole store. Without this, reading a document while the
+  // agent answers reparses it dozens of times a second.
+  const markdownBody = useMemo(
+    () => (
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {file?.content ?? ''}
+      </ReactMarkdown>
+    ),
+    [file?.content, components],
+  );
+
   if (!path) return <div style={styles.panel}><Finder onPick={pick} /></div>;
 
   const isMarkdown = file?.language === 'markdown';
@@ -251,9 +264,7 @@ export default function FilePanel({ file: ref, onOpenPath }: FilePanelProps) {
                 />
               </div>
             ) : isMarkdown && !showSource ? (
-              <div className="md" style={styles.mdWrap}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{file.content}</ReactMarkdown>
-              </div>
+              <div className="md" style={styles.mdWrap}>{markdownBody}</div>
             ) : (
               <div style={styles.codeWrap}>
                 <CodeViewer code={file.content} language={file.language} startLine={1} />

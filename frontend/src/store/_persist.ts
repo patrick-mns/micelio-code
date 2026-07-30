@@ -5,6 +5,10 @@ import type { Locale } from '@/i18n';
 
 // The persisted blob in localStorage. All fields optional — older installs may
 // not have every key yet.
+//
+// Dock tabs are deliberately absent: a strip belongs to one conversation, so it
+// lives in that session's row in `sessions.db` rather than in a single blob
+// shared by every project on the machine. See `useDockPersistence`.
 export interface StoredPrefs {
   chatModel?: string;
   summarizeModel?: string;

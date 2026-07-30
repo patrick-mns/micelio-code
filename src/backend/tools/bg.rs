@@ -21,8 +21,12 @@ struct BgTask {
     command: String,
     log_path: PathBuf,
     /// Folder the task was started in (the spawning session's workspace_root),
-    /// so the global panel can show where each task came from.
+    /// so the panel can show where each task came from.
     workspace_path: String,
+    /// Conversation that started it. The panel is a tab of one session and
+    /// shows only that session's tasks; without this the registry is a single
+    /// global list and every conversation saw every other one's processes.
+    session_id: String,
     started_at: Instant,
     read_offset: u64,
     status: BgStatus,
@@ -78,7 +82,13 @@ pub fn set_app_handle(handle: tauri::AppHandle) {
 /// Register a freshly spawned detached process. Takes ownership of the `Child`
 /// and spawns a watcher thread that reaps it on exit, records the exit code,
 /// and notifies the UI. Returns the PID.
-pub fn register(command: &str, log_path: PathBuf, workspace_path: String, child: Child) -> u32 {
+pub fn register(
+    command: &str,
+    log_path: PathBuf,
+    workspace_path: String,
+    session_id: String,
+    child: Child,
+) -> u32 {
     let pid = child.id();
     registry().lock().unwrap().insert(
         pid,
@@ -86,6 +96,7 @@ pub fn register(command: &str, log_path: PathBuf, workspace_path: String, child:
             command: command.to_string(),
             log_path,
             workspace_path,
+            session_id,
             started_at: Instant::now(),
             read_offset: 0,
             status: BgStatus::Running,
@@ -164,11 +175,15 @@ fn status_label(s: BgStatus) -> String {
     }
 }
 
-/// Snapshot of all known tasks (running + finished), newest first so fresh
-/// tasks land at the top of the panel.
-pub fn snapshot() -> Vec<BgSnapshot> {
+/// Snapshot of the tasks belonging to `session_id` (running + finished), newest
+/// first so fresh tasks land at the top of the panel. `None` takes everything —
+/// which is what a caller with no conversation of its own would want.
+pub fn snapshot(session_id: Option<&str>) -> Vec<BgSnapshot> {
     let reg = registry().lock().unwrap();
-    let mut tasks: Vec<(&u32, &BgTask)> = reg.iter().collect();
+    let mut tasks: Vec<(&u32, &BgTask)> = reg
+        .iter()
+        .filter(|(_, t)| session_id.is_none_or(|sid| t.session_id == sid))
+        .collect();
     tasks.sort_by_key(|(_, t)| std::cmp::Reverse(t.started_at));
     tasks
         .into_iter()
@@ -189,9 +204,13 @@ pub fn stop_task(pid: u32) -> bool {
 
 /// Drop all finished tasks from the registry (frontend panel "Clear"), deleting
 /// each one's log file so `.micelio/bg` doesn't accumulate orphans.
-pub fn clear_finished() {
+pub fn clear_finished(session_id: Option<&str>) {
     registry().lock().unwrap().retain(|_, t| {
-        if t.status == BgStatus::Running {
+        // Clearing is a button in one session's panel, so it can only drop what
+        // that panel is showing — otherwise it would quietly wipe the history
+        // of conversations the user isn't even looking at.
+        let mine = session_id.is_none_or(|sid| t.session_id == sid);
+        if t.status == BgStatus::Running || !mine {
             true
         } else {
             let _ = std::fs::remove_file(&t.log_path);
@@ -232,12 +251,15 @@ fn terminate(pid: u32) -> bool {
 
 // ---- the `bg` tool ---------------------------------------------------------
 
-pub fn run(arguments: &str, _context: &ToolContext) -> Result<ToolResult, String> {
+pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String> {
     let action = super::get_string_field(arguments, "action")
         .ok_or_else(|| "bg tool: missing `action` (list | logs | stop)".to_string())?;
 
     match action.as_str() {
-        "list" => Ok(list()),
+        // Scoped to the calling conversation, matching the panel the user sees.
+        // A model listing another session's processes would be reporting on
+        // work it has no context for.
+        "list" => Ok(list(&context.session_id)),
         "logs" => logs(arguments),
         "stop" => stop(arguments),
         other => Err(format!(
@@ -246,8 +268,8 @@ pub fn run(arguments: &str, _context: &ToolContext) -> Result<ToolResult, String
     }
 }
 
-fn list() -> ToolResult {
-    let tasks = snapshot();
+fn list(session_id: &str) -> ToolResult {
+    let tasks = snapshot(Some(session_id));
     if tasks.is_empty() {
         return ToolResult {
             content: "no background tasks".into(),
@@ -318,5 +340,80 @@ fn stop(arguments: &str) -> Result<ToolResult, String> {
         })
     } else {
         Err(format!("bg stop: no task with pid {pid}"))
+    }
+}
+
+// The registry is a process-global shared by every test in this binary, so each
+// case here works under its own session id and asserts only through the
+// session-scoped calls. Nothing spawns a process: these are registry rows for
+// the filter to sort through, and the pids sit well outside the range the OS
+// hands out, so a stray signal could never reach anything real.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    fn park(session_id: &str, status: BgStatus) -> u32 {
+        static NEXT: AtomicU32 = AtomicU32::new(4_000_000);
+        let pid = NEXT.fetch_add(1, Ordering::SeqCst);
+        registry().lock().unwrap().insert(
+            pid,
+            BgTask {
+                command: format!("cmd for {session_id}"),
+                log_path: std::env::temp_dir().join(format!("micelio-bg-test-{pid}.log")),
+                workspace_path: "/w".into(),
+                session_id: session_id.to_string(),
+                started_at: Instant::now(),
+                read_offset: 0,
+                status,
+            },
+        );
+        pid
+    }
+
+    #[test]
+    fn a_session_sees_only_the_tasks_it_started() {
+        let mine = park("sess-listing-a", BgStatus::Running);
+        park("sess-listing-b", BgStatus::Running);
+
+        let pids: Vec<u32> = snapshot(Some("sess-listing-a"))
+            .into_iter()
+            .map(|t| t.pid)
+            .collect();
+
+        assert_eq!(pids, vec![mine]);
+    }
+
+    #[test]
+    fn no_session_takes_everything() {
+        let a = park("sess-all-a", BgStatus::Running);
+        let b = park("sess-all-b", BgStatus::Running);
+
+        let pids: Vec<u32> = snapshot(None).into_iter().map(|t| t.pid).collect();
+
+        assert!(pids.contains(&a) && pids.contains(&b));
+    }
+
+    #[test]
+    fn clearing_one_session_leaves_another_session_untouched() {
+        let mine = park("sess-clear-a", BgStatus::Exited(0));
+        let theirs = park("sess-clear-b", BgStatus::Exited(0));
+
+        clear_finished(Some("sess-clear-a"));
+
+        assert!(status_of(mine).is_none(), "own finished task was dropped");
+        assert!(
+            status_of(theirs).is_some(),
+            "another conversation's history survived",
+        );
+    }
+
+    #[test]
+    fn clearing_spares_a_running_task_since_it_is_a_live_process() {
+        let running = park("sess-clear-running", BgStatus::Running);
+
+        clear_finished(Some("sess-clear-running"));
+
+        assert!(status_of(running).is_some());
     }
 }
