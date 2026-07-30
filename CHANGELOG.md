@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.21.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.20.0...micelio-v0.21.0) (2026-07-30)
+
+
+### Features
+
+* **model:** Merge dev branch and incorporate local model selector fixes ([bc9b461](https://github.com/patrick-mns/micelio-code/commit/bc9b4610dda3f9551a4a49aa2282d6cd855ed5f7))
+
+
+### Bug Fixes
+
+* **llm:** cap output tokens to stop empty replies from reasoning models ([919e9a8](https://github.com/patrick-mns/micelio-code/commit/919e9a86cafed880aad9a1ef1dc942e7219fbbfd))
+* **types:** annotate pinned as SessionModels | undefined ([93565a7](https://github.com/patrick-mns/micelio-code/commit/93565a7089781d53c4716d489bcc65514900f07d))
+
 ## [0.20.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.19.0...micelio-v0.20.0) (2026-07-30)
 
 
