@@ -195,6 +195,7 @@ mod tests {
         let root = std::path::PathBuf::from("/tmp");
         let ctx = ToolContext {
             workspace_root: root.clone(),
+            session_id: "test-session".into(),
             workspace_roots: vec![root],
             model_name: String::new(),
             vision_model: String::new(),

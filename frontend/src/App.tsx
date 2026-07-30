@@ -15,15 +15,18 @@ import OpenInButton from '@/components/OpenInButton';
 import { BgTasksPanel } from '@/components/BgTasksChip';
 import { ReviewPanel } from '@/components/ReviewChip';
 import FilePanel from '@/components/FilePanel';
+import FilesPanel from '@/components/FilesPanel';
+import TerminalPanel from '@/components/TerminalPanel';
 import AnimatedPanel from '@/components/AnimatedPanel';
 import Toasts from '@/components/Toasts';
 import PanelContainer from '@/components/PanelContainer';
 import { useStore } from '@/store';
-import { VIEW_CATALOG, type DockId } from '@/store/panelSlice';
+import { dockOf, offeredViews, ptyKey, TERMINAL_VIEW, type DockId } from '@/store/panelSlice';
 import type { PanelTab } from '@/types';
 import { theme } from '@/theme';
 import { useI18n } from '@/i18n';
 import { usePanelResize } from '@/hooks/usePanelResize';
+import { useDockPersistence } from '@/hooks/useDockPersistence';
 import { useBgTasks } from '@/hooks/useBgTasks';
 import { useReview } from '@/hooks/useReview';
 import { useWorkspace } from '@/hooks/useWorkspace';
@@ -62,19 +65,24 @@ export default function App() {
     activeTab, setActiveTab, showSettings, setShowSettings,
     settings, setSettings, sidebarOpen, setSidebarOpen, scanning,
     update, setUpdateState, checkForUpdates,
-    // Dock state (bottom + right tabbed panels)
-    bottomTabs, activeBottomTab, bottomPanelOpen,
-    rightTabs, activeRightTab, rightPanelOpen,
-    setActiveDockTab, toggleDock, closeDockTab, openDockTab, openFileInTab,
+    setActiveDockTab, toggleDock, closeDockTab, openDockTab, openFileInTab, openFile,
+    dropDock,
   } = useStore();
 
-  // A dock offers every singleton it isn't already showing — including ones
-  // open in the other dock, since picking one there moves it. A `multi` view
-  // is always on offer: opening another File is the point.
-  const offered = (tabs: PanelTab[]) =>
-    VIEW_CATALOG.filter((v) => v.multi || !tabs.some((t) => t.type === v.type));
-  const openableBottom = offered(bottomTabs);
-  const openableRight = offered(rightTabs);
+  // The tab strip belongs to the showing chat session, so it comes from there
+  // rather than from six fields of its own. `dockOf` returns a stored object
+  // (or one shared empty one), so this doesn't churn identities per render.
+  const currentSession = useStore((s) => s.currentSession);
+  const {
+    bottomTabs, activeBottomTab, bottomPanelOpen,
+    rightTabs, activeRightTab, rightPanelOpen,
+  } = useStore(dockOf);
+
+  // Loads the showing conversation's strip and stores it back as it changes.
+  useDockPersistence();
+
+  const openableBottom = offeredViews(bottomTabs);
+  const openableRight = offeredViews(rightTabs);
   const [sysPromptOpen, setSysPromptOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -153,6 +161,18 @@ const { t } = useI18n();
     if (!id) return;
     setConfirmDeleteSession(null);
     const { setSessions, setCurrentSession, setMessages, loadSessions, loadWorkspacesWithSessions } = useStore.getState();
+
+    // A deleted conversation takes its strip with it — and its shells. This is
+    // the collector the tabs never had: while they were global, nothing owned a
+    // terminal's lifetime and shells could only pile up until the app quit.
+    const doomed = useStore.getState().docks[id];
+    if (doomed) {
+      for (const tab of [...doomed.bottomTabs, ...doomed.rightTabs]) {
+        if (tab.type === 'terminal') ipc.ptyClose(ptyKey(id, tab.id)).catch(() => {});
+      }
+    }
+    dropDock(id);
+
     const nextId = await ipc.deleteSession(id).catch(() => null);
     if (nextId) {
       const msgs = await ipc.getHistory().catch(() => []);
@@ -209,8 +229,10 @@ const { t } = useI18n();
     (reviewStatus.pending_count > 0 && !isViewShowing('review'));
 
   // A file reference belongs to the workspace it was opened in: its path is
-  // relative, so carrying it across a switch would silently show the new
-  // project's file of the same name. Out of scope → the viewer's picker.
+  // relative, so a reference from elsewhere would silently show this project's
+  // file of the same name. A session can't outlive its workspace, so the strip
+  // no longer carries foreign tabs — this stays as the guard for a folder
+  // dropped from the workspace under an open tab. Out of scope → the picker.
   const inScope = (ref: PanelTab['params']) =>
     ref && ref.workspaceId === (currentWorkspace?.id ?? null) ? ref : null;
 
@@ -241,6 +263,11 @@ const { t } = useI18n();
             onRevertAll={gitRevertAll}
           />
         );
+      case 'files':
+        // The tree opens through `openFile`, not `openFileInTab`: it isn't
+        // pointing *this* tab anywhere, it's asking for a File tab to hold what
+        // was clicked — reusing the one already showing a file if there is one.
+        return <FilesPanel onOpenPath={(path) => openFile(path)} />;
       case 'file':
         return (
           <FilePanel
@@ -248,8 +275,36 @@ const { t } = useI18n();
             onOpenPath={(path, root) => openFileInTab(tab.id, path, root)}
           />
         );
+      case 'terminal':
+        // Session + tab id: the tab alone repeats across conversations, and the
+        // registry behind it is one global map.
+        return <TerminalPanel id={ptyKey(currentSession ?? '', tab.id)} cwd={tab.cwd} />;
     }
   };
+
+  // Closing a terminal tab is the only thing that kills its shell — leaving the
+  // tab merely unmounts the view, and a shell that died on every tab switch
+  // would be no use. Wrapped here rather than in the slice, which is pure state.
+  const closeTab = (dock: DockId, tabId: string) => {
+    const tabs = dock === 'bottom' ? bottomTabs : rightTabs;
+    if (tabs.find((t) => t.id === tabId)?.type === 'terminal') {
+      ipc.ptyClose(ptyKey(currentSession ?? '', tabId)).catch(() => {});
+    }
+    closeDockTab(dock, tabId);
+  };
+
+  // Ctrl/Cmd-` — the shortcut every editor uses for "give me a terminal". It
+  // opens another one rather than toggling, since terminals are instances and
+  // the dock's own toggle already handles showing and hiding.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '`' || !(e.metaKey || e.ctrlKey)) return;
+      e.preventDefault();
+      openDockTab('bottom', TERMINAL_VIEW);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openDockTab]);
 
   return (
     <div style={appStyles.root}>
@@ -379,7 +434,7 @@ const { t } = useI18n();
               tabs={bottomTabs}
               activeTabId={activeBottomTab}
               onSelectTab={(id) => setActiveDockTab('bottom', id)}
-              onCloseTab={(id) => closeDockTab('bottom', id)}
+              onCloseTab={(id) => closeTab('bottom', id)}
               openable={openableBottom}
               onOpenTab={(tab) => openDockTab('bottom', tab)}
               onClosePanel={() => toggleDock('bottom')}
@@ -395,7 +450,7 @@ const { t } = useI18n();
             tabs={rightTabs}
             activeTabId={activeRightTab}
             onSelectTab={(id) => setActiveDockTab('right', id)}
-            onCloseTab={(id) => closeDockTab('right', id)}
+            onCloseTab={(id) => closeTab('right', id)}
             openable={openableRight}
             onOpenTab={(tab) => openDockTab('right', tab)}
             onClosePanel={() => toggleDock('right')}

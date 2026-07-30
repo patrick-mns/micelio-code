@@ -278,10 +278,21 @@ fn prefer_root(mut roots: Vec<PathBuf>, preferred: Option<&str>) -> Vec<PathBuf>
 }
 
 /// Resolve a requested path against the readable roots, returning the absolute
-/// file and the root it belongs to. Split out from the command so the
-/// containment rule — the part worth getting wrong-proof — is testable without
-/// an `AppState`.
+/// file and the root it belongs to, and requiring it to be a file.
 fn resolve_readable(roots: &[PathBuf], path: &str) -> Result<(PathBuf, PathBuf), String> {
+    let (full, root) = resolve_within(roots, path)?;
+    if !full.is_file() {
+        return Err(format!("not a file: {}", full.display()));
+    }
+    Ok((full, root))
+}
+
+/// Resolve a requested path against the readable roots, returning the absolute
+/// path and the root it belongs to. Split out from the command so the
+/// containment rule — the part worth getting wrong-proof — is testable without
+/// an `AppState`, and shared by the file reader and the directory listing so
+/// there's one place that decides what's inside the workspace.
+fn resolve_within(roots: &[PathBuf], path: &str) -> Result<(PathBuf, PathBuf), String> {
     let requested = Path::new(path);
 
     // A relative path hangs off whichever root actually holds it. A multi-root
@@ -307,10 +318,89 @@ fn resolve_readable(roots: &[PathBuf], path: &str) -> Result<(PathBuf, PathBuf),
         .filter_map(|r| r.canonicalize().ok())
         .find(|r| full.starts_with(r))
         .ok_or("this file is outside the workspace")?;
-    if !full.is_file() {
-        return Err(format!("not a file: {}", full.display()));
-    }
     Ok((full, root))
+}
+
+/// One row of a directory listing, for the Files tree.
+#[derive(serde::Serialize)]
+pub struct DirEntry {
+    /// Just this segment, which is what the tree draws.
+    pub name: String,
+    /// Workspace-relative, forward slashes — ready for `openFile` or for the
+    /// next expand.
+    pub path: String,
+    pub is_dir: bool,
+}
+
+/// List one directory's immediate children for the Files tree. Empty `path`
+/// lists the root itself.
+///
+/// One level per call, because the tree expands lazily. That's what makes it
+/// reasonable to show everything on disk rather than filtering by `.gitignore`
+/// the way `search_workspace_files` does: a generated file stays reachable, and
+/// the size of `target/` or `node_modules/` is only ever paid by someone who
+/// actually opened them.
+///
+/// `.git` is the one exception. Its contents are plumbing, not something anyone
+/// browses to, and it's large enough to be actively in the way.
+#[tauri::command]
+pub async fn list_workspace_dir(
+    state: State<'_, AppState>,
+    path: Option<String>,
+    root: Option<String>,
+) -> Result<Vec<DirEntry>, String> {
+    let roots = readable_roots(&state, root.as_deref());
+    let requested = path.unwrap_or_default();
+
+    // The root itself has no path to resolve — the preferred root *is* the
+    // answer, and asking `resolve_within` for "" would look outside it.
+    let (dir, base) = if requested.is_empty() {
+        let base = roots.first().cloned().ok_or("no workspace folder")?;
+        let canonical = base
+            .canonicalize()
+            .map_err(|e| format!("could not open {}: {e}", base.display()))?;
+        (canonical.clone(), canonical)
+    } else {
+        resolve_within(&roots, &requested)?
+    };
+
+    if !dir.is_dir() {
+        return Err(format!("not a directory: {}", dir.display()));
+    }
+
+    let mut entries: Vec<DirEntry> = std::fs::read_dir(&dir)
+        .map_err(|e| format!("could not list {}: {e}", dir.display()))?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name() != ".git")
+        .map(|e| {
+            let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            let full = e.path();
+            let rel = full
+                .strip_prefix(&base)
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_else(|_| full.to_string_lossy().into_owned());
+            DirEntry {
+                name: e.file_name().to_string_lossy().into_owned(),
+                path: rel,
+                is_dir,
+            }
+        })
+        .collect();
+
+    sort_entries(&mut entries);
+    Ok(entries)
+}
+
+/// Folders first, then files, each case-insensitively alphabetical — the order a
+/// file tree is read in. Dotfiles fall at the top of their group on their own,
+/// since '.' sorts before any letter. Pure so the ordering is testable without
+/// a directory on disk.
+fn sort_entries(entries: &mut [DirEntry]) {
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
 }
 
 /// Read a workspace file for the file viewer. Accepts a workspace-relative path
@@ -756,5 +846,62 @@ mod tests {
 
         assert!(resolve_readable(std::slice::from_ref(&root), "src").is_err());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    fn entry(name: &str, is_dir: bool) -> DirEntry {
+        DirEntry {
+            name: name.to_string(),
+            path: name.to_string(),
+            is_dir,
+        }
+    }
+
+    #[test]
+    fn listing_puts_folders_first_then_files() {
+        let mut entries = vec![
+            entry("Cargo.toml", false),
+            entry("src", true),
+            entry("build.rs", false),
+            entry("frontend", true),
+        ];
+
+        sort_entries(&mut entries);
+
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["frontend", "src", "build.rs", "Cargo.toml"]);
+    }
+
+    #[test]
+    fn listing_ignores_case_so_capitals_do_not_jump_the_queue() {
+        let mut entries = vec![
+            entry("Cargo.lock", false),
+            entry("build.rs", false),
+            entry("BACKLOG.md", false),
+        ];
+
+        sort_entries(&mut entries);
+
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["BACKLOG.md", "build.rs", "Cargo.lock"]);
+    }
+
+    #[test]
+    fn dotfiles_lead_their_own_group_rather_than_the_whole_list() {
+        let mut entries = vec![
+            entry(".gitignore", false),
+            entry("capabilities", true),
+            entry("BACKLOG.md", false),
+            entry(".github", true),
+        ];
+
+        sort_entries(&mut entries);
+
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        // The dot sorts first *within* folders and *within* files, so a dotfile
+        // never climbs above a real directory.
+        assert_eq!(
+            names,
+            vec![".github", "capabilities", ".gitignore", "BACKLOG.md"]
+        );
     }
 }

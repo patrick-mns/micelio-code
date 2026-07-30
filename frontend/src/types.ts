@@ -403,19 +403,34 @@ export interface SkillDetail {
 // ── Dock/tab system (frontend-only; see store/panelSlice.ts) ──────────────
 /** A view a dock can host. Not bound to a dock — the same view can be opened
  * in the bottom or the right one. */
-export type PanelTabType = 'bg-tasks' | 'review' | 'file';
+export type PanelTabType = 'bg-tasks' | 'review' | 'file' | 'files' | 'terminal';
 
-export type PanelIcon = 'terminal' | 'activity' | 'check' | 'list' | 'file';
+export type PanelIcon = 'terminal' | 'activity' | 'check' | 'list' | 'file' | 'folder';
+
+/** One row of a directory listing, for the Files tree. One level at a time —
+ * the tree expands lazily, so a folder nobody opened is never read. */
+export interface DirEntry {
+  name: string;
+  /** Workspace-relative, forward slashes — what `openFile` and the next expand
+   * both take. */
+  path: string;
+  is_dir: boolean;
+}
 
 /** What a dock offers in its "+": the *kind* of thing, not an open one.
  * A `multi` view can be opened more than once, each tab being its own
- * instance — several files at a time, and later several terminals. The rest
- * are singletons: opening one that's already up just moves it. */
+ * instance — several files or several terminals at a time. The rest are
+ * singletons: opening one that's already up just moves it. */
 export interface PanelView {
   type: PanelTabType;
   label: string;
   icon?: PanelIcon;
   multi?: boolean;
+  /** `false` when a tab of this kind only ever comes into existence by opening
+   * something in it, so the "+" must not offer it. A File tab is created by
+   * opening a file — asking for an empty one gets you a tab with nothing to
+   * read and no way to fill it, now that browsing lives in Files. */
+  offered?: boolean;
 }
 
 /** A file the viewer is pointed at, carrying the workspace it belongs to.
@@ -436,13 +451,35 @@ export interface FileRef {
   root: string | null;
 }
 
-/** An open tab: one instance of a view. `params` is what makes it *this*
- * instance rather than another of the same kind — which file it holds, and
- * later which terminal. Singleton views carry none. */
+/** An open tab: one instance of a view. `params` and `cwd` are what make it
+ * *this* instance rather than another of the same kind. Singleton views carry
+ * neither. */
 export interface PanelTab {
   id: string;
   type: PanelTabType;
   label: string;
   icon?: PanelIcon;
+  /** File tabs: which file is showing. */
   params?: FileRef;
+  /** Terminal tabs: the folder the shell was started in. Pinned at open time
+   * rather than read live, because a running shell has its own working
+   * directory — the user may well have `cd`'d elsewhere, and changing the
+   * selected folder must not imply the terminal moved with it. */
+  cwd?: string | null;
+}
+
+// ── Terminal (dock tab) ───────────────────────────────────────────────────
+/** A chunk of shell output. Base64 because a pty emits bytes, and a read can
+ * land mid-character — decoding per chunk in Rust would mangle any multi-byte
+ * glyph unlucky enough to straddle the boundary. xterm.js reassembles. */
+export interface PtyOutput {
+  id: string;
+  data: string;
+}
+
+/** The shell behind a terminal tab is gone. The tab stays — its output is
+ * still worth reading — but it stops accepting input. */
+export interface PtyExit {
+  id: string;
+  code: number;
 }

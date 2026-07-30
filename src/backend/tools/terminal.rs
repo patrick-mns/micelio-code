@@ -31,7 +31,13 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
     if background {
         let early = read_early_log(&log_path, Duration::from_millis(2500));
         let ws = context.workspace_root.to_string_lossy().into_owned();
-        super::bg::register(&command, log_path.clone(), ws, child);
+        super::bg::register(
+            &command,
+            log_path.clone(),
+            ws,
+            context.session_id.clone(),
+            child,
+        );
         return Ok(background_result(pid, &log_path, &early, false));
     }
 
@@ -52,7 +58,13 @@ pub fn run(arguments: &str, context: &ToolContext) -> Result<ToolResult, String>
                     // second process.
                     let early = tail_log(&log_path);
                     let ws = context.workspace_root.to_string_lossy().into_owned();
-                    super::bg::register(&command, log_path.clone(), ws, child);
+                    super::bg::register(
+                        &command,
+                        log_path.clone(),
+                        ws,
+                        context.session_id.clone(),
+                        child,
+                    );
                     return Ok(background_result(pid, &log_path, &early, true));
                 }
                 std::thread::sleep(Duration::from_millis(100));
@@ -278,6 +290,7 @@ mod tests {
     fn ctx(root: PathBuf) -> ToolContext {
         ToolContext {
             workspace_root: root.clone(),
+            session_id: "test-session".into(),
             workspace_roots: vec![root],
             model_name: String::new(),
             vision_model: String::new(),

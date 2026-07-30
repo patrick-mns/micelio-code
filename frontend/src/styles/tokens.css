@@ -30,6 +30,33 @@
      coloring keeps its contrast (a deliberate "terminal" surface). */
   --color-code-bg: #141413;
 
+  /* Terminal ANSI palette. The only colors here the app doesn't already have a
+     token for: a program writing `\e[31m` asks for "red", and the terminal has
+     to answer with something. Surface and text come from the tokens above, so
+     a terminal reads as part of the app rather than as a pasted-in xterm.
+     Variants only restyle surfaces, so they inherit this by design — the 16
+     ANSI slots mean the same thing in every variant. */
+  --term-black: #3a3a37;
+  --term-red: #e06c75;
+  --term-green: #98c379;
+  --term-yellow: #de8a3c;
+  --term-blue: #61afef;
+  --term-magenta: #c678dd;
+  --term-cyan: #56b6c2;
+  --term-white: #b2b0a8;
+  --term-bright-black: #62605a;
+  --term-bright-red: #ef8b93;
+  --term-bright-green: #b3d992;
+  --term-bright-yellow: #f0a45c;
+  --term-bright-blue: #83c2f5;
+  --term-bright-magenta: #d79bea;
+  --term-bright-cyan: #74ccd8;
+  --term-bright-white: #ffffff;
+  /* The block cursor and the film behind a selection — both sit *over* text,
+     so they're defined against the terminal surface, not the app's. */
+  --term-cursor: #e0ded8;
+  --term-selection: rgba(255, 255, 255, 0.18);
+
   /* Hover film: the RGB triplet overlaid at low alpha for subtle hovers.
      White over dark; flips to black over light. */
   --overlay: 255, 255, 255;
@@ -70,6 +97,27 @@
   --color-success: #4a9e3f;
   --color-error: #cf222e;
   --color-warn: #bc6c1e;
+
+  /* Darkened so each slot still passes as readable text on a light surface —
+     the dark theme's greens and cyans wash out completely up here. */
+  --term-black: #2b2926;
+  --term-red: #c14a53;
+  --term-green: #4e8b3c;
+  --term-yellow: #9c6510;
+  --term-blue: #2f6fb5;
+  --term-magenta: #8b46a8;
+  --term-cyan: #2b7f8c;
+  --term-white: #5b574f;
+  --term-bright-black: #8a857b;
+  --term-bright-red: #a13840;
+  --term-bright-green: #3d6f2f;
+  --term-bright-yellow: #7d500b;
+  --term-bright-blue: #24578f;
+  --term-bright-magenta: #6f3586;
+  --term-bright-cyan: #216470;
+  --term-bright-white: #1a1916;
+  --term-cursor: #2b2926;
+  --term-selection: rgba(0, 0, 0, 0.14);
 
   --overlay: 0, 0, 0;
 }

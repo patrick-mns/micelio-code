@@ -252,6 +252,29 @@ pub async fn set_session_model(
     Ok(())
 }
 
+/// The session's dock strip as the frontend last serialized it, or an empty
+/// string for a session that never had one. Opaque JSON: the layout is UI
+/// shape, and the backend only stores it next to the conversation it belongs to.
+#[tauri::command]
+pub async fn get_session_dock(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<String, String> {
+    let store = state.sessions.lock().unwrap();
+    Ok(store.load_dock(&session_id).unwrap_or_default())
+}
+
+#[tauri::command]
+pub async fn set_session_dock(
+    state: State<'_, AppState>,
+    session_id: String,
+    dock_json: String,
+) -> Result<(), String> {
+    let store = state.sessions.lock().unwrap();
+    store.save_dock(&session_id, &dock_json)?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn delete_session(
     app: AppHandle,
