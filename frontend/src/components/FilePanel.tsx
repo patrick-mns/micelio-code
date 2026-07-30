@@ -1,90 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { MagnifyingGlass, Warning } from '@phosphor-icons/react';
+import { Warning } from '@phosphor-icons/react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { ipc } from '@/ipc';
-import { useStore } from '@/store';
 import { fmtCount } from '@/utils/formatters';
-import { fieldStyles, filePanelStyles as styles } from '@/utils/theme-styles';
+import { filePanelStyles as styles } from '@/utils/theme-styles';
 import { theme } from '@/theme';
 import CodeViewer from '@/components/CodeViewer';
 import { mdComponents } from '@/components/MdComponents';
-import type { FileContent, FileHit, FileRef } from '@/types';
+import type { FileContent, FileRef } from '@/types';
 
-// Quick open: the same fuzzy search that backs the composer's @-mention, used
-// here to pick what the viewer shows. It's the whole body when no file is open,
-// and a takeover when one is — no file tree, since the dock is narrow and the
-// search finds a path in fewer keystrokes than a tree does.
-function Finder({ onPick, onCancel }: { onPick: (path: string) => void; onCancel?: () => void }) {
-  const [query, setQuery] = useState('');
-  const [hits, setHits] = useState<FileHit[]>([]);
-  const [selected, setSelected] = useState(0);
-  const activeRef = useRef<HTMLButtonElement>(null);
-
-  // The search is scoped to the selected folder on the backend, so switching
-  // folders has to re-run it — otherwise the list keeps showing the previous
-  // project's files until something is typed.
-  const activeRoot = useStore((s) => s.activeRoot);
-
-  // Debounced like the composer's palette: the search walks the workspace, so
-  // it shouldn't run on every keystroke.
-  useEffect(() => {
-    let alive = true;
-    const t = setTimeout(() => {
-      ipc.searchWorkspaceFiles(query, 30)
-        .then((h) => { if (alive) { setHits(h); setSelected(0); } })
-        .catch(() => { if (alive) setHits([]); });
-    }, 120);
-    return () => { alive = false; clearTimeout(t); };
-  }, [query, activeRoot]);
-
-  useEffect(() => { activeRef.current?.scrollIntoView({ block: 'nearest' }); }, [selected]);
-
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setSelected((i) => Math.min(i + 1, hits.length - 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setSelected((i) => Math.max(i - 1, 0)); }
-    else if (e.key === 'Enter') { e.preventDefault(); if (hits[selected]) onPick(hits[selected].path); }
-    else if (e.key === 'Escape') { e.preventDefault(); onCancel?.(); }
-  };
-
-  return (
-    <div style={styles.finder}>
-      <div style={styles.finderRow}>
-        <MagnifyingGlass size={14} color={theme.faint} style={{ flexShrink: 0 }} />
-        <input
-          autoFocus
-          type="text"
-          value={query}
-          placeholder="Open a file…"
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onKeyDown}
-          style={{ ...fieldStyles.input, width: '100%' }}
-        />
-      </div>
-      <div style={styles.hits}>
-        {hits.length === 0 ? (
-          <div style={styles.hint}>No files match.</div>
-        ) : hits.map((h, i) => (
-          <button
-            key={h.path}
-            ref={i === selected ? activeRef : undefined}
-            className={i === selected ? 'menu-item is-active' : 'menu-item'}
-            onClick={() => onPick(h.path)}
-            onMouseEnter={() => setSelected(i)}
-            title={h.path}
-          >
-            <span style={styles.hitName}>{h.name}</span>
-            <span style={styles.hitPath}>{h.path}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const basename = (p: string) => p.split('/').pop() ?? p;
-/** The folder part, empty at the root — the header pairs it with the name. */
+/** The folder part, empty at the root. All the header shows, since the tab
+ * itself is named after the file. */
 const dirname = (p: string) => p.slice(0, p.lastIndexOf('/') + 1);
 
 /** Resolve a document-relative link against the folder of the file showing it,
@@ -116,7 +44,6 @@ export default function FilePanel({ file: ref, onOpenPath }: FilePanelProps) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showSource, setShowSource] = useState(false);
-  const [finding, setFinding] = useState(false);
 
   const path = ref?.path ?? null;
   const root = ref?.root ?? null;
@@ -139,8 +66,6 @@ export default function FilePanel({ file: ref, onOpenPath }: FilePanelProps) {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [path, root]);
-
-  const pick = (p: string) => { setFinding(false); onOpenPath(p); };
 
   // Links inside a rendered document. The webview *is* the app, so letting an
   // <a> navigate replaces Micelio with the page — every link has to be handled
@@ -195,44 +120,46 @@ export default function FilePanel({ file: ref, onOpenPath }: FilePanelProps) {
     [file?.content, components],
   );
 
-  if (!path) return <div style={styles.panel}><Finder onPick={pick} /></div>;
+  // Nothing to show yet. Browsing belongs to the Files tab now, so this points
+  // there rather than growing a second picker of its own.
+  if (!path) {
+    return (
+      <div style={styles.panel}>
+        <div style={styles.hint}>Pick a file in the Files tab to read it here.</div>
+      </div>
+    );
+  }
 
   const isMarkdown = file?.language === 'markdown';
   // An SVG both renders and reads, so the toggle isn't markdown's alone: it's
   // offered whenever there's a rendered form *and* source behind it.
   const hasSource = (isMarkdown || !!file?.image) && !!file?.content;
+  const dir = dirname(file?.path ?? path);
 
   return (
     <div style={styles.panel}>
-      <div style={styles.head}>
-        <span style={styles.name}>{file?.name ?? basename(path)}</span>
-        {/* Only the directory: repeating the filename next to itself would eat
-            the width a narrow dock doesn't have. RTL clipping keeps the tail —
-            the folder the file actually sits in — when even that is too long. */}
-        <span style={styles.path} title={file?.path ?? path}>{dirname(file?.path ?? path)}</span>
-        {hasSource && (
-          <button
-            className="btn btn-sm btn-ghost"
-            onClick={() => setShowSource((v) => !v)}
-            title={showSource ? 'Show the rendered file' : 'Show the source'}
-          >
-            {showSource ? 'Rendered' : 'Source'}
-          </button>
-        )}
-        <button
-          className="btn btn-icon-sm btn-ghost"
-          onClick={() => setFinding((v) => !v)}
-          title="Open another file"
-          aria-label="Open another file"
-        >
-          <MagnifyingGlass size={14} />
-        </button>
-      </div>
+      {/* Only the directory. The tab is already named after the file, so
+          repeating the filename here said the same thing twice and ate the
+          width a narrow dock doesn't have. RTL clipping keeps the tail — the
+          folder the file actually sits in — when even that is too long. A file
+          at the root has no directory, and then there's nothing to draw. */}
+      {(dir || hasSource) && (
+        <div style={styles.head}>
+          <span style={styles.path} title={file?.path ?? path}>{dir}</span>
+          {hasSource && (
+            <button
+              className="btn btn-sm btn-ghost"
+              onClick={() => setShowSource((v) => !v)}
+              title={showSource ? 'Show the rendered file' : 'Show the source'}
+            >
+              {showSource ? 'Rendered' : 'Source'}
+            </button>
+          )}
+        </div>
+      )}
 
       <div style={styles.body}>
-        {finding ? (
-          <Finder onPick={pick} onCancel={() => setFinding(false)} />
-        ) : loading ? (
+        {loading ? (
           <div style={styles.hint}>Loading…</div>
         ) : error ? (
           <div style={styles.error}>{error}</div>

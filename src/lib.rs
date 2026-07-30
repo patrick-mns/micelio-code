@@ -358,6 +358,7 @@ pub fn run() {
             commands::workspace::set_active_root,
             commands::workspace::search_workspace_files,
             commands::workspace::read_workspace_file,
+            commands::workspace::list_workspace_dir,
             commands::workspace::list_all_workspaces_with_sessions,
             commands::workspace::create_workspace,
             commands::workspace::switch_workspace,

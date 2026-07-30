@@ -15,6 +15,7 @@ import OpenInButton from '@/components/OpenInButton';
 import { BgTasksPanel } from '@/components/BgTasksChip';
 import { ReviewPanel } from '@/components/ReviewChip';
 import FilePanel from '@/components/FilePanel';
+import FilesPanel from '@/components/FilesPanel';
 import TerminalPanel from '@/components/TerminalPanel';
 import AnimatedPanel from '@/components/AnimatedPanel';
 import Toasts from '@/components/Toasts';
@@ -64,7 +65,7 @@ export default function App() {
     activeTab, setActiveTab, showSettings, setShowSettings,
     settings, setSettings, sidebarOpen, setSidebarOpen, scanning,
     update, setUpdateState, checkForUpdates,
-    setActiveDockTab, toggleDock, closeDockTab, openDockTab, openFileInTab,
+    setActiveDockTab, toggleDock, closeDockTab, openDockTab, openFileInTab, openFile,
     dropDock,
   } = useStore();
 
@@ -267,6 +268,11 @@ const { t } = useI18n();
             onRevertAll={gitRevertAll}
           />
         );
+      case 'files':
+        // The tree opens through `openFile`, not `openFileInTab`: it isn't
+        // pointing *this* tab anywhere, it's asking for a File tab to hold what
+        // was clicked — reusing the one already showing a file if there is one.
+        return <FilesPanel onOpenPath={(path) => openFile(path)} />;
       case 'file':
         return (
           <FilePanel

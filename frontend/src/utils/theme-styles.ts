@@ -230,6 +230,33 @@ export const panelDockStyles: Record<string, CSSProperties> = {
   },
 };
 
+// ── FilesPanel.tsx ───────────────────────────────────────────────────────
+// The dock draws the card; this is the filter row plus the tree under it.
+export const filesPanelStyles: Record<string, CSSProperties> = {
+  panel: { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  searchRow: {
+    display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+    margin: '0 8px 6px', padding: '0 10px', height: 30,
+    background: theme.bgDeep, border: `1px solid ${theme.border}`,
+    borderRadius: 'var(--radius-md)',
+  },
+  list: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 8px 8px' },
+  // Ellipsis rather than wrapping: a tree row is one line, and a wrapped name
+  // would break the alignment the indentation depends on to read as nesting.
+  name: {
+    color: theme.text, fontSize: 12.5,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  // Only shown for search results, where two files can share a name.
+  dir: {
+    marginLeft: 'auto', paddingLeft: 8, flexShrink: 1, minWidth: 0,
+    color: theme.faint, fontSize: 11,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'rtl',
+  },
+  hint: { padding: '12px 6px', color: theme.faint, fontSize: 12 },
+  error: { padding: '12px 6px', color: theme.error, fontSize: 12 },
+};
+
 // ── TerminalPanel.tsx ────────────────────────────────────────────────────
 // Same shape as the file viewer: the dock draws the card, this is just the
 // terminal's own surface inside it.
@@ -304,17 +331,6 @@ export const filePanelStyles: Record<string, CSSProperties> = {
     padding: '6px 10px', marginBottom: 6,
     background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 'var(--radius-md)',
     color: theme.dim, fontSize: 11.5,
-  },
-  // Quick open — the whole body when no file is showing, a dropdown over it
-  // once one is.
-  finder: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6, padding: '4px 4px 0' },
-  finderRow: { display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 },
-  hits: { flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 },
-  hitName: { color: theme.text, fontSize: 12.5, flexShrink: 0 },
-  hitPath: {
-    color: theme.faint, fontSize: 11,
-    fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   },
 };
 

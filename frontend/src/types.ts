@@ -403,9 +403,19 @@ export interface SkillDetail {
 // ── Dock/tab system (frontend-only; see store/panelSlice.ts) ──────────────
 /** A view a dock can host. Not bound to a dock — the same view can be opened
  * in the bottom or the right one. */
-export type PanelTabType = 'bg-tasks' | 'review' | 'file' | 'terminal';
+export type PanelTabType = 'bg-tasks' | 'review' | 'file' | 'files' | 'terminal';
 
-export type PanelIcon = 'terminal' | 'activity' | 'check' | 'list' | 'file';
+export type PanelIcon = 'terminal' | 'activity' | 'check' | 'list' | 'file' | 'folder';
+
+/** One row of a directory listing, for the Files tree. One level at a time —
+ * the tree expands lazily, so a folder nobody opened is never read. */
+export interface DirEntry {
+  name: string;
+  /** Workspace-relative, forward slashes — what `openFile` and the next expand
+   * both take. */
+  path: string;
+  is_dir: boolean;
+}
 
 /** What a dock offers in its "+": the *kind* of thing, not an open one.
  * A `multi` view can be opened more than once, each tab being its own

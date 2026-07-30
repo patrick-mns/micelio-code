@@ -29,6 +29,10 @@ export type DockId = 'bottom' | 'right';
 export const VIEW_CATALOG: PanelView[] = [
   { type: 'bg-tasks', label: 'Background', icon: 'activity' },
   { type: 'review', label: 'Review', icon: 'check' },
+  // Browsing and reading are separate views: Files is the tree, and clicking a
+  // row in it opens a File. One of each is enough for the tree — it shows the
+  // whole workspace — where File is per-file and stacks.
+  { type: 'files', label: 'Files', icon: 'folder' },
   { type: 'file', label: 'File', icon: 'file', multi: true },
   { type: 'terminal', label: 'Terminal', icon: 'terminal', multi: true },
 ];

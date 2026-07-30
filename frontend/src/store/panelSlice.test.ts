@@ -129,6 +129,30 @@ describe('tab order', () => {
   });
 });
 
+describe('Files and File are different views', () => {
+  const FILES = view('files');
+
+  it('keeps one tree, however many times it is opened', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', FILES);
+    s.getState().openDockTab('right', FILES);
+
+    expect(ids(dock(s).rightTabs)).toEqual(['files']);
+  });
+
+  it('opens a viewer beside the tree rather than taking it over', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', FILES);
+
+    // The two type names differ by one character, so this pins the thing that
+    // would break quietly: `openFile` reusing the tree as if it were a viewer.
+    s.getState().openFile('README.md');
+
+    expect(ids(dock(s).rightTabs)).toEqual(['files', 'file:1']);
+    expect(dock(s).rightTabs[1].params?.path).toBe('README.md');
+  });
+});
+
 describe('openFile', () => {
   it('opens a File tab when there is none, pointed at the path', () => {
     const s = makeStore();
