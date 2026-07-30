@@ -4,7 +4,7 @@ import { ChatCircle, FileText, Eye, MagnifyingGlass, Check, CaretRight, CaretDow
 import { ipc } from '@/ipc';
 import { useStore } from '@/store';
 import { theme } from '@/theme';
-import type { ModelOption, ModelRole } from '@/types';
+import type { ModelOption, ModelRole, SessionModels } from '@/types';
 
 interface RoleMeta {
   label: string;
@@ -87,7 +87,7 @@ export default function ModelRolesSelector() {
     // If the per-session record hasn't been loaded into the store yet (e.g.
     // the user opens the picker faster than the startup async loop finishes),
     // fetch it lazily now so we always show the correct pin.
-    let pinned = sessionModels[currentSession];
+    let pinned: SessionModels | undefined = sessionModels[currentSession];
     if (pinned === undefined) {
       try {
         pinned = await ipc.getSessionModels(currentSession);
