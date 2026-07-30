@@ -194,17 +194,44 @@ describe('Files and File are different views', () => {
     expect(ids(dock(s).rightTabs)).toEqual(['file:1']);
   });
 
-  it('still reuses a File tab the user put alongside the tree', () => {
+  it('will not reuse a viewer that shares the tree\'s dock', () => {
     const s = makeStore();
     s.getState().openDockTab('right', FILES);
     const held = s.getState().openDockTab('right', FILE);
 
     s.getState().openFile('README.md');
 
-    // Steering only applies to creating a tab. An arrangement that already
-    // exists is the user's, and following a link navigates it in place.
-    expect(ids(dock(s).rightTabs)).toEqual(['files', held]);
-    expect(dock(s).bottomTabs).toEqual([]);
+    // Navigating `held` would have hidden the tree just as surely as creating a
+    // tab beside it. One extra viewer is the smaller cost.
+    expect(dock(s).rightTabs.find((t) => t.id === held)?.params).toBeUndefined();
+    expect(ids(dock(s).bottomTabs)).toEqual(['file:2']);
+  });
+
+  it('reuses the viewer away from the tree after the tree moves in on one', () => {
+    const s = makeStore();
+    // A viewer at the bottom, from before the tree existed.
+    s.getState().openFile('a.md');
+    expect(ids(dock(s).rightTabs)).toEqual(['file:1']);
+    // Now the tree opens on the right, where that viewer is.
+    s.getState().openDockTab('right', FILES);
+
+    s.getState().openFile('b.md');
+
+    // The share wasn't arranged by anyone — it happened because the tree moved
+    // in. Clicking must still leave the tree on screen.
+    expect(ids(dock(s).bottomTabs)).toEqual(['file:2']);
+    expect(dock(s).bottomTabs[0].params?.path).toBe('b.md');
+  });
+
+  it('shows a file already open outside the tree rather than opening it twice', () => {
+    const s = makeStore();
+    s.getState().openDockTab('right', FILES);
+    s.getState().openFile('README.md');
+
+    s.getState().openFile('README.md');
+
+    expect(ids(dock(s).bottomTabs)).toEqual(['file:1']);
+    expect(dock(s).activeBottomTab).toBe('file:1');
   });
 
   it('keeps the right dock as the default when no tree is open', () => {
