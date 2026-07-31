@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { gitContextStyles } from '@/utils/theme-styles';
-import { CaretUpDown, FolderOpen, GitBranch, Check } from '@phosphor-icons/react';
+import { CaretUpDown, FolderOpen, GitBranch, Check, Plus } from '@phosphor-icons/react';
 import { ipc } from '@/ipc';
 import { useStore } from '@/store';
 import { theme } from '@/theme';
@@ -131,6 +131,15 @@ export default function GitContext({ onPickWorkspace, refreshTick = 0 }: GitCont
           )}
         </div>
       )}
+
+      <button
+        className="btn btn-ghost"
+        style={{ ...gitContextStyles.folderBtn, padding: '0 6px' }}
+        onClick={onPickWorkspace}
+        title="Add folder to workspace"
+      >
+        <Plus size={14} />
+      </button>
 
       {gitInfo && gitInfo.branch !== 'no git' && (
         <span style={gitContextStyles.branch}>
