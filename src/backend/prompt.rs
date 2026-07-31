@@ -156,6 +156,31 @@ When a tool fails (returns an error):
     prompt
 }
 
+/// Build the "## Workspace" section listing every folder in the current
+/// workspace and marking which one is active (the root tools currently
+/// operate on). Returns `None` when there's no workspace or only one folder
+/// with nothing to disambiguate.
+pub fn workspace_context_section(
+    folders: &[std::path::PathBuf],
+    active_root: &std::path::Path,
+) -> Option<String> {
+    if folders.is_empty() {
+        return None;
+    }
+    let mut section = String::from("\n\n## Workspace\nThis workspace has the following folder(s):\n");
+    for f in folders {
+        let marker = if f == active_root { " (active — tools operate here)" } else { "" };
+        section.push_str(&format!("- {}{}\n", f.display(), marker));
+    }
+    if folders.len() > 1 {
+        section.push_str(
+            "The user can switch the active folder from the UI; ask them to switch if a task \
+targets a different folder than the one currently active.",
+        );
+    }
+    Some(section)
+}
+
 /// Injected after a tool fails repeatedly (but before giving up) to force the
 /// model to diagnose the root cause and change approach instead of retrying
 /// the same failing call — a lightweight Reflexion-style self-correction.

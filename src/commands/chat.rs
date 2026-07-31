@@ -146,7 +146,20 @@ pub async fn send_message(
         .unwrap_or_default();
 
     let provider = llm::provider_for_model(&model);
-    let system = crate::backend::prompt::system_prompt();
+    let mut system = crate::backend::prompt::system_prompt();
+    {
+        let workspace_root = state.workspace_root.lock().unwrap().clone();
+        let folders = state
+            .current_workspace
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|w| w.folders.clone())
+            .unwrap_or_default();
+        if let Some(section) = crate::backend::prompt::workspace_context_section(&folders, &workspace_root) {
+            system.push_str(&section);
+        }
+    }
     let mut full = vec![Message::system(&system)];
     full.extend(messages);
 
@@ -219,6 +232,18 @@ pub async fn start_chat_stream(app: AppHandle, content: String) -> Result<String
         };
 
         let mut system = crate::backend::prompt::system_prompt();
+        {
+            let folders = state
+                .current_workspace
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|w| w.folders.clone())
+                .unwrap_or_default();
+            if let Some(section) = crate::backend::prompt::workspace_context_section(&folders, &workspace_root) {
+                system.push_str(&section);
+            }
+        }
         // Chat mode: no tools are sent to the model. Tell it so it doesn't
         // promise actions it can't take and stays purely conversational.
         if mode == crate::backend::review::AgentMode::Chat {

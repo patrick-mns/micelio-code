@@ -156,25 +156,65 @@ fn role_provider(model: &str) -> String {
 }
 
 /// Current model assignment for every role, in display order.
+/// If `model` isn't served by any active provider anymore (renamed, provider
+/// disabled/removed), swap it for the first catalog entry that fits the role
+/// (vision role requires `vision: true`) and persist the swap, so a stale
+/// model name from a previous provider config doesn't linger as UNAVAILABLE
+/// forever. Returns the (possibly replaced) model and its provider label.
+fn resolve_role_model(
+    state: &State<'_, AppState>,
+    role: &str,
+    model: String,
+) -> (String, String) {
+    let provider = role_provider(&model);
+    if !provider.is_empty() || model.is_empty() {
+        return (model, provider);
+    }
+    let catalog = llm::catalog();
+    let fallback = catalog.into_iter().find(|m| role != "vision" || m.vision);
+    match fallback {
+        Some(m) => {
+            match role {
+                "chat" => {
+                    config::save_last_model(&m.name);
+                    state.set_chat_model(m.name.clone());
+                }
+                "summarize" => {
+                    config::save_last_summarize_model(&m.name);
+                    state.set_summarize_model(m.name.clone());
+                }
+                "vision" => {
+                    config::save_vision_model(&m.name);
+                    state.set_vision_model(m.name.clone());
+                }
+                _ => {}
+            }
+            (m.name, m.provider_label)
+        }
+        None => (model, provider),
+    }
+}
+
 #[tauri::command]
 pub async fn get_model_roles(state: State<'_, AppState>) -> Result<Vec<ModelRole>, String> {
-    let chat = state.chat_model();
-    let summarize = state.summarize_model();
-    let vision = state.vision_model();
+    let (chat, chat_provider) = resolve_role_model(&state, "chat", state.chat_model());
+    let (summarize, summarize_provider) =
+        resolve_role_model(&state, "summarize", state.summarize_model());
+    let (vision, vision_provider) = resolve_role_model(&state, "vision", state.vision_model());
     Ok(vec![
         ModelRole {
             role: "chat".into(),
-            provider: role_provider(&chat),
+            provider: chat_provider,
             model: chat,
         },
         ModelRole {
             role: "summarize".into(),
-            provider: role_provider(&summarize),
+            provider: summarize_provider,
             model: summarize,
         },
         ModelRole {
             role: "vision".into(),
-            provider: role_provider(&vision),
+            provider: vision_provider,
             model: vision,
         },
     ])
