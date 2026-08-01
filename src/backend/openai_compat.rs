@@ -29,7 +29,7 @@ fn ctx_cache() -> &'static Mutex<HashMap<String, usize>> {
 /// reasoning model's `reasoning_content` pass eats the whole budget and
 /// leaves nothing for the actual `content`, ending the turn empty. Sending an
 /// explicit, generous cap gives the model room to think AND answer.
-const MAX_COMPLETION_TOKENS_CAP: usize = 8_192;
+const MAX_COMPLETION_TOKENS_CAP: usize = 16_384;
 
 /// `max_tokens` to send: a quarter of the model's known context window,
 /// capped by [`MAX_COMPLETION_TOKENS_CAP`] and floored so tiny-context models

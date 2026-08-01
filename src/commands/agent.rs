@@ -17,7 +17,7 @@ use tauri::{AppHandle, Emitter, Manager};
 /// emitting no tool call. This only bounds a pathological model that never
 /// stops calling tools. Set high enough that legitimate multi-step tasks never
 /// hit it.
-const MAX_TOOL_ROUNDS: usize = 50;
+const MAX_TOOL_ROUNDS: usize = 100;
 /// Consecutive tool failures that force the loop to stop and report.
 const MAX_CONSECUTIVE_ERRORS: u32 = 3;
 /// Consecutive failures after which a Reflexion nudge is injected (before the
@@ -27,6 +27,11 @@ const REFLEXION_AFTER_ERRORS: u32 = 2;
 /// loop. Cheaper and more reliable than a low round cap for catching the model
 /// repeating itself.
 const MAX_IDENTICAL_CALLS: u32 = 3;
+/// Transient network/gateway failures (stream failed to open, or dropped
+/// mid-flight) to retry before giving up on the whole turn. Flaky
+/// OpenAI-compatible gateways (rate limits, connection resets) are common
+/// enough that failing the entire turn on the first hiccup is too brittle.
+const MAX_STREAM_ERROR_RETRIES: u8 = 2;
 /// Max characters of a single tool result fed back into context. Large reads /
 /// command output are truncated (head + tail) so one call can't blow the
 /// window. Tuned for small local models.
@@ -68,11 +73,19 @@ pub fn run_agent_loop(
     // never be satisfied there — suppress the tool-nudge retry.
     let needs_tool = needs_tool && mode != AgentMode::Chat;
     let mut did_any_tool = false;
+    // True as long as every tool called this turn was loop bookkeeping
+    // (schedule_wakeup/stop_loop). Those already say what happened in their
+    // own tool result — a /loop tick that's otherwise silent shouldn't be
+    // forced through request_summary/ensure_reply's "couldn't generate a
+    // response" fallback just because it had nothing else to say.
+    let mut only_loop_control_tools = true;
     let mut retried_for_tool = false;
     // One retry when the model returns a completely empty turn, before we fall
     // back to a canned reply — an empty completion is usually transient.
-    let mut retried_empty = false;
+    let mut empty_retries = 0u8;
+    const MAX_EMPTY_RETRIES: u8 = 3;
     let mut consecutive_errors: u32 = 0;
+    let mut stream_error_retries: u8 = 0;
     // Stagnation guard: signature of the previous tool call and how many times
     // it has repeated back-to-back.
     let mut last_call_sig: Option<String> = None;
@@ -208,7 +221,7 @@ pub fn run_agent_loop(
         }
     };
 
-    for _ in 0..MAX_TOOL_ROUNDS {
+    'rounds: for _ in 0..MAX_TOOL_ROUNDS {
         // User hit Stop between rounds — persist what we have and bail.
         if cancel.load(Ordering::SeqCst) {
             finish(&app, &history, &thinking_acc, &tool_summaries, "", true);
@@ -220,6 +233,15 @@ pub fn run_agent_loop(
         let mut stream = match provider.start_stream(&model, &history, &tools_advert) {
             Ok(s) => s,
             Err(e) => {
+                // Transient gateway hiccup (rate limit, connection reset): retry
+                // a couple of times before giving up on the whole turn.
+                if stream_error_retries < MAX_STREAM_ERROR_RETRIES {
+                    stream_error_retries += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        500 * stream_error_retries as u64,
+                    ));
+                    continue;
+                }
                 // Persist anything earlier rounds accumulated before surfacing
                 // the error, so a failure to open the stream doesn't drop the
                 // turn's thinking/tool trace on reload.
@@ -331,6 +353,21 @@ pub fn run_agent_loop(
                     }
                 }
                 Err(e) => {
+                    // Mid-stream drop with nothing produced yet is the same
+                    // transient case as a failed stream open — retry rather than
+                    // failing the turn. Once any content/tool call has streamed,
+                    // retrying would replay or duplicate it, so only retry a
+                    // clean, empty-handed failure.
+                    if content_acc.is_empty()
+                        && tool_calls.is_empty()
+                        && stream_error_retries < MAX_STREAM_ERROR_RETRIES
+                    {
+                        stream_error_retries += 1;
+                        std::thread::sleep(std::time::Duration::from_millis(
+                            500 * stream_error_retries as u64,
+                        ));
+                        continue 'rounds;
+                    }
                     // A mid-stream failure (e.g. the network dropped) must not
                     // throw away what already streamed — persist it, then report.
                     history.push(Message::assistant(content_acc.clone()));
@@ -350,6 +387,11 @@ pub fn run_agent_loop(
                 }
             }
         }
+
+        // A round that streamed successfully clears the transient-failure
+        // budget, so a flaky gateway gets fresh retries for the next hiccup
+        // instead of exhausting them across an otherwise-healthy long turn.
+        stream_error_retries = 0;
 
         // ---- model called one or more tools: execute all, then re-prompt ----
         if !tool_calls.is_empty() {
@@ -384,6 +426,15 @@ pub fn run_agent_loop(
                     true,
                 );
                 return;
+            }
+
+            if tool_calls.iter().any(|c| {
+                !matches!(
+                    tools::normalize_tool_name(&c.name),
+                    "schedule_wakeup" | "stop_loop"
+                )
+            }) {
+                only_loop_control_tools = false;
             }
 
             let (summaries, any_error) = run_tool_calls(
@@ -480,9 +531,9 @@ pub fn run_agent_loop(
         // handled above): the model returned nothing at all. Nudge it once to
         // answer before giving up — an empty completion is usually a transient
         // glitch rather than the model deciding it's done.
-        if content.is_empty() && !did_any_tool && !retried_empty {
+        if content.is_empty() && !did_any_tool && empty_retries < MAX_EMPTY_RETRIES {
             history.push(Message::system(prompt::EMPTY_RESPONSE_RETRY));
-            retried_empty = true;
+            empty_retries += 1;
             continue;
         }
 
@@ -497,26 +548,34 @@ pub fn run_agent_loop(
         // summary (when tools ran) and, failing that, fall back to a visible
         // reply so the user always gets something back.
         let final_content = if content.is_empty() {
-            let summary = if did_any_tool {
-                request_summary(
-                    &app,
-                    provider.as_ref(),
-                    &model,
-                    &mut history,
-                    &session_id_ref,
-                )
-            } else {
+            if did_any_tool && only_loop_control_tools {
+                // The only thing this turn did was schedule_wakeup/stop_loop —
+                // its own tool result already narrates what happened, so an
+                // otherwise-silent /loop tick isn't a failure worth nagging the
+                // model about or showing a scary fallback for.
                 String::new()
-            };
-            let reply = ensure_reply(&app, &session_id_ref, summary);
-            // The turn's own assistant message above was pushed empty (that's
-            // literally what the model said); patch it to whatever we end up
-            // showing so the persisted transcript matches the live stream
-            // instead of leaving a blank turn behind for the next round.
-            if let Some(msg) = history.get_mut(assistant_msg_idx) {
-                msg.content = reply.clone();
+            } else {
+                let summary = if did_any_tool {
+                    request_summary(
+                        &app,
+                        provider.as_ref(),
+                        &model,
+                        &mut history,
+                        &session_id_ref,
+                    )
+                } else {
+                    String::new()
+                };
+                let reply = ensure_reply(&app, &session_id_ref, summary);
+                // The turn's own assistant message above was pushed empty (that's
+                // literally what the model said); patch it to whatever we end up
+                // showing so the persisted transcript matches the live stream
+                // instead of leaving a blank turn behind for the next round.
+                if let Some(msg) = history.get_mut(assistant_msg_idx) {
+                    msg.content = reply.clone();
+                }
+                reply
             }
-            reply
         } else {
             content
         };
