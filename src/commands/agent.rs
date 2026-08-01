@@ -88,6 +88,10 @@ pub fn run_agent_loop(
     // failure (finish_reason == "length"): see the truncation check below.
     let mut truncated_retries = 0u8;
     const MAX_TRUNCATED_RETRIES: u8 = 3;
+    // Set when the empty-reply retry budget above is exhausted specifically
+    // because of truncation, so the final fallback message can name the
+    // actual cause instead of a generic apology.
+    let mut exhausted_truncated = false;
     let mut consecutive_errors: u32 = 0;
     let mut stream_error_retries: u8 = 0;
     // Stagnation guard: signature of the previous tool call and how many times
@@ -442,7 +446,7 @@ pub fn run_agent_loop(
                     &history,
                     &thinking_acc,
                     &tool_summaries,
-                    &ensure_reply(&app, &session_id_ref, summary),
+                    &ensure_reply(&app, &session_id_ref, summary, EMPTY_REPLY_FALLBACK),
                     true,
                 );
                 return;
@@ -493,7 +497,7 @@ pub fn run_agent_loop(
                     &history,
                     &thinking_acc,
                     &tool_summaries,
-                    &ensure_reply(&app, &session_id_ref, summary),
+                    &ensure_reply(&app, &session_id_ref, summary, EMPTY_REPLY_FALLBACK),
                     true,
                 );
                 return;
@@ -536,7 +540,7 @@ pub fn run_agent_loop(
                     &history,
                     &thinking_acc,
                     &tool_summaries,
-                    &ensure_reply(&app, &session_id_ref, summary),
+                    &ensure_reply(&app, &session_id_ref, summary, EMPTY_REPLY_FALLBACK),
                     true,
                 );
                 return;
@@ -568,6 +572,9 @@ pub fn run_agent_loop(
                 empty_retries += 1;
                 continue;
             }
+            // Every retry is exhausted: remember why, so the fallback shown
+            // to the user names the actual cause instead of a generic apology.
+            exhausted_truncated = truncated;
         }
 
         let assistant_msg_idx = history.len();
@@ -599,7 +606,12 @@ pub fn run_agent_loop(
                 } else {
                     String::new()
                 };
-                let reply = ensure_reply(&app, &session_id_ref, summary);
+                let fallback = if exhausted_truncated {
+                    EMPTY_REPLY_FALLBACK_TRUNCATED
+                } else {
+                    EMPTY_REPLY_FALLBACK
+                };
+                let reply = ensure_reply(&app, &session_id_ref, summary, fallback);
                 // The turn's own assistant message above was pushed empty (that's
                 // literally what the model said); patch it to whatever we end up
                 // showing so the persisted transcript matches the live stream
@@ -636,6 +648,7 @@ pub fn run_agent_loop(
             &mut history,
             &session_id_ref,
         ),
+        EMPTY_REPLY_FALLBACK,
     );
     finish(
         &app,
@@ -683,20 +696,32 @@ fn force_stop_summary(
 }
 
 /// Shown to the user when the model produced no response at all and every
-/// attempt to coax one out failed. Better an honest note than a blank turn.
+/// attempt to coax one out failed, for reasons other than a known truncation
+/// (see [`EMPTY_REPLY_FALLBACK_TRUNCATED`]) — a generic honest note beats a
+/// blank turn.
 const EMPTY_REPLY_FALLBACK: &str =
-    "I wasn't able to generate a response. Please try again or rephrase your request.";
+    "The model didn't return a response after a few attempts. This can happen with a flaky \
+provider connection — try again, or switch models if it keeps happening.";
+
+/// Shown instead of [`EMPTY_REPLY_FALLBACK`] when every retry was cut off by
+/// the token budget (`finish_reason == "length"`) with no answer at all —
+/// names the actual cause instead of a generic "please retry", since retrying
+/// the same way is unlikely to help.
+const EMPTY_REPLY_FALLBACK_TRUNCATED: &str =
+    "The model kept running out of its response budget on internal reasoning and never reached \
+an answer, even after retrying with a larger budget. Try a shorter or simpler request, switch to \
+a different model, or check the provider's output token limit.";
 
 /// Guarantee the turn ends with something visible: if `content` is empty, emit
-/// the fallback as stream content (so the live view shows it, matching what
+/// `fallback` as stream content (so the live view shows it, matching what
 /// `finish` will persist) and return it. Otherwise pass `content` through.
-fn ensure_reply(app: &AppHandle, session_id: &str, content: String) -> String {
+fn ensure_reply(app: &AppHandle, session_id: &str, content: String, fallback: &str) -> String {
     if content.trim().is_empty() {
         let _ = app.emit(
             "stream_content",
-            serde_json::json!({ "session_id": session_id, "delta": EMPTY_REPLY_FALLBACK }),
+            serde_json::json!({ "session_id": session_id, "delta": fallback }),
         );
-        EMPTY_REPLY_FALLBACK.to_string()
+        fallback.to_string()
     } else {
         content
     }
