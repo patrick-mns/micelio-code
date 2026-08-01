@@ -161,11 +161,7 @@ fn role_provider(model: &str) -> String {
 /// (vision role requires `vision: true`) and persist the swap, so a stale
 /// model name from a previous provider config doesn't linger as UNAVAILABLE
 /// forever. Returns the (possibly replaced) model and its provider label.
-fn resolve_role_model(
-    state: &State<'_, AppState>,
-    role: &str,
-    model: String,
-) -> (String, String) {
+fn resolve_role_model(state: &State<'_, AppState>, role: &str, model: String) -> (String, String) {
     let provider = role_provider(&model);
     if !provider.is_empty() || model.is_empty() {
         return (model, provider);

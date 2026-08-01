@@ -167,9 +167,14 @@ pub fn workspace_context_section(
     if folders.is_empty() {
         return None;
     }
-    let mut section = String::from("\n\n## Workspace\nThis workspace has the following folder(s):\n");
+    let mut section =
+        String::from("\n\n## Workspace\nThis workspace has the following folder(s):\n");
     for f in folders {
-        let marker = if f == active_root { " (active — tools operate here)" } else { "" };
+        let marker = if f == active_root {
+            " (active — tools operate here)"
+        } else {
+            ""
+        };
         section.push_str(&format!("- {}{}\n", f.display(), marker));
     }
     if folders.len() > 1 {

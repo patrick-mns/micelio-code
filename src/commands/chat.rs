@@ -156,7 +156,9 @@ pub async fn send_message(
             .as_ref()
             .map(|w| w.folders.clone())
             .unwrap_or_default();
-        if let Some(section) = crate::backend::prompt::workspace_context_section(&folders, &workspace_root) {
+        if let Some(section) =
+            crate::backend::prompt::workspace_context_section(&folders, &workspace_root)
+        {
             system.push_str(&section);
         }
     }
@@ -240,7 +242,9 @@ pub async fn start_chat_stream(app: AppHandle, content: String) -> Result<String
                 .as_ref()
                 .map(|w| w.folders.clone())
                 .unwrap_or_default();
-            if let Some(section) = crate::backend::prompt::workspace_context_section(&folders, &workspace_root) {
+            if let Some(section) =
+                crate::backend::prompt::workspace_context_section(&folders, &workspace_root)
+            {
                 system.push_str(&section);
             }
         }
