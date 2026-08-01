@@ -412,6 +412,24 @@ pub fn run_agent_loop(
             }
         }
 
+        // The connection closed without ever saying why (no `[DONE]`, no
+        // `finish_reason`) and produced nothing — a dropped connection
+        // wearing a normal completion's clothes (see `openai_compat.rs`).
+        // Retry it exactly like the stream-open/mid-stream error cases below:
+        // a fresh attempt, not a nudge, since there's nothing to nudge —
+        // the model never actually finished.
+        if finish_reason.as_deref() == Some("dropped")
+            && content_acc.is_empty()
+            && tool_calls.is_empty()
+            && stream_error_retries < MAX_STREAM_ERROR_RETRIES
+        {
+            stream_error_retries += 1;
+            std::thread::sleep(std::time::Duration::from_millis(
+                500 * stream_error_retries as u64,
+            ));
+            continue 'rounds;
+        }
+
         // A round that streamed successfully clears the transient-failure
         // budget, so a flaky gateway gets fresh retries for the next hiccup
         // instead of exhausting them across an otherwise-healthy long turn.

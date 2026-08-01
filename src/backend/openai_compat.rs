@@ -300,6 +300,14 @@ impl Provider for OpenAiCompatProvider {
             let reader = std::io::BufReader::new(resp.into_reader());
             let mut tool_slots: Vec<(String, String, Option<String>)> = Vec::new();
             let mut raw_resp = String::new();
+            // Whether the stream ended the way a well-behaved SSE response
+            // should: an explicit `[DONE]` marker or a `finish_reason` on the
+            // last chunk. If neither ever arrives — the read errors out or the
+            // connection just closes mid-thought — that's a dropped
+            // connection, not the model deciding to say nothing, even though
+            // it looks identical to the caller (a clean `Done` with empty
+            // content) unless we flag it.
+            let mut saw_terminator = false;
 
             for line in reader.lines() {
                 let Ok(line) = line else { break };
@@ -310,6 +318,7 @@ impl Provider for OpenAiCompatProvider {
                 };
                 let data = data.trim();
                 if data == "[DONE]" {
+                    saw_terminator = true;
                     break;
                 }
                 let Ok(json) = serde_json::from_str::<serde_json::Value>(data) else {
@@ -340,6 +349,7 @@ impl Provider for OpenAiCompatProvider {
                 let choice = &json["choices"][0];
                 if let Some(r) = choice["finish_reason"].as_str() {
                     if !r.is_empty() {
+                        saw_terminator = true;
                         let _ = tx.send(StreamEvent::FinishReason(r.to_string()));
                     }
                 }
@@ -384,6 +394,7 @@ impl Provider for OpenAiCompatProvider {
             }
 
             // Flush any accumulated tool calls.
+            let had_tool_call = tool_slots.iter().any(|(name, ..)| !name.is_empty());
             for (name, arguments, id) in &tool_slots {
                 if !name.is_empty() {
                     let _ = tx.send(StreamEvent::ToolCall(ToolCall {
@@ -392,6 +403,15 @@ impl Provider for OpenAiCompatProvider {
                         id: id.clone(),
                     }));
                 }
+            }
+
+            // The connection closed (or errored) without ever telling us why —
+            // no `[DONE]`, no `finish_reason`. If nothing useful came out of
+            // it either, this was a dropped connection wearing a normal
+            // completion's clothes; flag it so the caller retries like a
+            // network error instead of treating it as the model's real answer.
+            if !saw_terminator && !had_tool_call {
+                let _ = tx.send(StreamEvent::FinishReason("dropped".to_string()));
             }
 
             let _ = tx.send(StreamEvent::ResponseRaw(raw_resp));
