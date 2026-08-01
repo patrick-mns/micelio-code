@@ -211,6 +211,16 @@ summary of exactly what you did for the user. Be specific about files created or
 pub const EMPTY_RESPONSE_RETRY: &str = "Your last response was empty. Please answer the user's \
 last message directly now.";
 
+/// Injected instead of [`EMPTY_RESPONSE_RETRY`] when the empty turn's
+/// `finish_reason` was `"length"` — the model spent its entire token budget on
+/// internal reasoning and was cut off before producing any answer. Repeating
+/// the same request tends to repeat the same runaway reasoning, so this nudge
+/// explicitly tells the model to stop deliberating and answer immediately.
+pub const EMPTY_RESPONSE_RETRY_TRUNCATED: &str = "Your last response was cut off before you \
+produced any answer — you spent the entire response budget on internal reasoning. Stop \
+deliberating. Reply now with a short, direct answer (a few sentences), skipping further \
+step-by-step analysis.";
+
 /// Appended to the system prompt in Chat mode, where no tools are available.
 pub const CHAT_MODE: &str = "You are in CHAT mode: read-only. You may use the read-only tools \
 available this turn (read files, search, read the knowledge graph, fetch URLs, look at images \

@@ -84,6 +84,10 @@ pub fn run_agent_loop(
     // back to a canned reply — an empty completion is usually transient.
     let mut empty_retries = 0u8;
     const MAX_EMPTY_RETRIES: u8 = 3;
+    // Separate, independent budget for the deterministic "cut off mid-thought"
+    // failure (finish_reason == "length"): see the truncation check below.
+    let mut truncated_retries = 0u8;
+    const MAX_TRUNCATED_RETRIES: u8 = 3;
     let mut consecutive_errors: u32 = 0;
     let mut stream_error_retries: u8 = 0;
     // Stagnation guard: signature of the previous tool call and how many times
@@ -230,32 +234,47 @@ pub fn run_agent_loop(
         // Keep the working context within budget before the next model turn.
         compact_history(&mut history);
         // ---- stream one model turn ----
-        let mut stream = match provider.start_stream(&model, &history, &tools_advert) {
-            Ok(s) => s,
-            Err(e) => {
-                // Transient gateway hiccup (rate limit, connection reset): retry
-                // a couple of times before giving up on the whole turn.
-                if stream_error_retries < MAX_STREAM_ERROR_RETRIES {
-                    stream_error_retries += 1;
-                    std::thread::sleep(std::time::Duration::from_millis(
-                        500 * stream_error_retries as u64,
-                    ));
-                    continue;
-                }
-                // Persist anything earlier rounds accumulated before surfacing
-                // the error, so a failure to open the stream doesn't drop the
-                // turn's thinking/tool trace on reload.
-                finish(&app, &history, &thinking_acc, &tool_summaries, "", false);
-                let _ = app.emit(
-                    "stream_error",
-                    serde_json::json!({ "session_id": session_id_ref, "error": e }),
-                );
-                return;
-            }
+        // After a turn truncated by the token budget (finish_reason ==
+        // "length", empty content), double the completion budget on each
+        // retry instead of repeating the identical request — see the
+        // truncation check below for why that request is doomed to truncate
+        // again otherwise.
+        let max_tokens_override = if truncated_retries > 0 {
+            Some(16_384usize << truncated_retries)
+        } else {
+            None
         };
+        let mut stream =
+            match provider.start_stream(&model, &history, &tools_advert, max_tokens_override) {
+                Ok(s) => s,
+                Err(e) => {
+                    // Transient gateway hiccup (rate limit, connection reset): retry
+                    // a couple of times before giving up on the whole turn.
+                    if stream_error_retries < MAX_STREAM_ERROR_RETRIES {
+                        stream_error_retries += 1;
+                        std::thread::sleep(std::time::Duration::from_millis(
+                            500 * stream_error_retries as u64,
+                        ));
+                        continue;
+                    }
+                    // Persist anything earlier rounds accumulated before surfacing
+                    // the error, so a failure to open the stream doesn't drop the
+                    // turn's thinking/tool trace on reload.
+                    finish(&app, &history, &thinking_acc, &tool_summaries, "", false);
+                    let _ = app.emit(
+                        "stream_error",
+                        serde_json::json!({ "session_id": session_id_ref, "error": e }),
+                    );
+                    return;
+                }
+            };
         let mut content_acc = String::new();
         let mut tool_calls: Vec<llm::ToolCall> = Vec::new();
         let mut turn_done = false;
+        // Set when the provider reports this turn was cut off by the token
+        // budget rather than the model choosing to stop — distinguishes a
+        // deterministic "ran out of room" failure from a generic empty reply.
+        let mut finish_reason: Option<String> = None;
         let stream_start = std::time::Instant::now();
         let mut last_event = stream_start;
         while !turn_done {
@@ -348,6 +367,7 @@ pub fn run_agent_loop(
                             StreamEvent::ResponseRaw(r) => {
                                 *resp_raw_acc.lock().unwrap() = r;
                             }
+                            StreamEvent::FinishReason(r) => finish_reason = Some(r),
                             StreamEvent::Done => turn_done = true,
                         }
                     }
@@ -528,13 +548,26 @@ pub fn run_agent_loop(
         }
 
         // Empty turn with no tool call and nothing pending (needs_tool was
-        // handled above): the model returned nothing at all. Nudge it once to
-        // answer before giving up — an empty completion is usually a transient
-        // glitch rather than the model deciding it's done.
-        if content.is_empty() && !did_any_tool && empty_retries < MAX_EMPTY_RETRIES {
-            history.push(Message::system(prompt::EMPTY_RESPONSE_RETRY));
-            empty_retries += 1;
-            continue;
+        // handled above): the model returned nothing at all.
+        //
+        // Truncation (finish_reason == "length") is a *deterministic* failure —
+        // the model burned its whole budget on reasoning and never got to an
+        // answer. Repeating the identical request just repeats the same
+        // runaway reasoning, so it gets its own retry budget and a nudge that
+        // explicitly tells the model to stop deliberating, instead of sharing
+        // the generic "try again" retry meant for transient empty replies.
+        if content.is_empty() && !did_any_tool {
+            let truncated = finish_reason.as_deref() == Some("length");
+            if truncated && truncated_retries < MAX_TRUNCATED_RETRIES {
+                history.push(Message::system(prompt::EMPTY_RESPONSE_RETRY_TRUNCATED));
+                truncated_retries += 1;
+                continue;
+            }
+            if !truncated && empty_retries < MAX_EMPTY_RETRIES {
+                history.push(Message::system(prompt::EMPTY_RESPONSE_RETRY));
+                empty_retries += 1;
+                continue;
+            }
         }
 
         let assistant_msg_idx = history.len();

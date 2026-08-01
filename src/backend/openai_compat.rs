@@ -243,12 +243,19 @@ impl Provider for OpenAiCompatProvider {
         model: &str,
         history: &[Message],
         tools_json: &str,
+        max_tokens_override: Option<usize>,
     ) -> BackendResult<Box<dyn ChatStream>> {
+        // A caller-supplied override (escalating after a truncated turn) wins
+        // over the normal context-fraction budget, but is still sanity-capped
+        // so a runaway retry loop can't request an absurd completion size.
+        let max_tokens = max_tokens_override
+            .map(|t| t.min(131_072))
+            .unwrap_or_else(|| request_max_tokens(self.context_length(model)));
         let mut body = serde_json::json!({
             "model": model,
             "messages": to_openai_messages(history),
             "stream": true,
-            "max_tokens": request_max_tokens(self.context_length(model)),
+            "max_tokens": max_tokens,
         });
 
         // OpenRouter-specific extensions: reasoning streaming + usage in the
@@ -330,7 +337,14 @@ impl Provider for OpenAiCompatProvider {
                     }));
                 }
 
-                let delta = &json["choices"][0]["delta"];
+                let choice = &json["choices"][0];
+                if let Some(r) = choice["finish_reason"].as_str() {
+                    if !r.is_empty() {
+                        let _ = tx.send(StreamEvent::FinishReason(r.to_string()));
+                    }
+                }
+
+                let delta = &choice["delta"];
 
                 if let Some(c) = delta["content"].as_str() {
                     if !c.is_empty() {
