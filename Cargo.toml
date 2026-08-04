@@ -31,7 +31,7 @@ notify = { version = "7", features = ["macos_fsevent"] }
 ureq = { version = "2", features = ["json"] }
 sha2 = "0.10"
 tokio = { version = "1", features = ["full"] }
-base64 = "0.22"
+base64 = "0.23"
 rmcp = { version = "2.2", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "reqwest", "auth"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }
 serde_yaml = "0.9"
