@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.22.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.21.0...micelio-v0.22.0) (2026-08-04)
+
+
+### Features
+
+* add /loop session driver with registry, runner and loop-control tools ([ad1bb5b](https://github.com/patrick-mns/micelio-code/commit/ad1bb5bd65366fb478b988a733652237ab0eeb93))
+* **ui:** add button to add another folder to workspace ([e64f9ad](https://github.com/patrick-mns/micelio-code/commit/e64f9ad61a34b6baa7e4c6048eba3907f6288942))
+
+
+### Bug Fixes
+
+* **agent:** detect dropped connections disguised as empty completions ([2c153d3](https://github.com/patrick-mns/micelio-code/commit/2c153d39489d367cf048c08d27ce8b9b89ab5258))
+* **agent:** escalate token budget instead of blindly retrying on truncation ([a065979](https://github.com/patrick-mns/micelio-code/commit/a065979e63fb47354f539990081a0b7396198484))
+* **agent:** make agent loop resilient to transient/empty LLM responses ([0e40be1](https://github.com/patrick-mns/micelio-code/commit/0e40be1e3254f2c5d219bea7d54cef3194361211))
+* **agent:** make the empty-reply fallback name the actual cause ([348b335](https://github.com/patrick-mns/micelio-code/commit/348b33582bf0e62d086a5c54cef85defff48768b))
+* **llm:** inject workspace folders into system prompt, fallback stale model roles ([a324ccd](https://github.com/patrick-mns/micelio-code/commit/a324ccdb824b4dfd8c7f7e9086d50ed5cd01d3a4))
+
 ## [0.21.0](https://github.com/patrick-mns/micelio-code/compare/micelio-v0.20.0...micelio-v0.21.0) (2026-07-30)
 
 
