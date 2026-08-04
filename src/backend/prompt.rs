@@ -156,6 +156,36 @@ When a tool fails (returns an error):
     prompt
 }
 
+/// Build the "## Workspace" section listing every folder in the current
+/// workspace and marking which one is active (the root tools currently
+/// operate on). Returns `None` when there's no workspace or only one folder
+/// with nothing to disambiguate.
+pub fn workspace_context_section(
+    folders: &[std::path::PathBuf],
+    active_root: &std::path::Path,
+) -> Option<String> {
+    if folders.is_empty() {
+        return None;
+    }
+    let mut section =
+        String::from("\n\n## Workspace\nThis workspace has the following folder(s):\n");
+    for f in folders {
+        let marker = if f == active_root {
+            " (active — tools operate here)"
+        } else {
+            ""
+        };
+        section.push_str(&format!("- {}{}\n", f.display(), marker));
+    }
+    if folders.len() > 1 {
+        section.push_str(
+            "The user can switch the active folder from the UI; ask them to switch if a task \
+targets a different folder than the one currently active.",
+        );
+    }
+    Some(section)
+}
+
 /// Injected after a tool fails repeatedly (but before giving up) to force the
 /// model to diagnose the root cause and change approach instead of retrying
 /// the same failing call — a lightweight Reflexion-style self-correction.
@@ -180,6 +210,45 @@ summary of exactly what you did for the user. Be specific about files created or
 /// nothing pending — nudge it to actually answer before the loop gives up.
 pub const EMPTY_RESPONSE_RETRY: &str = "Your last response was empty. Please answer the user's \
 last message directly now.";
+
+/// Injected instead of [`EMPTY_RESPONSE_RETRY`] when the empty turn's
+/// `finish_reason` was `"length"` — the model spent its entire token budget on
+/// internal reasoning and was cut off before producing any answer. Repeating
+/// the same request tends to repeat the same runaway reasoning, so this nudge
+/// explicitly tells the model to stop deliberating and answer immediately.
+pub const EMPTY_RESPONSE_RETRY_TRUNCATED: &str = "Your last response was cut off before you \
+produced any answer — you spent the entire response budget on internal reasoning. Stop \
+deliberating. Reply now with a short, direct answer (a few sentences), skipping further \
+step-by-step analysis.";
+
+/// Appended to the system prompt for a `/loop` turn — the user asked this
+/// session to keep running autonomously at a pace the model itself decides,
+/// mirroring Claude Code's dynamic `/loop`.
+pub const LOOP_MODE: &str = "\n\n## You are in a /loop\n\
+The user started a self-pacing loop: after you finish this turn, the session will automatically \
+continue — but only if YOU call `schedule_wakeup(delay_seconds, reason)` before ending your turn. \
+- If there's more to do (waiting on something, iterating, monitoring), call `schedule_wakeup` with a \
+delay that matches what you're actually waiting for — a slow build deserves minutes, not seconds. \
+- If the task is done, or you're stuck and can't make progress, do NOT call `schedule_wakeup` (or call \
+`stop_loop` to make it explicit) and say why in your response — the loop ends after this turn either way. \
+- Never fabricate results of a scheduled action; the next iteration is a fresh turn, not something you \
+can predict now.";
+
+/// Appended after [`LOOP_MODE`] for a `/loop --forever` session: the loop is
+/// not allowed to end itself, only the user (or an explicit `stop_loop` call
+/// when something is actually broken) can stop it.
+pub const LOOP_FOREVER: &str = " This loop was started with --forever: it does NOT end just because \
+this slice of work looks done. Always call `schedule_wakeup` before ending your turn — pick whatever \
+delay makes sense (short if you're mid-task, long if you're just watching for something to happen). \
+Only call `stop_loop` if the task has become impossible to continue (not just \"looks finished\"). If \
+you forget to call `schedule_wakeup`, the loop will auto-continue anyway on a default cadence, so \
+prefer to call it yourself with a sensible delay.";
+
+/// Injected as the (synthetic) user turn each time a `/loop` wakes back up,
+/// standing in for the original message so the model re-reads its own recent
+/// history and decides what to do next.
+pub const LOOP_TICK: &str = "[/loop tick] Continue the loop: check what's changed or what's next, \
+do the next slice of work, then call `schedule_wakeup` again to keep going or stop if you're done.";
 
 /// Appended to the system prompt in Chat mode, where no tools are available.
 pub const CHAT_MODE: &str = "You are in CHAT mode: read-only. You may use the read-only tools \

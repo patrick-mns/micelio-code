@@ -206,6 +206,13 @@ pub enum StreamEvent {
     /// Raw HTTP response payload received from the provider (the concatenated
     /// SSE/NDJSON stream), emitted once when the turn finishes.
     ResponseRaw(String),
+    /// The provider's `finish_reason` for this turn (`"length"`, `"stop"`,
+    /// `"tool_calls"`, …), when the wire format reports one. `"length"`
+    /// specifically means the completion was cut off by the token budget —
+    /// distinct from the model simply choosing to say nothing, so callers can
+    /// react by growing the budget instead of just nudging and repeating the
+    /// same request.
+    FinishReason(String),
     Done,
 }
 
@@ -270,12 +277,18 @@ pub trait Provider: Send + Sync {
     /// Begin a streamed turn with full history. `tools_json` is the JSON array
     /// of tool definitions to advertise this turn (already filtered by the
     /// caller for the active mode); an empty string or `"[]"` omits tools
-    /// entirely so the model can only reply with text.
+    /// entirely so the model can only reply with text. `max_tokens_override`,
+    /// when set, replaces the provider's normal computed completion budget —
+    /// used to escalate the budget on retry after a turn was cut off
+    /// (`finish_reason == "length"`) with no content, since repeating the
+    /// identical request tends to repeat the same runaway reasoning and
+    /// truncate again.
     fn start_stream(
         &self,
         model: &str,
         history: &[Message],
         tools_json: &str,
+        max_tokens_override: Option<usize>,
     ) -> BackendResult<Box<dyn ChatStream>>;
 
     /// Serializes one or more tool calls made in the SAME assistant turn
@@ -438,6 +451,7 @@ mod tests {
             _: &str,
             _: &[Message],
             _: &str,
+            _: Option<usize>,
         ) -> BackendResult<Box<dyn ChatStream>> {
             unimplemented!()
         }

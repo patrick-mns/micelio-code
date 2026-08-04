@@ -16,7 +16,7 @@ import { useWorkspace } from '@/hooks/useWorkspace';
 import { COMMANDS, type Attachment, type CommandContext, type ChatMessageView, type RenderedItem, type SlashCommand } from '@/utils/chatHelpers';
 import { MIN_SCAN_MS } from '@/utils/treemapHelpers';
 import { chatStyles as styles } from '@/utils/theme-styles';
-import type { EditReviewRequest, FileHit, SkillSummary, ToolConfirmRequest, Usage } from '@/types';
+import type { EditReviewRequest, FileHit, LoopStatus, SkillSummary, ToolConfirmRequest, Usage } from '@/types';
 import type { StreamPart, StreamState } from '@/components/StreamStatus';
 import type { Question } from '@/components/QuestionCard';
 
@@ -94,6 +94,8 @@ export default function Chat() {
   const streamsRef = useRef<Record<string, StreamSession>>({});
   const [streamsBySession, setStreamsBySession] = useState<Record<string, StreamSession>>({});
   const streaming = streamsBySession[viewingSession] ?? null;
+  const [loopStatusBySession, setLoopStatusBySession] = useState<Record<string, LoopStatus>>({});
+  const loopStatus = loopStatusBySession[viewingSession];
 
   // ── Fetch history on session change ────────────────────────────────────────
   useEffect(() => {
@@ -158,11 +160,24 @@ export default function Chat() {
     ipc.onStreamUsage(({ session_id, ...u }) => {
       if (streamsRef.current[session_id]) streamsRef.current[session_id].usage = u;
     });
+    ipc.onLoopStatus(({ session_id, ...status }) => {
+      setLoopStatusBySession((prev) => ({ ...prev, [session_id]: status }));
+    });
   }, []);
 
   function pushTo(sessionId: string, key: 'content' | 'thinking' | 'tools', chunk: string) {
-    const cur = streamsRef.current[sessionId];
-    if (!cur) return;
+    let cur = streamsRef.current[sessionId];
+    if (!cur) {
+      // No buffer yet means this turn wasn't kicked off by send() — e.g. a
+      // /loop tick fired from the background driver thread with no frontend
+      // call in between. Create one now so the stream still renders live,
+      // instead of silently dropping every chunk.
+      cur = { thinking: '', parts: [], startedAt: Date.now() };
+      streamsRef.current[sessionId] = cur;
+      setStreamsBySession((prev) => ({ ...prev, [sessionId]: cur! }));
+      useStore.getState().setLoading(true);
+      useStore.getState().setStreamingSession(sessionId);
+    }
     // Once the user hits stop, drop any chunks still arriving while the backend
     // unwinds, so content visibly stops immediately.
     if (cur.canceled) return;
@@ -321,6 +336,23 @@ export default function Chat() {
       setInput('');
       if (taRef.current) taRef.current.style.height = 'auto';
       await ipc.summarizeAll(sm[1] ? parseInt(sm[1], 10) : undefined).catch(console.error);
+      return;
+    }
+
+    // /loop [prompt] and /loop stop shortcuts
+    if (/^\/loop\s+stop$/i.test(content)) {
+      setInput('');
+      if (taRef.current) taRef.current.style.height = 'auto';
+      await ipc.stopLoop(activeSession).catch(console.error);
+      return;
+    }
+    const loopMatch = content.match(/^\/loop(?:\s+(--forever|-f))?(?:\s+([\s\S]+))?$/i);
+    if (loopMatch) {
+      setInput('');
+      if (taRef.current) taRef.current.style.height = 'auto';
+      addMessage(activeSession, { role: 'user', content });
+      setGitRefreshTick((t) => t + 1);
+      await ipc.startLoop(activeSession, loopMatch[2]?.trim() || undefined, !!loopMatch[1]).catch(console.error);
       return;
     }
 
@@ -521,6 +553,10 @@ export default function Chat() {
     },
     workspace: () => pickWorkspace(viewingSession),
     summarize: async (concurrency?: number) => { await ipc.summarizeAll(concurrency).catch(console.error); },
+    loop: async (prompt?: string, forever?: boolean) => {
+      addMessage(viewingSession, { role: 'user', content: prompt ? `/loop ${prompt}` : '/loop' });
+      await ipc.startLoop(viewingSession, prompt, forever).catch(console.error);
+    },
     scan: async () => {
       const t0 = performance.now();
       setScanning(true);
@@ -630,6 +666,22 @@ export default function Chat() {
               finished={summarize.finished} startedAt={summarize.startedAt}
               onCancel={() => ipc.stopSummarize().catch(console.error)}
             />
+          )}
+          {loopStatus?.active && (
+            <div style={styles.loopPill}>
+              <span>
+                {loopStatus.forever ? '∞ ' : ''}
+                {loopStatus.status === 'waiting'
+                  ? `Loop: next in ${loopStatus.pending_delay_secs ?? '?'}s${loopStatus.pending_reason ? ` — ${loopStatus.pending_reason}` : ''}`
+                  : 'Loop: running…'}
+              </span>
+              <button
+                className="btn btn-ghost"
+                onClick={() => ipc.stopLoop(viewingSession).catch(console.error)}
+              >
+                Stop
+              </button>
+            </div>
           )}
           <GitContext onPickWorkspace={() => pickWorkspace(viewingSession)} refreshTick={gitRefreshTick} />
           <Composer

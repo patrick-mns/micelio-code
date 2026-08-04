@@ -29,7 +29,7 @@ fn ctx_cache() -> &'static Mutex<HashMap<String, usize>> {
 /// reasoning model's `reasoning_content` pass eats the whole budget and
 /// leaves nothing for the actual `content`, ending the turn empty. Sending an
 /// explicit, generous cap gives the model room to think AND answer.
-const MAX_COMPLETION_TOKENS_CAP: usize = 8_192;
+const MAX_COMPLETION_TOKENS_CAP: usize = 16_384;
 
 /// `max_tokens` to send: a quarter of the model's known context window,
 /// capped by [`MAX_COMPLETION_TOKENS_CAP`] and floored so tiny-context models
@@ -243,12 +243,19 @@ impl Provider for OpenAiCompatProvider {
         model: &str,
         history: &[Message],
         tools_json: &str,
+        max_tokens_override: Option<usize>,
     ) -> BackendResult<Box<dyn ChatStream>> {
+        // A caller-supplied override (escalating after a truncated turn) wins
+        // over the normal context-fraction budget, but is still sanity-capped
+        // so a runaway retry loop can't request an absurd completion size.
+        let max_tokens = max_tokens_override
+            .map(|t| t.min(131_072))
+            .unwrap_or_else(|| request_max_tokens(self.context_length(model)));
         let mut body = serde_json::json!({
             "model": model,
             "messages": to_openai_messages(history),
             "stream": true,
-            "max_tokens": request_max_tokens(self.context_length(model)),
+            "max_tokens": max_tokens,
         });
 
         // OpenRouter-specific extensions: reasoning streaming + usage in the
@@ -293,6 +300,14 @@ impl Provider for OpenAiCompatProvider {
             let reader = std::io::BufReader::new(resp.into_reader());
             let mut tool_slots: Vec<(String, String, Option<String>)> = Vec::new();
             let mut raw_resp = String::new();
+            // Whether the stream ended the way a well-behaved SSE response
+            // should: an explicit `[DONE]` marker or a `finish_reason` on the
+            // last chunk. If neither ever arrives — the read errors out or the
+            // connection just closes mid-thought — that's a dropped
+            // connection, not the model deciding to say nothing, even though
+            // it looks identical to the caller (a clean `Done` with empty
+            // content) unless we flag it.
+            let mut saw_terminator = false;
 
             for line in reader.lines() {
                 let Ok(line) = line else { break };
@@ -303,6 +318,7 @@ impl Provider for OpenAiCompatProvider {
                 };
                 let data = data.trim();
                 if data == "[DONE]" {
+                    saw_terminator = true;
                     break;
                 }
                 let Ok(json) = serde_json::from_str::<serde_json::Value>(data) else {
@@ -330,7 +346,15 @@ impl Provider for OpenAiCompatProvider {
                     }));
                 }
 
-                let delta = &json["choices"][0]["delta"];
+                let choice = &json["choices"][0];
+                if let Some(r) = choice["finish_reason"].as_str() {
+                    if !r.is_empty() {
+                        saw_terminator = true;
+                        let _ = tx.send(StreamEvent::FinishReason(r.to_string()));
+                    }
+                }
+
+                let delta = &choice["delta"];
 
                 if let Some(c) = delta["content"].as_str() {
                     if !c.is_empty() {
@@ -370,6 +394,7 @@ impl Provider for OpenAiCompatProvider {
             }
 
             // Flush any accumulated tool calls.
+            let had_tool_call = tool_slots.iter().any(|(name, ..)| !name.is_empty());
             for (name, arguments, id) in &tool_slots {
                 if !name.is_empty() {
                     let _ = tx.send(StreamEvent::ToolCall(ToolCall {
@@ -378,6 +403,15 @@ impl Provider for OpenAiCompatProvider {
                         id: id.clone(),
                     }));
                 }
+            }
+
+            // The connection closed (or errored) without ever telling us why —
+            // no `[DONE]`, no `finish_reason`. If nothing useful came out of
+            // it either, this was a dropped connection wearing a normal
+            // completion's clothes; flag it so the caller retries like a
+            // network error instead of treating it as the model's real answer.
+            if !saw_terminator && !had_tool_call {
+                let _ = tx.send(StreamEvent::FinishReason("dropped".to_string()));
             }
 
             let _ = tx.send(StreamEvent::ResponseRaw(raw_resp));

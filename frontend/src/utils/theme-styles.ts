@@ -1035,6 +1035,7 @@ export const chatStyles: Record<string, CSSProperties> = {
   activityText: { color: theme.dim, fontSize: 13, fontStyle: 'italic' },
   composerWrap: { position: 'relative', display: 'flex', justifyContent: 'center', padding: '0 0 28px', background: theme.bg },
   composerFade: { position: 'absolute', left: 0, right: 0, top: -32, height: 32, pointerEvents: 'none', background: `linear-gradient(to bottom, transparent, ${theme.bg})` },
+  loopPill: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '5px 10px', borderRadius: 'var(--radius-md)', background: theme.card, border: `1px solid ${theme.border}`, color: theme.textSoft, fontSize: 12 },
   card: { background: theme.card, borderRadius: 16, padding: '14px 16px' },
   textarea: { width: '100%', background: 'transparent', border: 'none', outline: 'none', color: theme.text, fontSize: 14, resize: 'none', fontFamily: 'inherit', lineHeight: 1.5, maxHeight: 200 },
   attachRow: { display: 'flex', marginBottom: 8 },

@@ -17,7 +17,7 @@ use tauri::{AppHandle, Emitter, Manager};
 /// emitting no tool call. This only bounds a pathological model that never
 /// stops calling tools. Set high enough that legitimate multi-step tasks never
 /// hit it.
-const MAX_TOOL_ROUNDS: usize = 50;
+const MAX_TOOL_ROUNDS: usize = 100;
 /// Consecutive tool failures that force the loop to stop and report.
 const MAX_CONSECUTIVE_ERRORS: u32 = 3;
 /// Consecutive failures after which a Reflexion nudge is injected (before the
@@ -27,6 +27,11 @@ const REFLEXION_AFTER_ERRORS: u32 = 2;
 /// loop. Cheaper and more reliable than a low round cap for catching the model
 /// repeating itself.
 const MAX_IDENTICAL_CALLS: u32 = 3;
+/// Transient network/gateway failures (stream failed to open, or dropped
+/// mid-flight) to retry before giving up on the whole turn. Flaky
+/// OpenAI-compatible gateways (rate limits, connection resets) are common
+/// enough that failing the entire turn on the first hiccup is too brittle.
+const MAX_STREAM_ERROR_RETRIES: u8 = 2;
 /// Max characters of a single tool result fed back into context. Large reads /
 /// command output are truncated (head + tail) so one call can't blow the
 /// window. Tuned for small local models.
@@ -68,11 +73,27 @@ pub fn run_agent_loop(
     // never be satisfied there — suppress the tool-nudge retry.
     let needs_tool = needs_tool && mode != AgentMode::Chat;
     let mut did_any_tool = false;
+    // True as long as every tool called this turn was loop bookkeeping
+    // (schedule_wakeup/stop_loop). Those already say what happened in their
+    // own tool result — a /loop tick that's otherwise silent shouldn't be
+    // forced through request_summary/ensure_reply's "couldn't generate a
+    // response" fallback just because it had nothing else to say.
+    let mut only_loop_control_tools = true;
     let mut retried_for_tool = false;
     // One retry when the model returns a completely empty turn, before we fall
     // back to a canned reply — an empty completion is usually transient.
-    let mut retried_empty = false;
+    let mut empty_retries = 0u8;
+    const MAX_EMPTY_RETRIES: u8 = 3;
+    // Separate, independent budget for the deterministic "cut off mid-thought"
+    // failure (finish_reason == "length"): see the truncation check below.
+    let mut truncated_retries = 0u8;
+    const MAX_TRUNCATED_RETRIES: u8 = 3;
+    // Set when the empty-reply retry budget above is exhausted specifically
+    // because of truncation, so the final fallback message can name the
+    // actual cause instead of a generic apology.
+    let mut exhausted_truncated = false;
     let mut consecutive_errors: u32 = 0;
+    let mut stream_error_retries: u8 = 0;
     // Stagnation guard: signature of the previous tool call and how many times
     // it has repeated back-to-back.
     let mut last_call_sig: Option<String> = None;
@@ -208,7 +229,7 @@ pub fn run_agent_loop(
         }
     };
 
-    for _ in 0..MAX_TOOL_ROUNDS {
+    'rounds: for _ in 0..MAX_TOOL_ROUNDS {
         // User hit Stop between rounds — persist what we have and bail.
         if cancel.load(Ordering::SeqCst) {
             finish(&app, &history, &thinking_acc, &tool_summaries, "", true);
@@ -217,23 +238,47 @@ pub fn run_agent_loop(
         // Keep the working context within budget before the next model turn.
         compact_history(&mut history);
         // ---- stream one model turn ----
-        let mut stream = match provider.start_stream(&model, &history, &tools_advert) {
-            Ok(s) => s,
-            Err(e) => {
-                // Persist anything earlier rounds accumulated before surfacing
-                // the error, so a failure to open the stream doesn't drop the
-                // turn's thinking/tool trace on reload.
-                finish(&app, &history, &thinking_acc, &tool_summaries, "", false);
-                let _ = app.emit(
-                    "stream_error",
-                    serde_json::json!({ "session_id": session_id_ref, "error": e }),
-                );
-                return;
-            }
+        // After a turn truncated by the token budget (finish_reason ==
+        // "length", empty content), double the completion budget on each
+        // retry instead of repeating the identical request — see the
+        // truncation check below for why that request is doomed to truncate
+        // again otherwise.
+        let max_tokens_override = if truncated_retries > 0 {
+            Some(16_384usize << truncated_retries)
+        } else {
+            None
         };
+        let mut stream =
+            match provider.start_stream(&model, &history, &tools_advert, max_tokens_override) {
+                Ok(s) => s,
+                Err(e) => {
+                    // Transient gateway hiccup (rate limit, connection reset): retry
+                    // a couple of times before giving up on the whole turn.
+                    if stream_error_retries < MAX_STREAM_ERROR_RETRIES {
+                        stream_error_retries += 1;
+                        std::thread::sleep(std::time::Duration::from_millis(
+                            500 * stream_error_retries as u64,
+                        ));
+                        continue;
+                    }
+                    // Persist anything earlier rounds accumulated before surfacing
+                    // the error, so a failure to open the stream doesn't drop the
+                    // turn's thinking/tool trace on reload.
+                    finish(&app, &history, &thinking_acc, &tool_summaries, "", false);
+                    let _ = app.emit(
+                        "stream_error",
+                        serde_json::json!({ "session_id": session_id_ref, "error": e }),
+                    );
+                    return;
+                }
+            };
         let mut content_acc = String::new();
         let mut tool_calls: Vec<llm::ToolCall> = Vec::new();
         let mut turn_done = false;
+        // Set when the provider reports this turn was cut off by the token
+        // budget rather than the model choosing to stop — distinguishes a
+        // deterministic "ran out of room" failure from a generic empty reply.
+        let mut finish_reason: Option<String> = None;
         let stream_start = std::time::Instant::now();
         let mut last_event = stream_start;
         while !turn_done {
@@ -326,11 +371,27 @@ pub fn run_agent_loop(
                             StreamEvent::ResponseRaw(r) => {
                                 *resp_raw_acc.lock().unwrap() = r;
                             }
+                            StreamEvent::FinishReason(r) => finish_reason = Some(r),
                             StreamEvent::Done => turn_done = true,
                         }
                     }
                 }
                 Err(e) => {
+                    // Mid-stream drop with nothing produced yet is the same
+                    // transient case as a failed stream open — retry rather than
+                    // failing the turn. Once any content/tool call has streamed,
+                    // retrying would replay or duplicate it, so only retry a
+                    // clean, empty-handed failure.
+                    if content_acc.is_empty()
+                        && tool_calls.is_empty()
+                        && stream_error_retries < MAX_STREAM_ERROR_RETRIES
+                    {
+                        stream_error_retries += 1;
+                        std::thread::sleep(std::time::Duration::from_millis(
+                            500 * stream_error_retries as u64,
+                        ));
+                        continue 'rounds;
+                    }
                     // A mid-stream failure (e.g. the network dropped) must not
                     // throw away what already streamed — persist it, then report.
                     history.push(Message::assistant(content_acc.clone()));
@@ -350,6 +411,29 @@ pub fn run_agent_loop(
                 }
             }
         }
+
+        // The connection closed without ever saying why (no `[DONE]`, no
+        // `finish_reason`) and produced nothing — a dropped connection
+        // wearing a normal completion's clothes (see `openai_compat.rs`).
+        // Retry it exactly like the stream-open/mid-stream error cases below:
+        // a fresh attempt, not a nudge, since there's nothing to nudge —
+        // the model never actually finished.
+        if finish_reason.as_deref() == Some("dropped")
+            && content_acc.is_empty()
+            && tool_calls.is_empty()
+            && stream_error_retries < MAX_STREAM_ERROR_RETRIES
+        {
+            stream_error_retries += 1;
+            std::thread::sleep(std::time::Duration::from_millis(
+                500 * stream_error_retries as u64,
+            ));
+            continue 'rounds;
+        }
+
+        // A round that streamed successfully clears the transient-failure
+        // budget, so a flaky gateway gets fresh retries for the next hiccup
+        // instead of exhausting them across an otherwise-healthy long turn.
+        stream_error_retries = 0;
 
         // ---- model called one or more tools: execute all, then re-prompt ----
         if !tool_calls.is_empty() {
@@ -380,10 +464,19 @@ pub fn run_agent_loop(
                     &history,
                     &thinking_acc,
                     &tool_summaries,
-                    &ensure_reply(&app, &session_id_ref, summary),
+                    &ensure_reply(&app, &session_id_ref, summary, EMPTY_REPLY_FALLBACK),
                     true,
                 );
                 return;
+            }
+
+            if tool_calls.iter().any(|c| {
+                !matches!(
+                    tools::normalize_tool_name(&c.name),
+                    "schedule_wakeup" | "stop_loop"
+                )
+            }) {
+                only_loop_control_tools = false;
             }
 
             let (summaries, any_error) = run_tool_calls(
@@ -422,7 +515,7 @@ pub fn run_agent_loop(
                     &history,
                     &thinking_acc,
                     &tool_summaries,
-                    &ensure_reply(&app, &session_id_ref, summary),
+                    &ensure_reply(&app, &session_id_ref, summary, EMPTY_REPLY_FALLBACK),
                     true,
                 );
                 return;
@@ -465,7 +558,7 @@ pub fn run_agent_loop(
                     &history,
                     &thinking_acc,
                     &tool_summaries,
-                    &ensure_reply(&app, &session_id_ref, summary),
+                    &ensure_reply(&app, &session_id_ref, summary, EMPTY_REPLY_FALLBACK),
                     true,
                 );
                 return;
@@ -477,13 +570,29 @@ pub fn run_agent_loop(
         }
 
         // Empty turn with no tool call and nothing pending (needs_tool was
-        // handled above): the model returned nothing at all. Nudge it once to
-        // answer before giving up — an empty completion is usually a transient
-        // glitch rather than the model deciding it's done.
-        if content.is_empty() && !did_any_tool && !retried_empty {
-            history.push(Message::system(prompt::EMPTY_RESPONSE_RETRY));
-            retried_empty = true;
-            continue;
+        // handled above): the model returned nothing at all.
+        //
+        // Truncation (finish_reason == "length") is a *deterministic* failure —
+        // the model burned its whole budget on reasoning and never got to an
+        // answer. Repeating the identical request just repeats the same
+        // runaway reasoning, so it gets its own retry budget and a nudge that
+        // explicitly tells the model to stop deliberating, instead of sharing
+        // the generic "try again" retry meant for transient empty replies.
+        if content.is_empty() && !did_any_tool {
+            let truncated = finish_reason.as_deref() == Some("length");
+            if truncated && truncated_retries < MAX_TRUNCATED_RETRIES {
+                history.push(Message::system(prompt::EMPTY_RESPONSE_RETRY_TRUNCATED));
+                truncated_retries += 1;
+                continue;
+            }
+            if !truncated && empty_retries < MAX_EMPTY_RETRIES {
+                history.push(Message::system(prompt::EMPTY_RESPONSE_RETRY));
+                empty_retries += 1;
+                continue;
+            }
+            // Every retry is exhausted: remember why, so the fallback shown
+            // to the user names the actual cause instead of a generic apology.
+            exhausted_truncated = truncated;
         }
 
         let assistant_msg_idx = history.len();
@@ -497,26 +606,39 @@ pub fn run_agent_loop(
         // summary (when tools ran) and, failing that, fall back to a visible
         // reply so the user always gets something back.
         let final_content = if content.is_empty() {
-            let summary = if did_any_tool {
-                request_summary(
-                    &app,
-                    provider.as_ref(),
-                    &model,
-                    &mut history,
-                    &session_id_ref,
-                )
-            } else {
+            if did_any_tool && only_loop_control_tools {
+                // The only thing this turn did was schedule_wakeup/stop_loop —
+                // its own tool result already narrates what happened, so an
+                // otherwise-silent /loop tick isn't a failure worth nagging the
+                // model about or showing a scary fallback for.
                 String::new()
-            };
-            let reply = ensure_reply(&app, &session_id_ref, summary);
-            // The turn's own assistant message above was pushed empty (that's
-            // literally what the model said); patch it to whatever we end up
-            // showing so the persisted transcript matches the live stream
-            // instead of leaving a blank turn behind for the next round.
-            if let Some(msg) = history.get_mut(assistant_msg_idx) {
-                msg.content = reply.clone();
+            } else {
+                let summary = if did_any_tool {
+                    request_summary(
+                        &app,
+                        provider.as_ref(),
+                        &model,
+                        &mut history,
+                        &session_id_ref,
+                    )
+                } else {
+                    String::new()
+                };
+                let fallback = if exhausted_truncated {
+                    EMPTY_REPLY_FALLBACK_TRUNCATED
+                } else {
+                    EMPTY_REPLY_FALLBACK
+                };
+                let reply = ensure_reply(&app, &session_id_ref, summary, fallback);
+                // The turn's own assistant message above was pushed empty (that's
+                // literally what the model said); patch it to whatever we end up
+                // showing so the persisted transcript matches the live stream
+                // instead of leaving a blank turn behind for the next round.
+                if let Some(msg) = history.get_mut(assistant_msg_idx) {
+                    msg.content = reply.clone();
+                }
+                reply
             }
-            reply
         } else {
             content
         };
@@ -544,6 +666,7 @@ pub fn run_agent_loop(
             &mut history,
             &session_id_ref,
         ),
+        EMPTY_REPLY_FALLBACK,
     );
     finish(
         &app,
@@ -591,20 +714,32 @@ fn force_stop_summary(
 }
 
 /// Shown to the user when the model produced no response at all and every
-/// attempt to coax one out failed. Better an honest note than a blank turn.
+/// attempt to coax one out failed, for reasons other than a known truncation
+/// (see [`EMPTY_REPLY_FALLBACK_TRUNCATED`]) — a generic honest note beats a
+/// blank turn.
 const EMPTY_REPLY_FALLBACK: &str =
-    "I wasn't able to generate a response. Please try again or rephrase your request.";
+    "The model didn't return a response after a few attempts. This can happen with a flaky \
+provider connection — try again, or switch models if it keeps happening.";
+
+/// Shown instead of [`EMPTY_REPLY_FALLBACK`] when every retry was cut off by
+/// the token budget (`finish_reason == "length"`) with no answer at all —
+/// names the actual cause instead of a generic "please retry", since retrying
+/// the same way is unlikely to help.
+const EMPTY_REPLY_FALLBACK_TRUNCATED: &str =
+    "The model kept running out of its response budget on internal reasoning and never reached \
+an answer, even after retrying with a larger budget. Try a shorter or simpler request, switch to \
+a different model, or check the provider's output token limit.";
 
 /// Guarantee the turn ends with something visible: if `content` is empty, emit
-/// the fallback as stream content (so the live view shows it, matching what
+/// `fallback` as stream content (so the live view shows it, matching what
 /// `finish` will persist) and return it. Otherwise pass `content` through.
-fn ensure_reply(app: &AppHandle, session_id: &str, content: String) -> String {
+fn ensure_reply(app: &AppHandle, session_id: &str, content: String, fallback: &str) -> String {
     if content.trim().is_empty() {
         let _ = app.emit(
             "stream_content",
-            serde_json::json!({ "session_id": session_id, "delta": EMPTY_REPLY_FALLBACK }),
+            serde_json::json!({ "session_id": session_id, "delta": fallback }),
         );
-        EMPTY_REPLY_FALLBACK.to_string()
+        fallback.to_string()
     } else {
         content
     }

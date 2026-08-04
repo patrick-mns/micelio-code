@@ -53,6 +53,7 @@ export interface CommandContext {
   workspace: () => void | Promise<void>;
   scan: () => void | Promise<void>;
   summarize: (concurrency?: number) => void | Promise<void>;
+  loop: (prompt?: string, forever?: boolean) => void | Promise<void>;
 }
 
 export interface SlashCommand {
@@ -67,6 +68,7 @@ export const COMMANDS: SlashCommand[] = [
   { cmd: '/workspace', desc: 'Switch workspace folder', run: (ctx) => ctx.workspace() },
   { cmd: '/scan', desc: 'Rescan workspace into the graph', run: (ctx) => ctx.scan() },
   { cmd: '/summarize', desc: 'Summarize stale & unsummarized nodes (e.g. /summarize 8)', run: (ctx) => ctx.summarize() },
+  { cmd: '/loop', desc: 'Keep the session running, self-paced (/loop watch the build, /loop --forever monitor logs, /loop stop)', run: (ctx) => ctx.loop() },
 ];
 
 export const COL_W = 760;

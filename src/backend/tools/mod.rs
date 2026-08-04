@@ -4,6 +4,7 @@ mod context_node;
 mod fetch;
 pub mod file;
 mod graph;
+mod loop_ctl;
 mod search;
 mod terminal;
 mod vision;
@@ -143,6 +144,8 @@ pub fn normalize_tool_name(name: &str) -> &str {
         "file",
         "ask_user",
         "bg",
+        "schedule_wakeup",
+        "stop_loop",
     ];
     if KNOWN.contains(&name) {
         return name;
@@ -184,6 +187,8 @@ pub fn run(name: &str, arguments: &str, context: &ToolContext) -> Result<ToolRes
         "graph_focus" => graph::run_focus(arguments, context),
         "vision" => vision::run(arguments, context),
         "bg" => bg::run(arguments, context),
+        "schedule_wakeup" => loop_ctl::run_schedule_wakeup(arguments, context),
+        "stop_loop" => loop_ctl::run_stop_loop(arguments, context),
         // ask_user is handled specially in the worker (intercepts before calling run)
         "ask_user" => Err("ask_user tool error: should have been intercepted by worker".into()),
         other => Err(format!("unknown tool `{other}`")),
@@ -339,7 +344,9 @@ pub fn tools_json() -> &'static str {
         {"type":"function","function":{"name":"graph","description":"Read the knowledge graph. With no arguments, returns a compact tree of the whole project: hierarchy, active state, kind, one-line summary and approximate token weight per node. Pass a `symbol` to find where that function/class is referenced. Pass a `filter` to get a flat list of just the matching nodes. Use this to see the project as a whole and decide what to focus on.","parameters":{"type":"object","properties":{"symbol":{"type":"string","description":"Optional: a function/class name to find references for instead of the full overview"},"filter":{"type":"string","description":"Optional: return only matching nodes as a flat list. One of: summarized (has a summary), unsummarized (no summary yet), active, inactive, or a kind (file, function, class, concept, dir, note)."}}}}},
         {"type":"function","function":{"name":"graph_focus","description":"Activate or deactivate a whole part of the knowledge graph (a node and everything under it) to focus context on what matters for the current task.","parameters":{"type":"object","properties":{"selector":{"type":"string","description":"Node label, path prefix (src/backend) or symbol name"},"active":{"type":"string","description":"\"true\" to activate, \"false\" to deactivate"}},"required":["selector"]}}},
         {"type":"function","function":{"name":"bg","description":"Inspect background processes started by the terminal tool (background:true, or a foreground command that outran its timeout). Use it to poll a dev server's logs, check if it's still running, or stop it.","parameters":{"type":"object","properties":{"action":{"type":"string","description":"list (all tasks), logs (new output for a pid), or stop (SIGTERM a pid)","enum":["list","logs","stop"]},"pid":{"type":"integer","description":"Required for logs/stop: the process id returned when the task was started."},"wait_ms":{"type":"integer","description":"For logs: block up to this many ms until a URL appears or the process exits (max 60000). Default 0 = return immediately."}},"required":["action"]}}},
-        {"type":"function","function":{"name":"vision","description":"Look at an image file and get a text description back, using the user's Vision-role model. Use this whenever the user references an image (png, jpg, gif, svg, webp, bmp, ico, tiff) or you need to understand a screenshot/diagram/photo. Pass an optional `prompt` to ask something specific about the image.","parameters":{"type":"object","properties":{"path":{"type":"string","description":"Path to the image file (absolute or relative to the workspace)."},"prompt":{"type":"string","description":"Optional question or instruction about the image (default: describe it in detail)."}},"required":["path"]}}}
+        {"type":"function","function":{"name":"vision","description":"Look at an image file and get a text description back, using the user's Vision-role model. Use this whenever the user references an image (png, jpg, gif, svg, webp, bmp, ico, tiff) or you need to understand a screenshot/diagram/photo. Pass an optional `prompt` to ask something specific about the image.","parameters":{"type":"object","properties":{"path":{"type":"string","description":"Path to the image file (absolute or relative to the workspace)."},"prompt":{"type":"string","description":"Optional question or instruction about the image (default: describe it in detail)."}},"required":["path"]}}},
+        {"type":"function","function":{"name":"schedule_wakeup","description":"ONLY relevant when the user started a /loop for this session. Call this at the end of a turn to keep the loop going: it schedules the next loop iteration after a delay you choose. If you don't call it, the loop ends after this turn — so call it whenever there's more to do, and skip it (or call stop_loop) once the task is actually finished.","parameters":{"type":"object","properties":{"delay_seconds":{"type":"integer","description":"Seconds until the next iteration (10-3600). Pick based on how fast the thing you're watching/working on actually changes — don't just always use the same number."},"reason":{"type":"string","description":"One short sentence: what you're waiting for or about to do next."}},"required":["delay_seconds","reason"]}}},
+        {"type":"function","function":{"name":"stop_loop","description":"ONLY relevant when the user started a /loop for this session. Call this to end the loop early because the task is complete or can't make further progress. Equivalent to simply not calling schedule_wakeup, but makes the reason explicit in your response.","parameters":{"type":"object","properties":{}}}}
     ]
     "#.trim()
 }

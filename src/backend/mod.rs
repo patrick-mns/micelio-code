@@ -7,6 +7,8 @@ pub mod hierarchy;
 pub mod knowledge;
 pub mod llm;
 pub mod locks;
+pub mod loop_registry;
+pub mod loop_runner;
 pub mod mcp;
 pub mod ollama;
 pub mod openai_compat;

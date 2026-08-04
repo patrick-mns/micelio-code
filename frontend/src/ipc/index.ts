@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import type {
   AskUser, BgTaskExited, BgTaskInfo, ChatMessage, CompactResult, ContextWindow, DirEntry,
-  EditReviewRequest, FileContent, FileHit, GitContext, McpServerStatus, McpToolInfo,
+  EditReviewRequest, FileContent, FileHit, GitContext, LoopStatus, LoopStatusEvent, McpServerStatus, McpToolInfo,
   ModelOption, ModelRole, NodeCode, NodeSummarized, Opener,
   ProviderInfo, ProviderInput, ProviderStatus, PtyExit, PtyOutput,
   SessionInfo, SessionModels, SessionTitle,
@@ -35,6 +35,15 @@ export const ipc = {
   onMcpOauthUrl: (cb: (p: { server_name: string; auth_url: string }) => void) =>
     on<{ server_name: string; auth_url: string }>('mcp_oauth_url', cb),
   stopChatStream: (sessionId?: string) => invoke<void>('stop_chat_stream', { sessionId }),
+
+  // Self-pacing background loop for a session (/loop): after each turn the
+  // model calls the `schedule_wakeup` tool to keep it going, or it stops on
+  // its own. `prompt` overrides the default "continue from history" kickoff.
+  startLoop: (sessionId?: string, prompt?: string, forever?: boolean) =>
+    invoke<void>('start_loop', { sessionId, prompt, forever }),
+  stopLoop: (sessionId?: string) => invoke<void>('stop_loop', { sessionId }),
+  getLoopStatus: (sessionId?: string) => invoke<LoopStatus>('get_loop_status', { sessionId }),
+  onLoopStatus: (cb: (p: LoopStatusEvent) => void) => on<LoopStatusEvent>('loop_status', cb),
   answerQuestion: (answer: string, sessionId?: string) => invoke<void>('answer_question', { answer, sessionId }),
   getHistory: (sessionId?: string) => invoke<ChatMessage[]>('get_history', { sessionId }),
   clearHistory: (sessionId?: string) => invoke<void>('clear_history', { sessionId }),

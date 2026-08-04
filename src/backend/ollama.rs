@@ -95,8 +95,14 @@ impl crate::backend::llm::Provider for OllamaProvider {
         model: &str,
         history: &[Message],
         tools_json: &str,
+        max_tokens_override: Option<usize>,
     ) -> BackendResult<Box<dyn crate::backend::llm::ChatStream>> {
-        Ok(Box::new(ChatStream::start(model, history, tools_json)?))
+        Ok(Box::new(ChatStream::start(
+            model,
+            history,
+            tools_json,
+            max_tokens_override,
+        )?))
     }
     fn tool_calls_history_json(&self, calls: &[ToolCall]) -> String {
         tool_calls_to_json(calls)
@@ -121,9 +127,14 @@ impl crate::backend::llm::ChatStream for ChatStream {
 }
 
 impl ChatStream {
-    pub fn start(model: &str, history: &[Message], tools_json: &str) -> BackendResult<Self> {
+    pub fn start(
+        model: &str,
+        history: &[Message],
+        tools_json: &str,
+        max_tokens_override: Option<usize>,
+    ) -> BackendResult<Self> {
         let messages_json = messages_to_json(history);
-        let num_ctx = request_num_ctx(model);
+        let mut num_ctx = request_num_ctx(model);
         let think = model_supports_thinking(model);
         // `tools_json` is already mode-filtered by the caller; an empty array
         // omits tools so the model can only reply with text.
@@ -132,7 +143,19 @@ impl ChatStream {
         } else {
             tools_json
         };
-        let num_predict = request_num_predict(num_ctx);
+        // A caller-supplied override (escalating after a truncated turn) wins
+        // over the snappy default budget. `num_predict` can't exceed
+        // `num_ctx`, so widen the window to fit it too — capped at the
+        // model's real max so we don't request more than it actually has.
+        let num_predict = match max_tokens_override {
+            Some(t) => {
+                let real_max = model_context_length(model);
+                let predict = t.min(real_max.saturating_sub(1_024)).max(512);
+                num_ctx = num_ctx.max(predict + 1_024).min(real_max);
+                predict
+            }
+            None => request_num_predict(num_ctx),
+        };
         let body = format!(
             "{{\"model\":{},\"messages\":[{}],\"tools\":{},\"stream\":true,\"think\":{},\"options\":{{\"temperature\":0,\"num_ctx\":{},\"num_predict\":{}}}}}",
             json_string(model),
