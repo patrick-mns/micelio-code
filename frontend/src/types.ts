@@ -301,6 +301,22 @@ export interface StreamUsage {
   cost: number;
 }
 
+/** Result of `get_loop_status`, and the payload of the `loop_status` event
+ * (which also carries `session_id`). */
+export interface LoopStatus {
+  active: boolean;
+  /** "running" | "waiting" | "stopped" */
+  status: string;
+  pending_delay_secs?: number | null;
+  pending_reason?: string | null;
+  /** Started with /loop --forever: keeps going even if the model doesn't ask to continue. */
+  forever: boolean;
+}
+
+export interface LoopStatusEvent extends LoopStatus {
+  session_id: string;
+}
+
 export interface AskUser {
   session_id: string;
   args: string;

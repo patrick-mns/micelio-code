@@ -287,6 +287,7 @@ pub async fn delete_session(
     // Clean up in-memory state for the deleted session.
     state.session_histories.lock().unwrap().remove(&id);
     state.session_cancels.lock().unwrap().remove(&id);
+    crate::backend::loop_registry::stop(&id);
 
     let mut current = state.current_session.lock().unwrap();
     if *current == id {

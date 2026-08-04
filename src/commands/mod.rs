@@ -18,6 +18,7 @@ pub(crate) fn take_pending<T>(
 }
 
 pub mod agent;
+pub mod agentloop;
 pub mod bg;
 pub mod chat;
 pub mod graph;

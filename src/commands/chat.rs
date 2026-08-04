@@ -293,6 +293,109 @@ pub async fn start_chat_stream(app: AppHandle, content: String) -> Result<String
     Ok(session_id_ret)
 }
 
+/// Runs one turn for `session_id` synchronously (blocks until the agent loop
+/// finishes), for callers already off the async Tauri runtime — namely the
+/// `/loop` driver thread (`backend::loop_runner`). Mirrors `start_chat_stream`
+/// but targets an explicit session instead of `current_session`, and doesn't
+/// spawn its own thread since the caller already runs off-thread.
+pub fn run_turn_blocking(
+    app: AppHandle,
+    session_id: String,
+    content: String,
+    is_loop: bool,
+    loop_forever: bool,
+) {
+    let (model, workspace_root, graph_json, history, mode) = {
+        let state = app.state::<AppState>();
+        let workspace_root = state.workspace_root.lock().unwrap().clone();
+        let model = state.session_chat_model(&session_id);
+        let mode = state.session_agent_mode(&session_id);
+
+        {
+            let store = state.sessions.lock().unwrap();
+            let _ = store.append_event(&session_id, "user", None, &content);
+        }
+        {
+            let mut histories = state.session_histories.lock().unwrap();
+            histories
+                .entry(session_id.clone())
+                .or_default()
+                .push(Message::user(&content));
+        }
+        let messages = state
+            .session_histories
+            .lock()
+            .unwrap()
+            .get(&session_id)
+            .cloned()
+            .unwrap_or_default();
+
+        let graph_json = {
+            let locks = crate::backend::locks::locked_filter(&workspace_root);
+            let graph = state.graph.lock().unwrap();
+            graph.serialize_for_model(&locks)
+        };
+
+        let mut system = crate::backend::prompt::system_prompt();
+        {
+            let folders = state
+                .current_workspace
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|w| w.folders.clone())
+                .unwrap_or_default();
+            if let Some(section) =
+                crate::backend::prompt::workspace_context_section(&folders, &workspace_root)
+            {
+                system.push_str(&section);
+            }
+        }
+        if is_loop {
+            system.push_str(crate::backend::prompt::LOOP_MODE);
+            if loop_forever {
+                system.push_str(crate::backend::prompt::LOOP_FOREVER);
+            }
+        }
+        if mode == crate::backend::review::AgentMode::Chat {
+            system.push_str("\n\n");
+            system.push_str(crate::backend::prompt::CHAT_MODE);
+        }
+        let mut history = vec![Message::system(&system)];
+        history.extend(messages);
+        (model, workspace_root, graph_json, history, mode)
+    };
+
+    let cancel = {
+        let state = app.state::<AppState>();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        state
+            .session_cancels
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), cancel.clone());
+        cancel
+    };
+
+    let provider = llm::provider_for_model(&model);
+    let needs_tool = tools::is_file_or_workspace_request(&content);
+
+    // Blocking on purpose: the loop driver thread waits for this turn to fully
+    // finish (including tool calls) before deciding whether/when to re-fire.
+    super::agent::run_agent_loop(
+        app,
+        provider,
+        model,
+        workspace_root,
+        graph_json,
+        session_id,
+        history,
+        cancel,
+        needs_tool,
+        mode,
+    );
+}
+
 #[tauri::command]
 pub async fn stop_chat_stream(
     state: State<'_, AppState>,
